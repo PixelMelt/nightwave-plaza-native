@@ -13,7 +13,6 @@ pub fn view(state: &Plaza, wid: iced::window::Id) -> Element<Msg> {
     let instruction =
         text("Enter your username and password to sign in to Nightwave Plaza.").size(12);
 
-    // Username field
     let username_label = text("Username:").size(11);
     let username_input = text_input("", &state.login_username)
         .on_input(Msg::LoginUsername)
@@ -21,7 +20,6 @@ pub fn view(state: &Plaza, wid: iced::window::Id) -> Element<Msg> {
         .padding([3, 4])
         .style(theme::page_input);
 
-    // Password field
     let password_label = text("Password:").size(11);
     let password_input = text_input("", &state.login_password)
         .on_input(Msg::LoginPassword)
@@ -31,13 +29,11 @@ pub fn view(state: &Plaza, wid: iced::window::Id) -> Element<Msg> {
         .secure(true)
         .style(theme::page_input);
 
-    // Remember me checkbox
     let remember = checkbox("Remember me", state.login_remember)
         .on_toggle(Msg::LoginRemember)
         .size(13)
         .text_size(11);
 
-    // Form fields
     let form = column![
         row![username_label, Space::with_width(8), username_input].align_y(iced::Alignment::Center),
         Space::with_height(6),
@@ -47,7 +43,6 @@ pub fn view(state: &Plaza, wid: iced::window::Id) -> Element<Msg> {
         remember,
     ];
 
-    // Error display
     let error_row: Element<Msg> = if let Some(ref err) = state.login_error {
         text(err)
             .size(11)
@@ -57,7 +52,6 @@ pub fn view(state: &Plaza, wid: iced::window::Id) -> Element<Msg> {
         Space::with_height(0).into()
     };
 
-    // Buttons
     let login_label = if state.login_loading {
         "Loading..."
     } else {

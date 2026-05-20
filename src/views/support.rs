@@ -12,24 +12,21 @@ pub fn view(wid: iced::window::Id) -> Element<'static, Msg> {
         weight: iced::font::Weight::Bold,
         ..iced::Font::DEFAULT
     };
-    let link_color = iced::Color::from_rgb(0.024, 0.271, 0.678); // #0645AD
+    let link_color = iced::Color::from_rgb(0.024, 0.271, 0.678);
 
-    // ── Title: "Love Nightwave Plaza?" (bold, 14px, centered) ───
     let title = text("Love Nightwave Plaza?")
         .size(14)
         .font(bold)
         .center()
         .width(Fill);
 
-    // ── Panel with Boosty info ──────────────────────────────────
-    // Left col: rewards text + clickable link
     let info_text = column![
         text("Support the radio station and future updates by donating via Boosty to receive special Discord rewards!")
             .size(11)
             .center()
             .width(Fill),
         Space::with_height(4),
-        // Clickable "Support on Boosty" link
+
         button(
             text("Support on Boosty")
                 .size(11)
@@ -50,7 +47,6 @@ pub fn view(wid: iced::window::Id) -> Element<'static, Msg> {
     .spacing(1)
     .width(Fill);
 
-    // Right col: clickable boosty image
     let boosty_image = button(column![
         Space::with_height(8),
         container(image(image::Handle::from_bytes(BOOSTY_IMG)).width(122)).center_x(Fill)
@@ -73,7 +69,6 @@ pub fn view(wid: iced::window::Id) -> Element<'static, Msg> {
             .padding(4),
     );
 
-    // ── Thanks text (bold, centered) ────────────────────────────
     let thanks = text(
         "Thank you for your donations. All contributions go directly toward funding the station.",
     )
@@ -82,7 +77,6 @@ pub fn view(wid: iced::window::Id) -> Element<'static, Msg> {
     .center()
     .width(Fill);
 
-    // ── Close button (centered) ─────────────────────────────────
     let close_btn = d3_raised(
         button(text("Close").size(11).center().width(80))
             .on_press(Msg::CloseWin(wid))
@@ -92,18 +86,17 @@ pub fn view(wid: iced::window::Id) -> Element<'static, Msg> {
 
     let bottom = row![horizontal_space(), close_btn, horizontal_space()].padding([4, 2]);
 
-    // p-2 padding = 8px
     column![
-        Space::with_height(8), // mt-2
+        Space::with_height(8),
         title,
-        Space::with_height(16), // mb-3
+        Space::with_height(16),
         panel,
-        Space::with_height(16), // mt-3
+        Space::with_height(16),
         thanks,
-        Space::with_height(16), // mt-3
+        Space::with_height(16),
         bottom,
     ]
-    .padding(8) // p-2
+    .padding(8)
     .width(Fill)
     .into()
 }

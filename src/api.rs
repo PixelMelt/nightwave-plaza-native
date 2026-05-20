@@ -1,6 +1,5 @@
 use serde::{Deserialize, Serialize};
 
-// ── Status (/status) ─────────────────────────────────────────────
 #[derive(Debug, Clone, Default, Deserialize)]
 pub struct StatusSong {
     #[serde(default)]
@@ -22,7 +21,6 @@ pub struct Status {
     pub listeners: u32,
 }
 
-// ── History (v2/history) ─────────────────────────────────────────
 #[derive(Debug, Clone, Deserialize)]
 pub struct HistoryEntry {
     pub played_at: u64,
@@ -51,7 +49,6 @@ pub struct HistoryResponse {
     pub date_range: Option<DateRange>,
 }
 
-// ── Ratings (v2/ratings/{range}) ─────────────────────────────────
 #[derive(Debug, Clone, Deserialize)]
 pub struct RatingEntry {
     pub song: RatingSong,
@@ -72,7 +69,6 @@ pub struct RatingsResponse {
     pub meta: PaginatedMeta,
 }
 
-// ── Song Info (v2/songs/{id}) ────────────────────────────────────
 #[derive(Debug, Clone, Default, Deserialize)]
 #[allow(dead_code)]
 pub struct SongData {
@@ -100,7 +96,6 @@ pub struct SongResponse {
     pub stats: SongStats,
 }
 
-// ── Auth / User ──────────────────────────────────────────────────
 #[derive(Debug, Clone, Default, Deserialize, Serialize)]
 #[allow(dead_code)]
 pub struct User {
@@ -135,7 +130,6 @@ pub struct ReactResponse {
     pub reactions: u32,
 }
 
-/// API error body: { "key": "...", "error": "..." }
 #[derive(Debug, Clone, Default, Deserialize)]
 struct ApiErrorBody {
     #[serde(default)]
@@ -144,7 +138,6 @@ struct ApiErrorBody {
     pub key: Option<String>,
 }
 
-// ── News (v2/news) ───────────────────────────────────────────────
 #[derive(Debug, Clone, Deserialize)]
 #[allow(dead_code)]
 pub struct NewsArticle {
@@ -163,7 +156,6 @@ pub struct NewsResponse {
     pub meta: PaginatedMeta,
 }
 
-// ── Shared pagination ────────────────────────────────────────────
 #[derive(Debug, Clone, Deserialize)]
 #[allow(dead_code)]
 pub struct PaginatedMeta {
@@ -175,15 +167,19 @@ pub struct PaginatedMeta {
 
 const API: &str = "https://api.plaza.one";
 
-// ── Helper: parse response or extract error message ─────────────
-async fn parse_response<T: serde::de::DeserializeOwned>(resp: reqwest::Response) -> Result<T, String> {
+async fn parse_response<T: serde::de::DeserializeOwned>(
+    resp: reqwest::Response,
+) -> Result<T, String> {
     if resp.status().is_success() {
         resp.json::<T>().await.map_err(|e| e.to_string())
     } else {
         let status = resp.status();
         let body = resp.text().await.unwrap_or_default();
         if let Ok(err) = serde_json::from_str::<ApiErrorBody>(&body) {
-            Err(err.error.or(err.key).unwrap_or_else(|| format!("HTTP {}", status)))
+            Err(err
+                .error
+                .or(err.key)
+                .unwrap_or_else(|| format!("HTTP {}", status)))
         } else if !body.is_empty() {
             Err(body)
         } else {
@@ -192,32 +188,41 @@ async fn parse_response<T: serde::de::DeserializeOwned>(resp: reqwest::Response)
     }
 }
 
-// ── Public (unauthenticated) endpoints ──────────────────────────
 pub async fn fetch_status() -> Result<Status, reqwest::Error> {
     reqwest::get(format!("{}/status", API)).await?.json().await
 }
 
 pub async fn fetch_history(page: u32) -> Result<HistoryResponse, reqwest::Error> {
-    reqwest::get(format!("{}/v2/history?page={}", API, page)).await?.json().await
+    reqwest::get(format!("{}/v2/history?page={}", API, page))
+        .await?
+        .json()
+        .await
 }
 
 pub async fn fetch_ratings(range: &str, page: u32) -> Result<RatingsResponse, reqwest::Error> {
-    reqwest::get(format!("{}/v2/ratings/{}?page={}", API, range, page)).await?.json().await
+    reqwest::get(format!("{}/v2/ratings/{}?page={}", API, range, page))
+        .await?
+        .json()
+        .await
 }
 
 pub async fn fetch_song(id: &str) -> Result<SongResponse, reqwest::Error> {
-    reqwest::get(format!("{}/v2/songs/{}", API, id)).await?.json().await
+    reqwest::get(format!("{}/v2/songs/{}", API, id))
+        .await?
+        .json()
+        .await
 }
 
 pub async fn fetch_news(page: u32) -> Result<NewsResponse, reqwest::Error> {
-    reqwest::get(format!("{}/v2/news?page={}", API, page)).await?.json().await
+    reqwest::get(format!("{}/v2/news?page={}", API, page))
+        .await?
+        .json()
+        .await
 }
 
 pub async fn fetch_artwork(url: &str) -> Result<Vec<u8>, reqwest::Error> {
     Ok(reqwest::get(url).await?.bytes().await?.to_vec())
 }
-
-// ── Authenticated endpoints (Bearer token) ──────────────────────
 
 pub async fn login(username: &str, password: &str) -> Result<LoginResponse, String> {
     let client = reqwest::Client::new();
@@ -265,8 +270,6 @@ pub async fn register(username: &str, email: &str, password: &str) -> Result<Use
     parse_response(resp).await
 }
 
-/// Fetch the current user's profile using a Bearer token.
-/// Used to restore a saved session on startup.
 pub async fn get_me(token: &str) -> Result<User, String> {
     let client = reqwest::Client::new();
     let resp = client

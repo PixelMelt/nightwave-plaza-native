@@ -6,8 +6,8 @@ mod theme;
 mod views;
 
 use audio::AudioPlayer;
-use state::{Msg, Plaza, WinType};
 use iced::{Element, Fill, Font, Size, Subscription, Task, Theme};
+use state::{Msg, Plaza, WinType};
 
 const APP_ICON: &[u8] = include_bytes!("../assets/icons/favicon-32x32.png");
 const TAHOMA: &[u8] = include_bytes!("../assets/fonts/subset-Tahoma.ttf");
@@ -43,13 +43,18 @@ fn main() -> iced::Result {
 
     let base = iced::daemon(win_title, update, win_view)
         .subscription(subscription)
-        .theme(|_, _| Theme::custom("Win98".to_string(), iced::theme::Palette {
-            background: theme::BG_GRAY,
-            text: theme::BLACK,
-            primary: theme::TITLE_BLUE,
-            success: iced::Color::from_rgb(0.0, 0.5, 0.0),
-            danger: iced::Color::from_rgb(0.8, 0.0, 0.0),
-        }));
+        .theme(|_, _| {
+            Theme::custom(
+                "Win98".to_string(),
+                iced::theme::Palette {
+                    background: theme::BG_GRAY,
+                    text: theme::BLACK,
+                    primary: theme::TITLE_BLUE,
+                    success: iced::Color::from_rgb(0.0, 0.5, 0.0),
+                    danger: iced::Color::from_rgb(0.8, 0.0, 0.0),
+                },
+            )
+        });
 
     let font_data: Vec<u8> = cjk.unwrap_or_default();
 
@@ -106,66 +111,69 @@ fn main() -> iced::Result {
                 welcome_until: Some(Instant::now() + Duration::from_secs(2)),
                 volume_text: None,
                 volume_text_until: None,
-                // Auth
+
                 auth_token: None,
                 user: None,
                 user_stats: None,
                 stats_loading: false,
                 reaction_rate: 0,
                 reaction_song_id: String::new(),
-                // Login form
+
                 login_username: String::new(),
                 login_password: String::new(),
                 login_remember: false,
                 login_loading: false,
                 login_error: None,
-                // Register form
+
                 register_username: String::new(),
                 register_email: String::new(),
                 register_password: String::new(),
                 register_password_repeat: String::new(),
                 register_loading: false,
                 register_error: None,
-                // News
+
                 news: Vec::new(),
                 news_page: 1,
                 news_pages: 0,
                 news_loading: false,
             };
-            // Try to restore a saved session
+
             let session_task = if let Some(saved) = session::load() {
                 let token = saved.token.clone();
                 let token2 = saved.token.clone();
-                // Use cached user data immediately, then verify token in background
+
                 state.auth_token = Some(saved.token);
                 state.user = Some(saved.user);
-                Task::perform(
-                    async move { api::get_me(&token).await },
-                    move |r| match r {
-                        Ok(user) => Msg::SessionRestored(user, token2.clone()),
-                        Err(_) => Msg::LogoutOk, // token expired, clear session
-                    },
-                )
+                Task::perform(async move { api::get_me(&token).await }, move |r| match r {
+                    Ok(user) => Msg::SessionRestored(user, token2.clone()),
+                    Err(_) => Msg::LogoutOk,
+                })
             } else {
                 Task::none()
             };
 
-            (state, Task::batch([
-                open_task.discard(),
-                Task::perform(api::fetch_status(), |r| match r {
-                    Ok(s) => Msg::StatusOk(s),
-                    Err(e) => Msg::StatusErr(e.to_string()),
-                }),
-                session_task,
-            ]))
+            (
+                state,
+                Task::batch([
+                    open_task.discard(),
+                    Task::perform(api::fetch_status(), |r| match r {
+                        Ok(s) => Msg::StatusOk(s),
+                        Err(e) => Msg::StatusErr(e.to_string()),
+                    }),
+                    session_task,
+                ]),
+            )
         })
 }
 
 fn win_title(state: &Plaza, wid: iced::window::Id) -> String {
     if wid == state.main_window {
         let s = &state.status.song;
-        if s.artist.is_empty() { "Nightwave Plaza".into() }
-        else { format!("{} - {} - Nightwave Plaza", s.artist, s.title) }
+        if s.artist.is_empty() {
+            "Nightwave Plaza".into()
+        } else {
+            format!("{} - {} - Nightwave Plaza", s.artist, s.title)
+        }
     } else {
         match state.child_windows.get(&wid) {
             Some(wt) => wt.title().to_string(),
@@ -175,11 +183,12 @@ fn win_title(state: &Plaza, wid: iced::window::Id) -> String {
 }
 
 fn win_view(state: &Plaza, wid: iced::window::Id) -> Element<Msg> {
-    // Determine content, title, and which buttons to show
     let (inner, title, show_close) = if wid == state.main_window {
-        // Player: title bar always says "Nightwave Plaza" (webapp win.player.title)
-        // Close button present since native app needs it to exit
-        (views::player::view(state), "Nightwave Plaza".to_string(), true)
+        (
+            views::player::view(state),
+            "Nightwave Plaza".to_string(),
+            true,
+        )
     } else {
         let inner = match state.child_windows.get(&wid) {
             Some(WinType::History) => views::history::view(state, wid),
@@ -201,17 +210,19 @@ fn win_view(state: &Plaza, wid: iced::window::Id) -> Element<Msg> {
         (inner, title, true)
     };
 
-    // Custom Win98 title bar (gradient, per-window icon, SVG minimize/close buttons)
-    let wt = if wid == state.main_window { None } else { state.child_windows.get(&wid) };
+    let wt = if wid == state.main_window {
+        None
+    } else {
+        state.child_windows.get(&wid)
+    };
     let title_bar = views::widgets::title_bar(title, wid, wt, true, show_close);
 
-    // Structure: d3_raised_window → window_box → inner padding (2px) → title bar + content
     let framed = iced::widget::column![title_bar, inner]
         .width(Fill)
         .height(Fill);
 
     let window_inner = iced::widget::container(framed)
-        .padding(2) // webapp .inner { padding: 2px }
+        .padding(2)
         .width(Fill)
         .height(Fill)
         .style(theme::window_box);
@@ -241,12 +252,24 @@ fn update(state: &mut Plaza, msg: Msg) -> Task<Msg> {
             if need {
                 state.artwork_url = new_art.clone();
                 Task::perform(
-                    async move { api::fetch_artwork(&new_art).await.map_err(|e| e.to_string()) },
-                    |r| match r { Ok(b) => Msg::ArtworkOk(b), Err(_) => Msg::ArtworkErr },
+                    async move {
+                        api::fetch_artwork(&new_art)
+                            .await
+                            .map_err(|e| e.to_string())
+                    },
+                    |r| match r {
+                        Ok(b) => Msg::ArtworkOk(b),
+                        Err(_) => Msg::ArtworkErr,
+                    },
                 )
-            } else { Task::none() }
+            } else {
+                Task::none()
+            }
         }
-        Msg::StatusErr(e) => { state.error_msg = Some(e); Task::none() }
+        Msg::StatusErr(e) => {
+            state.error_msg = Some(e);
+            Task::none()
+        }
         Msg::Tick(now) => {
             let dt = now.duration_since(state.last_tick).as_secs_f64();
             state.last_tick = now;
@@ -254,7 +277,9 @@ fn update(state: &mut Plaza, msg: Msg) -> Task<Msg> {
                 state.elapsed += dt;
             }
             if let Some(until) = state.welcome_until {
-                if now >= until { state.welcome_until = None; }
+                if now >= until {
+                    state.welcome_until = None;
+                }
             }
             if let Some(until) = state.volume_text_until {
                 if now >= until {
@@ -266,24 +291,38 @@ fn update(state: &mut Plaza, msg: Msg) -> Task<Msg> {
         }
         Msg::TogglePlay => {
             if let Some(ref p) = state.player {
-                if p.is_playing() { p.stop(); } else { p.play(); }
+                if p.is_playing() {
+                    p.stop();
+                } else {
+                    p.play();
+                }
             }
             Task::none()
         }
         Msg::Volume(v) => {
             state.volume = v;
-            if let Some(ref p) = state.player { p.set_volume(v / 100.0); }
+            if let Some(ref p) = state.player {
+                p.set_volume(v / 100.0);
+            }
             state.volume_text = Some(format!("Volume: {}%", v as u32));
             state.volume_text_until = Some(Instant::now() + Duration::from_secs(2));
             state.welcome_until = None;
             Task::none()
         }
-        Msg::ArtworkOk(b) => { state.artwork_handle = Some(iced::widget::image::Handle::from_bytes(b)); Task::none() }
-        Msg::ArtworkErr => { state.artwork_handle = None; Task::none() }
+        Msg::ArtworkOk(b) => {
+            state.artwork_handle = Some(iced::widget::image::Handle::from_bytes(b));
+            Task::none()
+        }
+        Msg::ArtworkErr => {
+            state.artwork_handle = None;
+            Task::none()
+        }
 
         Msg::OpenWin(wt) => {
             for (&id, &t) in &state.child_windows {
-                if t == wt { return iced::window::gain_focus(id); }
+                if t == wt {
+                    return iced::window::gain_focus(id);
+                }
             }
             let (id, task) = iced::window::open(iced::window::Settings {
                 size: wt.size(),
@@ -298,7 +337,9 @@ fn update(state: &mut Plaza, msg: Msg) -> Task<Msg> {
                 WinType::History if state.history.is_empty() => {
                     state.history_loading = true;
                     tasks.push(Task::perform(api::fetch_history(1), |r| match r {
-                        Ok(h) => Msg::HistoryOk(h.data, h.meta.last_page, h.meta.total, h.date_range),
+                        Ok(h) => {
+                            Msg::HistoryOk(h.data, h.meta.last_page, h.meta.total, h.date_range)
+                        }
                         Err(e) => Msg::HistoryErr(e.to_string()),
                     }));
                 }
@@ -345,11 +386,14 @@ fn update(state: &mut Plaza, msg: Msg) -> Task<Msg> {
             iced::window::close(id)
         }
         Msg::WinClosed(id) => {
-            if id == state.main_window { iced::exit() }
-            else { state.child_windows.remove(&id); Task::none() }
+            if id == state.main_window {
+                iced::exit()
+            } else {
+                state.child_windows.remove(&id);
+                Task::none()
+            }
         }
 
-        // ── History ─────────────────────────────────────────────
         Msg::HistoryOk(songs, pages, total, date_range) => {
             state.history_loading = false;
             state.history = songs;
@@ -362,7 +406,11 @@ fn update(state: &mut Plaza, msg: Msg) -> Task<Msg> {
             }
             Task::none()
         }
-        Msg::HistoryErr(e) => { state.history_loading = false; state.error_msg = Some(e); Task::none() }
+        Msg::HistoryErr(e) => {
+            state.history_loading = false;
+            state.error_msg = Some(e);
+            Task::none()
+        }
         Msg::HistoryPage(p) => {
             state.history_page = p;
             state.history_page_input = p.to_string();
@@ -389,7 +437,6 @@ fn update(state: &mut Plaza, msg: Msg) -> Task<Msg> {
             Task::none()
         }
 
-        // ── Ratings ─────────────────────────────────────────────
         Msg::RatingsOk(songs, pages, total) => {
             state.ratings_loading = false;
             state.ratings = songs;
@@ -398,7 +445,11 @@ fn update(state: &mut Plaza, msg: Msg) -> Task<Msg> {
             state.ratings_page_input = state.ratings_page.to_string();
             Task::none()
         }
-        Msg::RatingsErr(e) => { state.ratings_loading = false; state.error_msg = Some(e); Task::none() }
+        Msg::RatingsErr(e) => {
+            state.ratings_loading = false;
+            state.error_msg = Some(e);
+            Task::none()
+        }
         Msg::RatingsPage(p) => {
             state.ratings_page = p;
             state.ratings_page_input = p.to_string();
@@ -443,7 +494,6 @@ fn update(state: &mut Plaza, msg: Msg) -> Task<Msg> {
             Task::none()
         }
 
-        // ── Song Info ───────────────────────────────────────────
         Msg::OpenSongInfo(song_id) => {
             for (&id, &t) in &state.child_windows {
                 if t == WinType::SongInfo {
@@ -490,7 +540,11 @@ fn update(state: &mut Plaza, msg: Msg) -> Task<Msg> {
             state.song_info = Some(resp);
             if !art_url.is_empty() && Some(&art_url) != Some(&state.artwork_url) {
                 Task::perform(
-                    async move { api::fetch_artwork(&art_url).await.map_err(|e| e.to_string()) },
+                    async move {
+                        api::fetch_artwork(&art_url)
+                            .await
+                            .map_err(|e| e.to_string())
+                    },
                     |r| match r {
                         Ok(b) => Msg::SongInfoArtworkOk(b),
                         Err(_) => Msg::SongInfoArtworkErr,
@@ -501,23 +555,39 @@ fn update(state: &mut Plaza, msg: Msg) -> Task<Msg> {
                 Task::none()
             }
         }
-        Msg::SongInfoErr(e) => { state.song_info_loading = false; state.error_msg = Some(e); Task::none() }
-        Msg::SongInfoArtworkOk(b) => { state.song_info_artwork = Some(iced::widget::image::Handle::from_bytes(b)); Task::none() }
-        Msg::SongInfoArtworkErr => { state.song_info_artwork = None; Task::none() }
+        Msg::SongInfoErr(e) => {
+            state.song_info_loading = false;
+            state.error_msg = Some(e);
+            Task::none()
+        }
+        Msg::SongInfoArtworkOk(b) => {
+            state.song_info_artwork = Some(iced::widget::image::Handle::from_bytes(b));
+            Task::none()
+        }
+        Msg::SongInfoArtworkErr => {
+            state.song_info_artwork = None;
+            Task::none()
+        }
 
-        // ── Session restore (verified token from saved file) ────
         Msg::SessionRestored(user, token) => {
-            // Update with fresh user data from server
             session::save(&token, &user);
             state.auth_token = Some(token);
             state.user = Some(user);
             Task::none()
         }
 
-        // ── Login ───────────────────────────────────────────────
-        Msg::LoginUsername(s) => { state.login_username = s; Task::none() }
-        Msg::LoginPassword(s) => { state.login_password = s; Task::none() }
-        Msg::LoginRemember(b) => { state.login_remember = b; Task::none() }
+        Msg::LoginUsername(s) => {
+            state.login_username = s;
+            Task::none()
+        }
+        Msg::LoginPassword(s) => {
+            state.login_password = s;
+            Task::none()
+        }
+        Msg::LoginRemember(b) => {
+            state.login_remember = b;
+            Task::none()
+        }
         Msg::LoginSubmit => {
             if state.login_username.is_empty() || state.login_password.is_empty() {
                 state.login_error = Some("Please enter a username and password.".into());
@@ -537,7 +607,7 @@ fn update(state: &mut Plaza, msg: Msg) -> Task<Msg> {
         }
         Msg::LoginOk(resp) => {
             state.login_loading = false;
-            // Only save session to disk if "Remember me" was checked
+
             if state.login_remember {
                 if let Some(ref token) = resp.token {
                     session::save(token, &resp.data);
@@ -549,7 +619,7 @@ fn update(state: &mut Plaza, msg: Msg) -> Task<Msg> {
             state.login_password.clear();
             state.login_remember = false;
             state.login_error = None;
-            // Close the login window
+
             let mut close_task = Task::none();
             for (&id, &t) in &state.child_windows {
                 if t == WinType::UserLogin {
@@ -566,15 +636,30 @@ fn update(state: &mut Plaza, msg: Msg) -> Task<Msg> {
             Task::none()
         }
 
-        // ── Register ────────────────────────────────────────────
-        Msg::RegisterUsername(s) => { state.register_username = s; Task::none() }
-        Msg::RegisterEmail(s) => { state.register_email = s; Task::none() }
-        Msg::RegisterPassword(s) => { state.register_password = s; Task::none() }
-        Msg::RegisterPasswordRepeat(s) => { state.register_password_repeat = s; Task::none() }
+        Msg::RegisterUsername(s) => {
+            state.register_username = s;
+            Task::none()
+        }
+        Msg::RegisterEmail(s) => {
+            state.register_email = s;
+            Task::none()
+        }
+        Msg::RegisterPassword(s) => {
+            state.register_password = s;
+            Task::none()
+        }
+        Msg::RegisterPasswordRepeat(s) => {
+            state.register_password_repeat = s;
+            Task::none()
+        }
         Msg::RegisterSubmit => {
-            // Client-side validation
-            if !state.register_username.chars().all(|c| c.is_alphanumeric() || c == '-' || c == '_') {
-                state.register_error = Some("Username may only contain letters, numbers, and underscores.".into());
+            if !state
+                .register_username
+                .chars()
+                .all(|c| c.is_alphanumeric() || c == '-' || c == '_')
+            {
+                state.register_error =
+                    Some("Username may only contain letters, numbers, and underscores.".into());
                 return Task::none();
             }
             if state.register_username.len() < 4 {
@@ -617,7 +702,7 @@ fn update(state: &mut Plaza, msg: Msg) -> Task<Msg> {
             state.register_email.clear();
             state.register_password.clear();
             state.register_password_repeat.clear();
-            // Close register window
+
             let mut close_task = Task::none();
             for (&id, &t) in &state.child_windows {
                 if t == WinType::UserRegister {
@@ -625,7 +710,9 @@ fn update(state: &mut Plaza, msg: Msg) -> Task<Msg> {
                     break;
                 }
             }
-            state.child_windows.retain(|_, t| *t != WinType::UserRegister);
+            state
+                .child_windows
+                .retain(|_, t| *t != WinType::UserRegister);
             state.error_msg = Some("Registration successful! You can now log in.".into());
             close_task
         }
@@ -635,17 +722,13 @@ fn update(state: &mut Plaza, msg: Msg) -> Task<Msg> {
             Task::none()
         }
 
-        // ── Logout ──────────────────────────────────────────────
         Msg::Logout => {
             if let Some(ref token) = state.auth_token {
                 let token = token.clone();
-                Task::perform(
-                    async move { api::logout(&token).await },
-                    |r| match r {
-                        Ok(()) => Msg::LogoutOk,
-                        Err(e) => Msg::LogoutErr(e),
-                    },
-                )
+                Task::perform(async move { api::logout(&token).await }, |r| match r {
+                    Ok(()) => Msg::LogoutOk,
+                    Err(e) => Msg::LogoutErr(e),
+                })
             } else {
                 update(state, Msg::LogoutOk)
             }
@@ -657,7 +740,7 @@ fn update(state: &mut Plaza, msg: Msg) -> Task<Msg> {
             state.user_stats = None;
             state.reaction_rate = 0;
             state.reaction_song_id.clear();
-            // Close profile window
+
             let mut close_task = Task::none();
             for (&id, &t) in &state.child_windows {
                 if t == WinType::UserProfile {
@@ -665,11 +748,12 @@ fn update(state: &mut Plaza, msg: Msg) -> Task<Msg> {
                     break;
                 }
             }
-            state.child_windows.retain(|_, t| *t != WinType::UserProfile);
+            state
+                .child_windows
+                .retain(|_, t| *t != WinType::UserProfile);
             close_task
         }
         Msg::LogoutErr(e) => {
-            // Logout failed, clear state anyway
             session::clear();
             state.auth_token = None;
             state.user = None;
@@ -677,7 +761,6 @@ fn update(state: &mut Plaza, msg: Msg) -> Task<Msg> {
             Task::none()
         }
 
-        // ── User stats ──────────────────────────────────────────
         Msg::StatsOk(data) => {
             state.stats_loading = false;
             state.user_stats = Some(data);
@@ -689,10 +772,11 @@ fn update(state: &mut Plaza, msg: Msg) -> Task<Msg> {
             Task::none()
         }
 
-        // ── Reactions (like/favorite cycle) ──────────────────────
         Msg::React => {
             let Some(ref token) = state.auth_token else {
-                state.error_msg = Some("Please sign in to your Nightwave Plaza account to access this feature.".into());
+                state.error_msg = Some(
+                    "Please sign in to your Nightwave Plaza account to access this feature.".into(),
+                );
                 return Task::none();
             };
             let current_song_id = state.status.song.id.clone();
@@ -700,13 +784,11 @@ fn update(state: &mut Plaza, msg: Msg) -> Task<Msg> {
                 return Task::none();
             }
 
-            // Reset reaction if it's for a different song
             if state.reaction_song_id != current_song_id {
                 state.reaction_rate = 0;
                 state.reaction_song_id = current_song_id;
             }
 
-            // Cycle: 0 -> 1 (like), 1 -> 2 (favorite), 2 -> 0 (remove)
             let next_rate = match state.reaction_rate {
                 0 => 1,
                 1 => 2,
@@ -724,7 +806,6 @@ fn update(state: &mut Plaza, msg: Msg) -> Task<Msg> {
             )
         }
         Msg::ReactOk(new_count) => {
-            // Update the reaction state
             state.reaction_rate = match state.reaction_rate {
                 0 => 1,
                 1 => 2,
@@ -739,14 +820,17 @@ fn update(state: &mut Plaza, msg: Msg) -> Task<Msg> {
             Task::none()
         }
 
-        // ── News ─────────────────────────────────────────────────
         Msg::NewsOk(articles, pages) => {
             state.news_loading = false;
             state.news = articles;
             state.news_pages = pages;
             Task::none()
         }
-        Msg::NewsErr(e) => { state.news_loading = false; state.error_msg = Some(e); Task::none() }
+        Msg::NewsErr(e) => {
+            state.news_loading = false;
+            state.error_msg = Some(e);
+            Task::none()
+        }
         Msg::NewsPage(p) => {
             state.news_page = p;
             state.news_loading = true;
@@ -756,7 +840,6 @@ fn update(state: &mut Plaza, msg: Msg) -> Task<Msg> {
             })
         }
 
-        // ── Window chrome (custom title bar) ────────────────────────
         Msg::MinimizeWin(id) => iced::window::minimize(id, true),
         Msg::DragWin(id) => iced::window::drag(id),
         Msg::OpenUrl(url) => {
@@ -768,6 +851,9 @@ fn update(state: &mut Plaza, msg: Msg) -> Task<Msg> {
             Ok(s) => Msg::StatusOk(s),
             Err(e) => Msg::StatusErr(e.to_string()),
         }),
-        Msg::DismissErr => { state.error_msg = None; Task::none() }
+        Msg::DismissErr => {
+            state.error_msg = None;
+            Task::none()
+        }
     }
 }

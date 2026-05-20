@@ -15,7 +15,6 @@ pub fn view(state: &Plaza, wid: iced::window::Id) -> Element<Msg> {
     };
     let r = &state.ratings_range;
 
-    // ── Range selector buttons (#20): me-1 for first two, me-0 for last ──
     let range_row = row![
         range_btn("All Time", "overtime", r == "overtime"),
         Space::with_width(4),
@@ -24,7 +23,6 @@ pub fn view(state: &Plaza, wid: iced::window::Id) -> Element<Msg> {
         range_btn("Weekly", "weekly", r == "weekly"),
     ];
 
-    // ── Content: loading spinner OR song list ───────────────────
     let list_area: Element<Msg> = if state.ratings_loading {
         d3_sunken(
             container(
@@ -73,7 +71,6 @@ pub fn view(state: &Plaza, wid: iced::window::Id) -> Element<Msg> {
                 .spacing(4)
                 .padding([3, 4]);
 
-                // ── Clickable rows -> Song Info (#18) ───────────
                 let entry_row: Element<Msg> = if !entry.song.id.is_empty() {
                     button(entry_content)
                         .on_press(Msg::OpenSongInfo(entry.song.id.clone()))
@@ -103,7 +100,6 @@ pub fn view(state: &Plaza, wid: iced::window::Id) -> Element<Msg> {
         .into()
     };
 
-    // ── Pagination (#17, #50): input field + hand icon buttons ──
     let pages_row = if state.ratings_pages > 1 {
         let prev_msg = if state.ratings_page > 1 && !state.ratings_loading {
             Some(Msg::RatingsPage(state.ratings_page - 1))
@@ -140,7 +136,6 @@ pub fn view(state: &Plaza, wid: iced::window::Id) -> Element<Msg> {
         .align_y(iced::Alignment::Center)
         .padding([4, 0]);
 
-    // ── Status bar with correct total ───────────────────────────
     let status = status_bar(vec![
         text(format!("Pages: {}", state.ratings_pages))
             .size(10)

@@ -14,7 +14,6 @@ pub fn view(state: &Plaza, wid: iced::window::Id) -> Element<Msg> {
         ..iced::Font::DEFAULT
     };
 
-    // ── Loading state ───────────────────────────────────────────
     if state.song_info_loading {
         let loading = container(text("Loading...").size(11).center().width(Fill))
             .width(Fill)
@@ -31,7 +30,6 @@ pub fn view(state: &Plaza, wid: iced::window::Id) -> Element<Msg> {
         return column![loading, bottom].spacing(2).padding(2).into();
     }
 
-    // ── Song data: use fetched SongResponse if available, otherwise current song ──
     let (artist, album, title_str, length, likes, first_played, art_handle) =
         if let Some(ref info) = state.song_info {
             (
@@ -59,7 +57,6 @@ pub fn view(state: &Plaza, wid: iced::window::Id) -> Element<Msg> {
             )
         };
 
-    // ── Artwork (right side, ~42% width) (#40) ──────────────────
     let art: Element<Msg> = if let Some(h) = art_handle {
         d3_sunken(container(image(h.clone()).width(100).height(100)).style(theme::sunken_inner))
             .into()
@@ -67,7 +64,6 @@ pub fn view(state: &Plaza, wid: iced::window::Id) -> Element<Msg> {
         d3_sunken(container(Space::new(100, 100)).style(theme::sunken_inner)).into()
     };
 
-    // ── Song info fields ────────────────────────────────────────
     let info = column![
         text("Artist:").size(10).font(bold),
         shaped(artist).size(11),
@@ -78,7 +74,6 @@ pub fn view(state: &Plaza, wid: iced::window::Id) -> Element<Msg> {
         text("Title:").size(10).font(bold),
         shaped(title_str).size(11),
         vertical_space().height(4),
-        // clock icon + song length, heart icon + likes (matching webapp WindowSong.vue)
         row![
             widgets::icon_clock().size(10),
             Space::with_width(2),
@@ -100,7 +95,6 @@ pub fn view(state: &Plaza, wid: iced::window::Id) -> Element<Msg> {
             .padding(4),
     );
 
-    // ── Button row: Play Preview (disabled), Close (#38) ────────
     let preview_btn = d3_raised(
         button(text("Play Preview").size(11).center().width(100))
             .style(theme::raised)
@@ -114,7 +108,6 @@ pub fn view(state: &Plaza, wid: iced::window::Id) -> Element<Msg> {
     );
     let bottom = row![preview_btn, horizontal_space(), close].padding([4, 2]);
 
-    // ── Status bar: First Played date (#41) ─────────────────────
     let status = if let Some(fp) = first_played {
         status_bar(vec![text(format!("First Played: {}", format_date(fp)))
             .size(10)

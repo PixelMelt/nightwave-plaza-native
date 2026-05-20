@@ -16,7 +16,6 @@ pub fn view(state: &Plaza, wid: iced::window::Id) -> Element<Msg> {
         text("Please complete all fields to create your account.").size(11),
     ];
 
-    // Form fields
     let username_input = text_input("", &state.register_username)
         .on_input(Msg::RegisterUsername)
         .size(11)
@@ -67,7 +66,6 @@ pub fn view(state: &Plaza, wid: iced::window::Id) -> Element<Msg> {
             .align_y(iced::Alignment::Center),
     ];
 
-    // Error display
     let error_row: Element<Msg> = if let Some(ref err) = state.register_error {
         text(err)
             .size(11)
@@ -77,7 +75,6 @@ pub fn view(state: &Plaza, wid: iced::window::Id) -> Element<Msg> {
         Space::with_height(0).into()
     };
 
-    // Buttons
     let register_label = if state.register_loading {
         "Loading..."
     } else {

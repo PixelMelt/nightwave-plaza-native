@@ -1,11 +1,3 @@
-//! Persistent session storage.
-//!
-//! Saves/loads the auth token and cached user data to a JSON file in the
-//! platform-standard config directory:
-//!   Linux:   ~/.config/nightwave-plaza/session.json
-//!   macOS:   ~/Library/Application Support/nightwave-plaza/session.json
-//!   Windows: %APPDATA%/nightwave-plaza/session.json
-
 use crate::api::User;
 use serde::{Deserialize, Serialize};
 use std::fs;
@@ -25,7 +17,6 @@ fn session_path() -> Option<PathBuf> {
     Some(dir.join(SESSION_FILE))
 }
 
-/// Save a session (token + user) to disk.
 pub fn save(token: &str, user: &User) {
     let Some(path) = session_path() else { return };
     if let Some(parent) = path.parent() {
@@ -40,14 +31,12 @@ pub fn save(token: &str, user: &User) {
     }
 }
 
-/// Load a previously saved session from disk.
 pub fn load() -> Option<Session> {
     let path = session_path()?;
     let data = fs::read_to_string(path).ok()?;
     serde_json::from_str(&data).ok()
 }
 
-/// Delete the saved session file (on logout).
 pub fn clear() {
     if let Some(path) = session_path() {
         let _ = fs::remove_file(path);

@@ -2,7 +2,6 @@ use rodio::{Decoder, OutputStream, OutputStreamHandle, Sink};
 use std::io::{BufReader, Cursor, Read};
 use std::sync::{Arc, Mutex};
 
-/// Audio player wrapping rodio for HTTP stream playback.
 pub struct AudioPlayer {
     _stream: OutputStream,
     _stream_handle: OutputStreamHandle,
@@ -29,7 +28,6 @@ impl AudioPlayer {
         *self.playing.lock().unwrap()
     }
 
-    /// Returns true once audio data has been decoded and appended to sink.
     pub fn is_streaming(&self) -> bool {
         *self.streaming.lock().unwrap()
     }
@@ -43,7 +41,6 @@ impl AudioPlayer {
         self.sink.set_volume(vol.clamp(0.0, 1.0));
     }
 
-    /// Start streaming from the plaza MP3 stream URL.
     pub fn play(&self) {
         if self.is_playing() {
             return;
@@ -70,7 +67,6 @@ impl AudioPlayer {
     }
 }
 
-/// Stream audio by downloading into a growing buffer and decoding from it.
 fn stream_audio(
     sink: Arc<Sink>,
     playing: Arc<Mutex<bool>>,
@@ -89,7 +85,6 @@ fn stream_audio(
     let mut buffer = Vec::with_capacity(256 * 1024);
     let mut chunk = [0u8; 16384];
 
-    // Initial fill: get enough data for decoder to start
     loop {
         if !*playing.lock().unwrap() {
             return Ok(());
@@ -104,12 +99,11 @@ fn stream_audio(
         }
     }
 
-    // Try to decode what we have and append to sink
     let cursor = Cursor::new(buffer.clone());
     match Decoder::new(BufReader::new(cursor)) {
         Ok(source) => {
             sink.append(source);
-            // Signal that audio is now streaming
+
             *streaming.lock().unwrap() = true;
         }
         Err(e) => {
@@ -117,7 +111,6 @@ fn stream_audio(
         }
     }
 
-    // Continue streaming: read more data, decode, append
     loop {
         if !*playing.lock().unwrap() {
             break;

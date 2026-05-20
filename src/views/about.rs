@@ -21,20 +21,15 @@ pub fn view(wid: iced::window::Id) -> Element<'static, Msg> {
         ..iced::Font::DEFAULT
     };
 
-    // All <p> in #window-about: font-size: 12px; line-height: 150%
     let lh = iced::widget::text::LineHeight::Relative(1.5);
 
-    // ── Top row (mb-2 = 8px below) ──────────────────────────────
-    // Left col: text-center aligned
     let title_col = column![
-        // p.lead: 14px, bold italic, mb-1 = 4px
         text("Nightwave Plaza")
             .size(14)
             .font(bold_italic)
             .center()
             .width(Fill),
-        Space::with_height(4), // mb-1
-        // <p><i>welcome text</i></p> — italic 12px
+        Space::with_height(4),
         text("Welcome to the 24/7 online vaporwave and future funk radio station.")
             .size(12)
             .font(italic)
@@ -45,7 +40,6 @@ pub fn view(wid: iced::window::Id) -> Element<'static, Msg> {
     .width(Fill)
     .align_x(iced::Alignment::Center);
 
-    // Right col: pc.png 70px, vertically centered within the row
     let pc_image = image(image::Handle::from_bytes(PC_IMG)).width(70);
 
     let top_row = row![title_col, pc_image]
@@ -53,34 +47,26 @@ pub fn view(wid: iced::window::Id) -> Element<'static, Msg> {
         .padding([4, 6])
         .align_y(iced::Alignment::Center);
 
-    // ── Panel (win-panel, mb-3 = 16px below) ────────────────────
-    // No explicit padding on win-panel; <p> elements sit directly inside
     let panel_body = column![
-        // <p><strong>Contact Information</strong></p>
         text("Contact Information")
             .size(12)
             .font(bold)
             .line_height(lh),
-        Space::with_height(4), // default <p> margin-bottom 0.25rem
-        // <p>Please send any inquiries you may have to mail@plaza.one.</p>
+        Space::with_height(4),
         text("Please send any inquiries you may have to mail@plaza.one.")
             .size(12)
             .line_height(lh),
-        Space::with_height(4), // default <p> margin
-        // <p class="mb-2">Join our community Discord server!</p>
+        Space::with_height(4),
         text("Join our community Discord server!")
             .size(12)
             .line_height(lh),
-        Space::with_height(8), // mb-2
-        // <p><strong>Submissions</strong></p>
+        Space::with_height(8),
         text("Submissions").size(12).font(bold).line_height(lh),
         Space::with_height(4),
-        // <p class="mb-2">Want to submit music for broadcast? Please use this form.</p>
         text("Want to submit music for broadcast? Please use this form.")
             .size(12)
             .line_height(lh),
-        Space::with_height(8), // mb-2
-        // <p class="mb-2"><strong>Mobile applications (iOS / Android)</strong><br><a>Show more</a></p>
+        Space::with_height(8),
         text("Mobile applications (iOS / Android)")
             .size(12)
             .font(bold)
@@ -88,26 +74,23 @@ pub fn view(wid: iced::window::Id) -> Element<'static, Msg> {
         text("Show more")
             .size(12)
             .line_height(lh)
-            .color(iced::Color::from_rgb(0.024, 0.271, 0.678)), // link color #0645AD
-        Space::with_height(8), // mb-2
-        // <p><strong>Useful links</strong></p>
+            .color(iced::Color::from_rgb(0.024, 0.271, 0.678)),
+        Space::with_height(8),
         text("Useful links").size(12).font(bold).line_height(lh),
         Space::with_height(4),
-        // <p class="mb-2">Playlists<br>M3U (Winamp)  PLS (Foobar2000)</p>
         text("Playlists").size(12).line_height(lh),
         row![
             text("M3U (Winamp)")
                 .size(12)
                 .line_height(lh)
                 .color(iced::Color::from_rgb(0.024, 0.271, 0.678)),
-            Space::with_width(12), // ms-3
+            Space::with_width(12),
             text("PLS (Foobar2000)")
                 .size(12)
                 .line_height(lh)
                 .color(iced::Color::from_rgb(0.024, 0.271, 0.678)),
         ],
-        Space::with_height(8), // mb-2
-        // <p>Streams<br>...</p>
+        Space::with_height(8),
         text("Streams").size(12).line_height(lh),
         text("http://radio.plaza.one/mp3 (mp3 / 128kbps)")
             .size(12)
@@ -158,24 +141,22 @@ pub fn view(wid: iced::window::Id) -> Element<'static, Msg> {
         close_btn,
     ];
 
-    // ── Status bar: "Version: {version}" ────────────────────────
     let version = env!("CARGO_PKG_VERSION");
     let status = status_bar(vec![text(format!("Version: {}", version))
         .size(10)
         .width(Fill)
         .into()]);
 
-    // Outer layout: p-2 = 8px padding
     column![
         top_row,
-        Space::with_height(8), // mb-2 on top row
+        Space::with_height(8),
         panel,
-        Space::with_height(16), // mb-3 on panel
+        Space::with_height(16),
         bottom,
         Space::with_height(2),
         status,
     ]
     .spacing(0)
-    .padding(8) // p-2
+    .padding(8)
     .into()
 }

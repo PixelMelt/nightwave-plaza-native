@@ -17,7 +17,6 @@ pub fn view(state: &Plaza, wid: iced::window::Id) -> Element<Msg> {
         ..iced::Font::DEFAULT
     };
 
-    // ── Date range header (#11) ─────────────────────────────────
     let header: Element<Msg> = if !state.history_date_from.is_empty() {
         row![
             text(format!(
@@ -36,7 +35,6 @@ pub fn view(state: &Plaza, wid: iced::window::Id) -> Element<Msg> {
         Space::with_height(0).into()
     };
 
-    // ── List area ───────────────────────────────────────────────
     let list_area: Element<Msg> = if state.history_loading {
         d3_sunken(
             container(
@@ -69,7 +67,6 @@ pub fn view(state: &Plaza, wid: iced::window::Id) -> Element<Msg> {
         let mut list = Column::new().spacing(0).width(Fill);
 
         for (i, entry) in state.history.iter().enumerate() {
-            // ── Timestamp: day on first line, time on second (#13) ──
             let day = format_timestamp_day(entry.played_at);
             let time = format_timestamp_time(entry.played_at);
 
@@ -89,7 +86,6 @@ pub fn view(state: &Plaza, wid: iced::window::Id) -> Element<Msg> {
             .spacing(4)
             .padding([3, 4]);
 
-            // ── Clickable rows -> Song Info (#14) ───────────────
             let entry_row: Element<Msg> = if !entry.song.id.is_empty() {
                 button(entry_content)
                     .on_press(Msg::OpenSongInfo(entry.song.id.clone()))
@@ -118,7 +114,6 @@ pub fn view(state: &Plaza, wid: iced::window::Id) -> Element<Msg> {
         .into()
     };
 
-    // ── Pagination (#17, #50): input field + hand icon buttons ──
     let pages_row = if state.history_pages > 1 {
         let prev_msg = if state.history_page > 1 && !state.history_loading {
             Some(Msg::HistoryPage(state.history_page - 1))
@@ -155,7 +150,6 @@ pub fn view(state: &Plaza, wid: iced::window::Id) -> Element<Msg> {
         .align_y(iced::Alignment::Center)
         .padding([4, 0]);
 
-    // ── Status bar with correct total (#10, #16, #54, #55) ──────
     let status = status_bar(vec![
         text(format!("Pages: {}", state.history_pages))
             .size(10)

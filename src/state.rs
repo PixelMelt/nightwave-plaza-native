@@ -20,8 +20,6 @@ pub enum WinType {
 }
 
 impl WinType {
-    /// Window sizes — must account for custom title bar (~26px) since OS decorations are disabled.
-    /// Widths match webapp windowsConfig.ts exactly.
     pub fn size(&self) -> iced::Size {
         match self {
             WinType::History => iced::Size::new(400.0, 630.0),
@@ -37,7 +35,6 @@ impl WinType {
         }
     }
 
-    /// Window title matching webapp locale keys
     pub fn title(&self) -> &'static str {
         match self {
             WinType::History => "Play History",
@@ -62,7 +59,7 @@ pub struct Plaza {
     pub volume: f32,
     pub artwork_handle: Option<image::Handle>,
     pub artwork_url: String,
-    // History
+
     pub history: Vec<HistoryEntry>,
     pub history_page: u32,
     pub history_pages: u32,
@@ -70,50 +67,50 @@ pub struct Plaza {
     pub history_date_from: String,
     pub history_date_to: String,
     pub history_page_input: String,
-    // Ratings
+
     pub ratings: Vec<RatingEntry>,
     pub ratings_page: u32,
     pub ratings_pages: u32,
     pub ratings_range: String,
     pub ratings_total: u32,
     pub ratings_page_input: String,
-    // Loading flags
+
     pub history_loading: bool,
     pub ratings_loading: bool,
-    // Song Info
+
     pub song_info: Option<api::SongResponse>,
     pub song_info_loading: bool,
     pub song_info_artwork: Option<image::Handle>,
-    // Timing
+
     pub elapsed: f64,
     pub last_tick: Instant,
     pub error_msg: Option<String>,
-    // UI transient state
+
     pub welcome_until: Option<Instant>,
     pub volume_text: Option<String>,
     pub volume_text_until: Option<Instant>,
-    // ── Auth / User ─────────────────────────────────────────────
+
     pub auth_token: Option<String>,
     pub user: Option<api::User>,
     pub user_stats: Option<api::UserStatsData>,
     pub stats_loading: bool,
-    // Reaction state (0=none, 1=like, 2=favorite)
+
     pub reaction_rate: u8,
     pub reaction_song_id: String,
-    // Login form
+
     pub login_username: String,
     pub login_password: String,
     pub login_remember: bool,
     pub login_loading: bool,
     pub login_error: Option<String>,
-    // Register form
+
     pub register_username: String,
     pub register_email: String,
     pub register_password: String,
     pub register_password_repeat: String,
     pub register_loading: bool,
     pub register_error: Option<String>,
-    // News
+
     pub news: Vec<api::NewsArticle>,
     pub news_page: u32,
     pub news_pages: u32,
@@ -132,35 +129,35 @@ pub enum Msg {
     OpenWin(WinType),
     CloseWin(iced::window::Id),
     WinClosed(iced::window::Id),
-    // History
+
     HistoryOk(Vec<HistoryEntry>, u32, u32, Option<api::DateRange>),
     HistoryErr(String),
     HistoryPage(u32),
     HistoryPageInput(String),
     HistoryPageSubmit,
-    // Ratings
+
     RatingsOk(Vec<RatingEntry>, u32, u32),
     RatingsErr(String),
     RatingsPage(u32),
     RatingsRange(String),
     RatingsPageInput(String),
     RatingsPageSubmit,
-    // Song Info
+
     OpenSongInfo(String),
     SongInfoOk(api::SongResponse),
     SongInfoErr(String),
     SongInfoArtworkOk(Vec<u8>),
     SongInfoArtworkErr,
-    // ── Auth ─────────────────────────────────────────────────────
-    SessionRestored(api::User, String), // (user, token) — loaded from disk on startup
-    // Login form
+
+    SessionRestored(api::User, String),
+
     LoginUsername(String),
     LoginPassword(String),
     LoginRemember(bool),
     LoginSubmit,
     LoginOk(api::LoginResponse),
     LoginErr(String),
-    // Register form
+
     RegisterUsername(String),
     RegisterEmail(String),
     RegisterPassword(String),
@@ -168,26 +165,26 @@ pub enum Msg {
     RegisterSubmit,
     RegisterOk(api::User),
     RegisterErr(String),
-    // Logout
+
     Logout,
     LogoutOk,
     LogoutErr(String),
-    // User stats
+
     StatsOk(api::UserStatsData),
     StatsErr(String),
-    // Reactions (like/favorite cycle)
+
     React,
     ReactOk(u32),
     ReactErr(String),
-    // News
+
     NewsOk(Vec<api::NewsArticle>, u32),
     NewsErr(String),
     NewsPage(u32),
-    // Window chrome (custom title bar)
+
     MinimizeWin(iced::window::Id),
     DragWin(iced::window::Id),
     OpenUrl(String),
-    // General
+
     Refresh,
     DismissErr,
 }

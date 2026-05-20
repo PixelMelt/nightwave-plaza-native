@@ -12,11 +12,9 @@ pub fn view(state: &Plaza, wid: iced::window::Id) -> Element<Msg> {
         ..iced::Font::DEFAULT
     };
 
-    // ── Menu bar: Edit Profile | Change Password | Log Out ──────
-    // Webapp: <win-menu class="mb-1"> with 3 actions
     let menu = row![
-        menu_btn_underline("Edit Profile", Msg::Refresh), // placeholder — no edit window yet
-        menu_btn_underline("Change Password", Msg::Refresh), // placeholder
+        menu_btn_underline("Edit Profile", Msg::Refresh),
+        menu_btn_underline("Change Password", Msg::Refresh),
         menu_btn_underline("Log Out", Msg::Logout),
     ]
     .padding([1, 1]);
@@ -27,23 +25,21 @@ pub fn view(state: &Plaza, wid: iced::window::Id) -> Element<Msg> {
         ("...", "...", 0)
     };
 
-    // ── User card panel (win-panel p-2 mb-2) ────────────────────
-    // Webapp: row with user_card.png (col-2) + username/email (col ps-2)
     let user_card_img = image(image::Handle::from_bytes(USER_CARD_IMG))
         .width(32)
         .height(32);
 
     let user_info = column![
-        text(username).size(14).font(bold), // .username: 14px, font-weight 700
-        Space::with_height(4),              // mb-1
+        text(username).size(14).font(bold),
+        Space::with_height(4),
         text(email)
             .size(11)
-            .color(iced::Color::from_rgb(0.5, 0.5, 0.5)), // .text-muted
+            .color(iced::Color::from_rgb(0.5, 0.5, 0.5)),
     ];
 
     let user_card = row![
-        container(user_card_img).center_y(Fill), // align-self-center
-        Space::with_width(8),                    // ps-2
+        container(user_card_img).center_y(Fill),
+        Space::with_width(8),
         user_info,
     ]
     .align_y(iced::Alignment::Center);
@@ -52,10 +48,9 @@ pub fn view(state: &Plaza, wid: iced::window::Id) -> Element<Msg> {
         container(user_card)
             .style(theme::panel)
             .width(Fill)
-            .padding(8), // p-2
+            .padding(8),
     );
 
-    // ── Statistics group box ────────────────────────────────────
     let (likes_str, favs_str) = if let Some(ref stats) = state.user_stats {
         (
             format!("{}", stats.reactions),
@@ -67,9 +62,6 @@ pub fn view(state: &Plaza, wid: iced::window::Id) -> Element<Msg> {
         ("0".into(), "0".into())
     };
 
-    // Webapp: <win-group-box> with label overlapping top border
-    // Group box = sunken border body + label span at top
-    // Label sits at top: height 5px container with absolute span
     let stats_label = container(text(" Statistics ").size(11).font(bold))
         .style(theme::group_label)
         .padding([0, 4]);
@@ -92,12 +84,11 @@ pub fn view(state: &Plaza, wid: iced::window::Id) -> Element<Msg> {
             container(stats_content)
                 .style(theme::panel)
                 .width(Fill)
-                .padding(8), // p-2 on body
+                .padding(8),
         ),
     ]
     .spacing(0);
 
-    // ── Account group box ──────────────────────────────────────
     let registered = if created_at > 0 {
         format_date(created_at)
     } else {
@@ -127,17 +118,15 @@ pub fn view(state: &Plaza, wid: iced::window::Id) -> Element<Msg> {
 
     let info_row = row![
         container(stats_box).width(Fill),
-        Space::with_width(8), // ps-2 gap between columns
+        Space::with_width(8),
         container(account_box).width(Fill),
     ];
 
-    // ── Bottom buttons: Favorites (left) | Close (right) ────────
-    // Webapp: <win-button class="px-3">Favorites</win-button> + <win-button block>Close</win-button>
     let favorites_btn = d3_raised(
         button(text("Favorites").size(11).center())
-            .on_press(Msg::Refresh) // placeholder — no favorites window yet
+            .on_press(Msg::Refresh)
             .style(theme::raised)
-            .padding([4, 12]), // px-3 = 12px sides
+            .padding([4, 12]),
     );
 
     let close_btn = d3_raised(
@@ -149,10 +138,9 @@ pub fn view(state: &Plaza, wid: iced::window::Id) -> Element<Msg> {
     let bottom = row![
         favorites_btn,
         horizontal_space(),
-        container(close_btn).width(iced::Length::FillPortion(4)), // col-4
+        container(close_btn).width(iced::Length::FillPortion(4)),
     ];
 
-    // ── Status bar ──────────────────────────────────────────────
     let status = status_bar(vec![text(format!("Logged in as: {}", username))
         .size(10)
         .width(Fill)
@@ -162,12 +150,12 @@ pub fn view(state: &Plaza, wid: iced::window::Id) -> Element<Msg> {
         menu,
         container(column![
             card_panel,
-            Space::with_height(8), // mb-2
+            Space::with_height(8),
             info_row,
-            Space::with_height(16), // mb-3
+            Space::with_height(16),
             bottom,
         ])
-        .padding(8), // p-2
+        .padding(8),
         status,
     ]
     .spacing(0)
