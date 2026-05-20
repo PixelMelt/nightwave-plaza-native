@@ -1,0 +1,19 @@
+[package]
+name = "nightwave-plaza"
+version = "0.1.0"
+edition = "2021"
+description = "Native Nightwave Plaza client with Win98 aesthetic"
+
+[dependencies]
+iced = { version = "0.13", features = ["tokio", "image", "svg"] }
+tokio = { version = "1", features = ["full"] }
+reqwest = { version = "0.12", features = ["json", "stream", "blocking"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+rodio = { version = "0.19", features = ["symphonia-all"] }
+image = "0.24"
+rust_socketio = { version = "0.6", features = ["async"] }
+futures = "0.3"
+bytes = "1"
+chrono = "0.4"
+dirs = "5"

@@ -1,0 +1,12 @@
+pub mod about;
+pub mod credits;
+pub mod history;
+pub mod news;
+pub mod player;
+pub mod ratings;
+pub mod song_info;
+pub mod support;
+pub mod user_login;
+pub mod user_profile;
+pub mod user_register;
+pub mod widgets;
