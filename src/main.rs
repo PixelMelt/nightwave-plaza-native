@@ -6,16 +6,59 @@ mod theme;
 mod views;
 
 use audio::AudioPlayer;
+use futures::channel::mpsc as futures_mpsc;
 use iced::{Element, Fill, Font, Size, Subscription, Task, Theme};
+use souvlaki::MediaControlEvent;
 use state::{Msg, Plaza, WinType};
+use std::sync::Mutex;
 
-const APP_ICON: &[u8] = include_bytes!("../assets/icons/favicon-32x32.png");
-const TAHOMA: &[u8] = include_bytes!("../assets/fonts/subset-Tahoma.ttf");
-const TAHOMA_BOLD: &[u8] = include_bytes!("../assets/fonts/subset-Tahoma-Bold.ttf");
-const ICONS_FONT: &[u8] = include_bytes!("../assets/fonts/icons.ttf");
+static MEDIA_RX: Mutex<Option<futures_mpsc::UnboundedReceiver<MediaControlEvent>>> =
+    Mutex::new(None);
+
+const APP_ICON: &[u8] = include_bytes!("assets/icons/favicon-32x32.png");
+const TAHOMA: &[u8] = include_bytes!("assets/fonts/subset-Tahoma.ttf");
+const TAHOMA_BOLD: &[u8] = include_bytes!("assets/fonts/subset-Tahoma-Bold.ttf");
+const ICONS_FONT: &[u8] = include_bytes!("assets/fonts/icons.ttf");
 
 fn app_icon() -> Option<iced::window::Icon> {
     iced::window::icon::from_file_data(APP_ICON, Some(::image::ImageFormat::Png)).ok()
+}
+
+// Set NIGHTWAVE_DEV=1 to make every window resizable and log each resize to
+// stderr in a paste-ready form. Useful for dialling in WinType::size() values
+// without recompiling between attempts.
+fn dev_mode() -> bool {
+    static FLAG: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+    *FLAG.get_or_init(|| std::env::var("NIGHTWAVE_DEV").is_ok())
+}
+
+#[cfg(target_os = "linux")]
+fn platform_specific() -> iced::window::settings::PlatformSpecific {
+    iced::window::settings::PlatformSpecific {
+        application_id: "nightwave-plaza".into(),
+        ..Default::default()
+    }
+}
+
+#[cfg(not(target_os = "linux"))]
+fn platform_specific() -> iced::window::settings::PlatformSpecific {
+    iced::window::settings::PlatformSpecific::default()
+}
+
+// Open a URL in the user's default browser. Each desktop OS has its own opener.
+fn open_url(url: &str) {
+    #[cfg(target_os = "macos")]
+    let result = std::process::Command::new("open").arg(url).spawn();
+    #[cfg(target_os = "windows")]
+    let result = std::process::Command::new("cmd")
+        .args(["/C", "start", "", url])
+        .spawn();
+    #[cfg(not(any(target_os = "macos", target_os = "windows")))]
+    let result = std::process::Command::new("xdg-open").arg(url).spawn();
+
+    if let Err(e) = result {
+        eprintln!("Failed to open URL {url}: {e}");
+    }
 }
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -30,7 +73,6 @@ fn load_cjk_font() -> Option<Vec<u8>> {
     ];
     for path in &paths {
         if let Ok(data) = std::fs::read(path) {
-            eprintln!("Loaded CJK font from {}", path);
             return Some(data);
         }
     }
@@ -67,16 +109,15 @@ fn main() -> iced::Result {
             ..Font::DEFAULT
         })
         .run_with(|| {
-            let player = AudioPlayer::new().ok().map(Arc::new);
+            let (media_tx, media_rx) = futures_mpsc::unbounded::<MediaControlEvent>();
+            *MEDIA_RX.lock().unwrap() = Some(media_rx);
+            let player = AudioPlayer::new(Some(media_tx)).ok().map(Arc::new);
             let (main_id, open_task) = iced::window::open(iced::window::Settings {
-                size: Size::new(450.0, 200.0),
-                resizable: false,
-                decorations: false,
+                size: Size::new(450.0, 218.0),
+                resizable: dev_mode(),
+                decorations: dev_mode(),
                 icon: app_icon(),
-                platform_specific: iced::window::settings::PlatformSpecific {
-                    application_id: "nightwave-plaza".into(),
-                    ..Default::default()
-                },
+                platform_specific: platform_specific(),
                 ..Default::default()
             });
             let mut state = Plaza {
@@ -87,24 +128,18 @@ fn main() -> iced::Result {
                 volume: 50.0,
                 artwork_handle: None,
                 artwork_url: String::new(),
-                history: Vec::new(),
-                history_page: 1,
-                history_pages: 0,
-                history_total: 0,
-                history_date_from: String::new(),
-                history_date_to: String::new(),
-                history_page_input: "1".into(),
-                ratings: Vec::new(),
-                ratings_page: 1,
-                ratings_pages: 0,
-                ratings_range: "overtime".into(),
-                ratings_total: 0,
-                ratings_page_input: "1".into(),
-                history_loading: false,
-                ratings_loading: false,
-                song_info: None,
-                song_info_loading: false,
-                song_info_artwork: None,
+                history: crate::state::HistoryState { page: 1, page_input: "1".into(), ..Default::default() },
+                ratings: crate::state::RatingsState { page: 1, page_input: "1".into(), range: "overtime".into(), ..Default::default() },
+                song_info: crate::state::SongInfoState::default(),
+                login: crate::state::LoginState::default(),
+                register: crate::state::RegisterState::default(),
+                news: crate::state::NewsState { page: 1, ..Default::default() },
+                favorites: crate::state::FavoritesState { page: 1, page_input: "1".into(), ..Default::default() },
+                export: crate::state::ExportState::default(),
+                profile_edit: crate::state::ProfileEditState::default(),
+                password: crate::state::PasswordState::default(),
+                delete: crate::state::DeleteState::default(),
+                timer: crate::state::TimerState::default(),
                 elapsed: 0.0,
                 last_tick: Instant::now(),
                 error_msg: None,
@@ -118,24 +153,6 @@ fn main() -> iced::Result {
                 stats_loading: false,
                 reaction_rate: 0,
                 reaction_song_id: String::new(),
-
-                login_username: String::new(),
-                login_password: String::new(),
-                login_remember: false,
-                login_loading: false,
-                login_error: None,
-
-                register_username: String::new(),
-                register_email: String::new(),
-                register_password: String::new(),
-                register_password_repeat: String::new(),
-                register_loading: false,
-                register_error: None,
-
-                news: Vec::new(),
-                news_page: 1,
-                news_pages: 0,
-                news_loading: false,
             };
 
             let session_task = if let Some(saved) = session::load() {
@@ -182,7 +199,7 @@ fn win_title(state: &Plaza, wid: iced::window::Id) -> String {
     }
 }
 
-fn win_view(state: &Plaza, wid: iced::window::Id) -> Element<Msg> {
+fn win_view(state: &Plaza, wid: iced::window::Id) -> Element<'_, Msg> {
     let (inner, title, show_close) = if wid == state.main_window {
         (
             views::player::view(state),
@@ -201,6 +218,12 @@ fn win_view(state: &Plaza, wid: iced::window::Id) -> Element<Msg> {
             Some(WinType::UserRegister) => views::user_register::view(state, wid),
             Some(WinType::Credits) => views::credits::view(wid),
             Some(WinType::News) => views::news::view(state, wid),
+            Some(WinType::UserFavorites) => views::user_favorites::view(state, wid),
+            Some(WinType::UserFavoritesExport) => views::user_favorites_export::view(state, wid),
+            Some(WinType::UserProfileEdit) => views::user_profile_edit::view(state, wid),
+            Some(WinType::UserPassword) => views::user_password::view(state, wid),
+            Some(WinType::UserProfileDelete) => views::user_profile_delete::view(state, wid),
+            Some(WinType::PlayerTimer) => views::player_timer::view(state, wid),
             None => iced::widget::text("").into(),
         };
         let title = match state.child_windows.get(&wid) {
@@ -217,7 +240,15 @@ fn win_view(state: &Plaza, wid: iced::window::Id) -> Element<Msg> {
     };
     let title_bar = views::widgets::title_bar(title, wid, wt, true, show_close);
 
+    // Plaza layout inside `.win-window`:
+    //   - `.inner` has 2px padding (the container padding below),
+    //   - header has 1px margin on all sides,
+    //   - content has 1px margin on top/sides, 0 on bottom,
+    //   - approximated here with column padding(1) + spacing(1) (the gap is
+    //     1px after vertical margin collapsing on adjacent siblings).
     let framed = iced::widget::column![title_bar, inner]
+        .spacing(1)
+        .padding(1)
         .width(Fill)
         .height(Fill);
 
@@ -238,7 +269,34 @@ fn subscription(_state: &Plaza) -> Subscription<Msg> {
         iced::time::every(Duration::from_millis(500)).map(|_| Msg::Tick(Instant::now())),
         iced::time::every(Duration::from_secs(5)).map(|_| Msg::Refresh),
         iced::window::close_events().map(Msg::WinClosed),
+        iced::window::resize_events().map(|(id, size)| Msg::WinResized(id, size)),
+        // Spacebar toggles play/pause. `id` is the focused window the key event
+        // was routed to; `update` only acts when it's the player window. The
+        // `Ignored` guard means a focused text field consumes the space first,
+        // so the shortcut never fires mid-typing.
+        iced::event::listen_with(|event, status, id| match event {
+            iced::Event::Keyboard(iced::keyboard::Event::KeyPressed {
+                key: iced::keyboard::Key::Named(iced::keyboard::key::Named::Space),
+                ..
+            }) if status == iced::event::Status::Ignored => Some(Msg::SpaceToggle(id)),
+            _ => None,
+        }),
+        Subscription::run(media_event_stream),
     ])
+}
+
+fn media_event_stream() -> impl futures::Stream<Item = Msg> {
+    iced::stream::channel(64, |mut output| async move {
+        use futures::SinkExt;
+        use futures::StreamExt;
+
+        let Some(mut rx) = MEDIA_RX.lock().ok().and_then(|mut g| g.take()) else {
+            return;
+        };
+        while let Some(event) = rx.next().await {
+            let _ = output.send(Msg::Media(event)).await;
+        }
+    })
 }
 
 fn update(state: &mut Plaza, msg: Msg) -> Task<Msg> {
@@ -249,6 +307,9 @@ fn update(state: &mut Plaza, msg: Msg) -> Task<Msg> {
             state.status = status;
             state.elapsed = state.status.song.position;
             state.last_tick = Instant::now();
+            if let Some(ref p) = state.player {
+                p.update_metadata(&state.status.song);
+            }
             if need {
                 state.artwork_url = new_art.clone();
                 Task::perform(
@@ -273,9 +334,7 @@ fn update(state: &mut Plaza, msg: Msg) -> Task<Msg> {
         Msg::Tick(now) => {
             let dt = now.duration_since(state.last_tick).as_secs_f64();
             state.last_tick = now;
-            if state.player.as_ref().map_or(false, |p| p.is_playing()) {
-                state.elapsed += dt;
-            }
+            state.elapsed += dt;
             if let Some(until) = state.welcome_until {
                 if now >= until {
                     state.welcome_until = None;
@@ -285,6 +344,14 @@ fn update(state: &mut Plaza, msg: Msg) -> Task<Msg> {
                 if now >= until {
                     state.volume_text = None;
                     state.volume_text_until = None;
+                }
+            }
+            if let Some(until) = state.timer.until {
+                if now >= until {
+                    state.timer.until = None;
+                    if let Some(ref p) = state.player {
+                        p.stop();
+                    }
                 }
             }
             Task::none()
@@ -326,31 +393,35 @@ fn update(state: &mut Plaza, msg: Msg) -> Task<Msg> {
             }
             let (id, task) = iced::window::open(iced::window::Settings {
                 size: wt.size(),
-                resizable: matches!(wt, WinType::History | WinType::Ratings | WinType::News),
-                decorations: false,
+                resizable: dev_mode()
+                    || matches!(
+                        wt,
+                        WinType::History | WinType::Ratings | WinType::News | WinType::UserFavorites
+                    ),
+                decorations: dev_mode(),
                 icon: app_icon(),
                 ..Default::default()
             });
             state.child_windows.insert(id, wt);
             let mut tasks = vec![task.discard()];
             match wt {
-                WinType::History if state.history.is_empty() => {
-                    state.history_loading = true;
+                WinType::History if state.history.list.is_empty() => {
+                    state.history.loading = true;
                     tasks.push(Task::perform(api::fetch_history(1), |r| match r {
                         Ok(h) => {
-                            Msg::HistoryOk(h.data, h.meta.last_page, h.meta.total, h.date_range)
+                            Msg::History(crate::state::HistoryMsg::Ok(h.data, h.meta.last_page, h.meta.total, h.date_range))
                         }
-                        Err(e) => Msg::HistoryErr(e.to_string()),
+                        Err(e) => Msg::History(crate::state::HistoryMsg::Err(e.to_string())),
                     }));
                 }
-                WinType::Ratings if state.ratings.is_empty() => {
-                    state.ratings_loading = true;
-                    let range = state.ratings_range.clone();
+                WinType::Ratings if state.ratings.list.is_empty() => {
+                    state.ratings.loading = true;
+                    let range = state.ratings.range.clone();
                     tasks.push(Task::perform(
                         async move { api::fetch_ratings(&range, 1).await },
                         |r| match r {
-                            Ok(h) => Msg::RatingsOk(h.data, h.meta.last_page, h.meta.total),
-                            Err(e) => Msg::RatingsErr(e.to_string()),
+                            Ok(h) => Msg::Ratings(crate::state::RatingsMsg::Ok(h.data, h.meta.last_page, h.meta.total)),
+                            Err(e) => Msg::Ratings(crate::state::RatingsMsg::Err(e.to_string())),
                         },
                     ));
                 }
@@ -367,12 +438,49 @@ fn update(state: &mut Plaza, msg: Msg) -> Task<Msg> {
                         ));
                     }
                 }
-                WinType::News if state.news.is_empty() => {
-                    state.news_loading = true;
+                WinType::News if state.news.list.is_empty() => {
+                    state.news.loading = true;
                     tasks.push(Task::perform(api::fetch_news(1), |r| match r {
-                        Ok(n) => Msg::NewsOk(n.data, n.meta.last_page),
-                        Err(e) => Msg::NewsErr(e.to_string()),
+                        Ok(n) => Msg::News(crate::state::NewsMsg::Ok(n.data, n.meta.last_page)),
+                        Err(e) => Msg::News(crate::state::NewsMsg::Err(e.to_string())),
                     }));
+                }
+                WinType::UserFavorites => {
+                    state.favorites.deleted.clear();
+                    state.favorites.page = 1;
+                    state.favorites.page_input = "1".into();
+                    if let Some(ref token) = state.auth_token {
+                        state.favorites.loading = true;
+                        let token = token.clone();
+                        tasks.push(Task::perform(
+                            async move { api::fetch_favorites(&token, 1).await },
+                            |r| match r {
+                                Ok(f) => Msg::Favorites(crate::state::FavoritesMsg::Ok(
+                                    f.data,
+                                    f.meta.last_page,
+                                    f.meta.total,
+                                )),
+                                Err(e) => Msg::Favorites(crate::state::FavoritesMsg::Err(e)),
+                            },
+                        ));
+                    }
+                }
+                WinType::UserFavoritesExport => {
+                    state.export = crate::state::ExportState::default();
+                }
+                WinType::UserProfileEdit => {
+                    if let Some(ref u) = state.user {
+                        state.profile_edit.username = u.username.clone();
+                        state.profile_edit.email = u.email.clone();
+                    }
+                    state.profile_edit.current_password.clear();
+                    state.profile_edit.error = None;
+                }
+                WinType::UserPassword => {
+                    state.password = crate::state::PasswordState::default();
+                }
+                WinType::UserProfileDelete => {
+                    state.delete = crate::state::DeleteState::default();
                 }
                 _ => {}
             }
@@ -394,119 +502,26 @@ fn update(state: &mut Plaza, msg: Msg) -> Task<Msg> {
             }
         }
 
-        Msg::HistoryOk(songs, pages, total, date_range) => {
-            state.history_loading = false;
-            state.history = songs;
-            state.history_pages = pages;
-            state.history_total = total;
-            state.history_page_input = state.history_page.to_string();
-            if let Some(dr) = date_range {
-                state.history_date_from = views::widgets::format_date(dr.from_date);
-                state.history_date_to = views::widgets::format_date(dr.to_date);
-            }
-            Task::none()
-        }
-        Msg::HistoryErr(e) => {
-            state.history_loading = false;
-            state.error_msg = Some(e);
-            Task::none()
-        }
-        Msg::HistoryPage(p) => {
-            state.history_page = p;
-            state.history_page_input = p.to_string();
-            state.history_loading = true;
-            Task::perform(api::fetch_history(p), |r| match r {
-                Ok(h) => Msg::HistoryOk(h.data, h.meta.last_page, h.meta.total, h.date_range),
-                Err(e) => Msg::HistoryErr(e.to_string()),
-            })
-        }
-        Msg::HistoryPageInput(s) => {
-            if s.chars().all(|c| c.is_ascii_digit()) || s.is_empty() {
-                state.history_page_input = s;
-            }
-            Task::none()
-        }
-        Msg::HistoryPageSubmit => {
-            if let Ok(p) = state.history_page_input.parse::<u32>() {
-                let p = p.clamp(1, state.history_pages.max(1));
-                if p != state.history_page {
-                    return update(state, Msg::HistoryPage(p));
-                }
-            }
-            state.history_page_input = state.history_page.to_string();
-            Task::none()
-        }
+        // History extraction will be above
+        Msg::History(h_msg) => update_history(state, h_msg),
 
-        Msg::RatingsOk(songs, pages, total) => {
-            state.ratings_loading = false;
-            state.ratings = songs;
-            state.ratings_pages = pages;
-            state.ratings_total = total;
-            state.ratings_page_input = state.ratings_page.to_string();
-            Task::none()
-        }
-        Msg::RatingsErr(e) => {
-            state.ratings_loading = false;
-            state.error_msg = Some(e);
-            Task::none()
-        }
-        Msg::RatingsPage(p) => {
-            state.ratings_page = p;
-            state.ratings_page_input = p.to_string();
-            state.ratings_loading = true;
-            let range = state.ratings_range.clone();
-            Task::perform(
-                async move { api::fetch_ratings(&range, p).await },
-                |r| match r {
-                    Ok(h) => Msg::RatingsOk(h.data, h.meta.last_page, h.meta.total),
-                    Err(e) => Msg::RatingsErr(e.to_string()),
-                },
-            )
-        }
-        Msg::RatingsRange(range) => {
-            state.ratings_range = range.clone();
-            state.ratings_page = 1;
-            state.ratings_page_input = "1".into();
-            state.ratings.clear();
-            state.ratings_loading = true;
-            Task::perform(
-                async move { api::fetch_ratings(&range, 1).await },
-                |r| match r {
-                    Ok(h) => Msg::RatingsOk(h.data, h.meta.last_page, h.meta.total),
-                    Err(e) => Msg::RatingsErr(e.to_string()),
-                },
-            )
-        }
-        Msg::RatingsPageInput(s) => {
-            if s.chars().all(|c| c.is_ascii_digit()) || s.is_empty() {
-                state.ratings_page_input = s;
-            }
-            Task::none()
-        }
-        Msg::RatingsPageSubmit => {
-            if let Ok(p) = state.ratings_page_input.parse::<u32>() {
-                let p = p.clamp(1, state.ratings_pages.max(1));
-                if p != state.ratings_page {
-                    return update(state, Msg::RatingsPage(p));
-                }
-            }
-            state.ratings_page_input = state.ratings_page.to_string();
-            Task::none()
-        }
+        Msg::Ratings(r_msg) => update_ratings(state, r_msg),
 
-        Msg::OpenSongInfo(song_id) => {
+        Msg::SongInfo(crate::state::SongInfoMsg::Open(song_id)) => {
             for (&id, &t) in &state.child_windows {
                 if t == WinType::SongInfo {
-                    state.song_info = None;
-                    state.song_info_loading = true;
-                    state.song_info_artwork = None;
+                    state.song_info.data = None;
+                    state.song_info.loading = true;
+                    state.song_info.artwork = None;
+                    state.song_info.favorite_id = None;
+                    state.song_info.fav_sending = false;
                     return Task::batch([
                         iced::window::gain_focus(id),
                         Task::perform(
                             async move { api::fetch_song(&song_id).await },
                             |r| match r {
-                                Ok(s) => Msg::SongInfoOk(s),
-                                Err(e) => Msg::SongInfoErr(e.to_string()),
+                                Ok(s) => Msg::SongInfo(crate::state::SongInfoMsg::Ok(s)),
+                                Err(e) => Msg::SongInfo(crate::state::SongInfoMsg::Err(e.to_string())),
                             },
                         ),
                     ]);
@@ -514,30 +529,32 @@ fn update(state: &mut Plaza, msg: Msg) -> Task<Msg> {
             }
             let (id, task) = iced::window::open(iced::window::Settings {
                 size: WinType::SongInfo.size(),
-                resizable: false,
-                decorations: false,
+                resizable: dev_mode(),
+                decorations: dev_mode(),
                 icon: app_icon(),
                 ..Default::default()
             });
             state.child_windows.insert(id, WinType::SongInfo);
-            state.song_info = None;
-            state.song_info_loading = true;
-            state.song_info_artwork = None;
+            state.song_info.data = None;
+            state.song_info.loading = true;
+            state.song_info.artwork = None;
+            state.song_info.favorite_id = None;
+            state.song_info.fav_sending = false;
             Task::batch([
                 task.discard(),
                 Task::perform(
                     async move { api::fetch_song(&song_id).await },
                     |r| match r {
-                        Ok(s) => Msg::SongInfoOk(s),
-                        Err(e) => Msg::SongInfoErr(e.to_string()),
+                        Ok(s) => Msg::SongInfo(crate::state::SongInfoMsg::Ok(s)),
+                        Err(e) => Msg::SongInfo(crate::state::SongInfoMsg::Err(e.to_string())),
                     },
                 ),
             ])
         }
-        Msg::SongInfoOk(resp) => {
-            state.song_info_loading = false;
+        Msg::SongInfo(crate::state::SongInfoMsg::Ok(resp)) => {
+            state.song_info.loading = false;
             let art_url = resp.data.artwork_src.clone().unwrap_or_default();
-            state.song_info = Some(resp);
+            state.song_info.data = Some(resp);
             if !art_url.is_empty() && Some(&art_url) != Some(&state.artwork_url) {
                 Task::perform(
                     async move {
@@ -546,26 +563,77 @@ fn update(state: &mut Plaza, msg: Msg) -> Task<Msg> {
                             .map_err(|e| e.to_string())
                     },
                     |r| match r {
-                        Ok(b) => Msg::SongInfoArtworkOk(b),
-                        Err(_) => Msg::SongInfoArtworkErr,
+                        Ok(b) => Msg::SongInfo(crate::state::SongInfoMsg::ArtworkOk(b)),
+                        Err(_) => Msg::SongInfo(crate::state::SongInfoMsg::ArtworkErr),
                     },
                 )
             } else {
-                state.song_info_artwork = state.artwork_handle.clone();
+                state.song_info.artwork = state.artwork_handle.clone();
                 Task::none()
             }
         }
-        Msg::SongInfoErr(e) => {
-            state.song_info_loading = false;
+        Msg::SongInfo(crate::state::SongInfoMsg::Err(e)) => {
+            state.song_info.loading = false;
             state.error_msg = Some(e);
             Task::none()
         }
-        Msg::SongInfoArtworkOk(b) => {
-            state.song_info_artwork = Some(iced::widget::image::Handle::from_bytes(b));
+        Msg::SongInfo(crate::state::SongInfoMsg::ArtworkOk(b)) => {
+            state.song_info.artwork = Some(iced::widget::image::Handle::from_bytes(b));
             Task::none()
         }
-        Msg::SongInfoArtworkErr => {
-            state.song_info_artwork = None;
+        Msg::SongInfo(crate::state::SongInfoMsg::ArtworkErr) => {
+            state.song_info.artwork = None;
+            Task::none()
+        }
+        Msg::SongInfo(crate::state::SongInfoMsg::ToggleFavorite) => {
+            let Some(token) = state.auth_token.clone() else {
+                state.error_msg = Some("Please sign in to favorite songs.".into());
+                return Task::none();
+            };
+            if state.song_info.fav_sending {
+                return Task::none();
+            }
+            let Some(song_id) = state
+                .song_info
+                .data
+                .as_ref()
+                .map(|d| d.data.id.clone())
+                .filter(|id| !id.is_empty())
+            else {
+                return Task::none();
+            };
+
+            state.song_info.fav_sending = true;
+            match state.song_info.favorite_id {
+                Some(fav_id) => Task::perform(
+                    async move { api::delete_favorite(&token, fav_id).await },
+                    |r| match r {
+                        Ok(()) => Msg::SongInfo(crate::state::SongInfoMsg::FavoriteRemoved),
+                        Err(e) => Msg::SongInfo(crate::state::SongInfoMsg::FavoriteErr(e)),
+                    },
+                ),
+                None => Task::perform(
+                    async move { api::add_favorite(&token, &song_id).await },
+                    |r| match r {
+                        Ok(id) => Msg::SongInfo(crate::state::SongInfoMsg::FavoriteAdded(id)),
+                        Err(e) => Msg::SongInfo(crate::state::SongInfoMsg::FavoriteErr(e)),
+                    },
+                ),
+            }
+        }
+        Msg::SongInfo(crate::state::SongInfoMsg::FavoriteAdded(id)) => {
+            state.song_info.fav_sending = false;
+            state.song_info.favorite_id = Some(id);
+            Task::none()
+        }
+        Msg::SongInfo(crate::state::SongInfoMsg::FavoriteRemoved) => {
+            state.song_info.fav_sending = false;
+            state.song_info.favorite_id = None;
+            Task::none()
+        }
+        Msg::SongInfo(crate::state::SongInfoMsg::FavoriteErr(e)) => {
+            state.song_info.fav_sending = false;
+            state.error_msg = Some(e);
             Task::none()
         }
 
@@ -576,49 +644,49 @@ fn update(state: &mut Plaza, msg: Msg) -> Task<Msg> {
             Task::none()
         }
 
-        Msg::LoginUsername(s) => {
-            state.login_username = s;
+        Msg::Login(crate::state::LoginMsg::Username(s)) => {
+            state.login.username = s;
             Task::none()
         }
-        Msg::LoginPassword(s) => {
-            state.login_password = s;
+        Msg::Login(crate::state::LoginMsg::Password(s)) => {
+            state.login.password = s;
             Task::none()
         }
-        Msg::LoginRemember(b) => {
-            state.login_remember = b;
+        Msg::Login(crate::state::LoginMsg::Remember(b)) => {
+            state.login.remember = b;
             Task::none()
         }
-        Msg::LoginSubmit => {
-            if state.login_username.is_empty() || state.login_password.is_empty() {
-                state.login_error = Some("Please enter a username and password.".into());
+        Msg::Login(crate::state::LoginMsg::Submit) => {
+            if state.login.username.is_empty() || state.login.password.is_empty() {
+                state.login.error = Some("Please enter a username and password.".into());
                 return Task::none();
             }
-            state.login_loading = true;
-            state.login_error = None;
-            let username = state.login_username.clone();
-            let password = state.login_password.clone();
+            state.login.loading = true;
+            state.login.error = None;
+            let username = state.login.username.clone();
+            let password = state.login.password.clone();
             Task::perform(
                 async move { api::login(&username, &password).await },
                 |r| match r {
-                    Ok(resp) => Msg::LoginOk(resp),
-                    Err(e) => Msg::LoginErr(e),
+                    Ok(resp) => Msg::Login(crate::state::LoginMsg::Ok(resp)),
+                    Err(e) => Msg::Login(crate::state::LoginMsg::Err(e)),
                 },
             )
         }
-        Msg::LoginOk(resp) => {
-            state.login_loading = false;
+        Msg::Login(crate::state::LoginMsg::Ok(resp)) => {
+            state.login.loading = false;
 
-            if state.login_remember {
+            if state.login.remember {
                 if let Some(ref token) = resp.token {
                     session::save(token, &resp.data);
                 }
             }
             state.auth_token = resp.token;
             state.user = Some(resp.data);
-            state.login_username.clear();
-            state.login_password.clear();
-            state.login_remember = false;
-            state.login_error = None;
+            state.login.username.clear();
+            state.login.password.clear();
+            state.login.remember = false;
+            state.login.error = None;
 
             let mut close_task = Task::none();
             for (&id, &t) in &state.child_windows {
@@ -630,78 +698,78 @@ fn update(state: &mut Plaza, msg: Msg) -> Task<Msg> {
             state.child_windows.retain(|_, t| *t != WinType::UserLogin);
             close_task
         }
-        Msg::LoginErr(e) => {
-            state.login_loading = false;
-            state.login_error = Some(e);
+        Msg::Login(crate::state::LoginMsg::Err(e)) => {
+            state.login.loading = false;
+            state.login.error = Some(e);
             Task::none()
         }
 
-        Msg::RegisterUsername(s) => {
-            state.register_username = s;
+        Msg::Register(crate::state::RegisterMsg::Username(s)) => {
+            state.register.username = s;
             Task::none()
         }
-        Msg::RegisterEmail(s) => {
-            state.register_email = s;
+        Msg::Register(crate::state::RegisterMsg::Email(s)) => {
+            state.register.email = s;
             Task::none()
         }
-        Msg::RegisterPassword(s) => {
-            state.register_password = s;
+        Msg::Register(crate::state::RegisterMsg::Password(s)) => {
+            state.register.password = s;
             Task::none()
         }
-        Msg::RegisterPasswordRepeat(s) => {
-            state.register_password_repeat = s;
+        Msg::Register(crate::state::RegisterMsg::PasswordRepeat(s)) => {
+            state.register.password_repeat = s;
             Task::none()
         }
-        Msg::RegisterSubmit => {
+        Msg::Register(crate::state::RegisterMsg::Submit) => {
             if !state
-                .register_username
+                .register.username
                 .chars()
                 .all(|c| c.is_alphanumeric() || c == '-' || c == '_')
             {
-                state.register_error =
+                state.register.error =
                     Some("Username may only contain letters, numbers, and underscores.".into());
                 return Task::none();
             }
-            if state.register_username.len() < 4 {
-                state.register_error = Some("Username is too short.".into());
+            if state.register.username.len() < 4 {
+                state.register.error = Some("Username is too short.".into());
                 return Task::none();
             }
-            if state.register_username.len() > 32 {
-                state.register_error = Some("Username is too long.".into());
+            if state.register.username.len() > 32 {
+                state.register.error = Some("Username is too long.".into());
                 return Task::none();
             }
-            if state.register_password.len() < 3 {
-                state.register_error = Some("Password is too short.".into());
+            if state.register.password.len() < 3 {
+                state.register.error = Some("Password is too short.".into());
                 return Task::none();
             }
-            if state.register_password != state.register_password_repeat {
-                state.register_error = Some("Passwords do not match.".into());
+            if state.register.password != state.register.password_repeat {
+                state.register.error = Some("Passwords do not match.".into());
                 return Task::none();
             }
-            if state.register_email.is_empty() {
-                state.register_error = Some("Email is required.".into());
+            if state.register.email.is_empty() {
+                state.register.error = Some("Email is required.".into());
                 return Task::none();
             }
-            state.register_loading = true;
-            state.register_error = None;
-            let username = state.register_username.clone();
-            let email = state.register_email.clone();
-            let password = state.register_password.clone();
+            state.register.loading = true;
+            state.register.error = None;
+            let username = state.register.username.clone();
+            let email = state.register.email.clone();
+            let password = state.register.password.clone();
             Task::perform(
                 async move { api::register(&username, &email, &password).await },
                 |r| match r {
-                    Ok(user) => Msg::RegisterOk(user),
-                    Err(e) => Msg::RegisterErr(e),
+                    Ok(user) => Msg::Register(crate::state::RegisterMsg::Ok(user)),
+                    Err(e) => Msg::Register(crate::state::RegisterMsg::Err(e)),
                 },
             )
         }
-        Msg::RegisterOk(_user) => {
-            state.register_loading = false;
-            state.register_error = None;
-            state.register_username.clear();
-            state.register_email.clear();
-            state.register_password.clear();
-            state.register_password_repeat.clear();
+        Msg::Register(crate::state::RegisterMsg::Ok(_user)) => {
+            state.register.loading = false;
+            state.register.error = None;
+            state.register.username.clear();
+            state.register.email.clear();
+            state.register.password.clear();
+            state.register.password_repeat.clear();
 
             let mut close_task = Task::none();
             for (&id, &t) in &state.child_windows {
@@ -716,9 +784,9 @@ fn update(state: &mut Plaza, msg: Msg) -> Task<Msg> {
             state.error_msg = Some("Registration successful! You can now log in.".into());
             close_task
         }
-        Msg::RegisterErr(e) => {
-            state.register_loading = false;
-            state.register_error = Some(e);
+        Msg::Register(crate::state::RegisterMsg::Err(e)) => {
+            state.register.loading = false;
+            state.register.error = Some(e);
             Task::none()
         }
 
@@ -820,30 +888,61 @@ fn update(state: &mut Plaza, msg: Msg) -> Task<Msg> {
             Task::none()
         }
 
-        Msg::NewsOk(articles, pages) => {
-            state.news_loading = false;
-            state.news = articles;
-            state.news_pages = pages;
+        Msg::News(crate::state::NewsMsg::Ok(articles, pages)) => {
+            state.news.loading = false;
+            state.news.list = articles.into_iter().map(crate::views::news::ParsedNewsArticle::from).collect();
+            state.news.pages = pages;
             Task::none()
         }
-        Msg::NewsErr(e) => {
-            state.news_loading = false;
+        Msg::News(crate::state::NewsMsg::Err(e)) => {
+            state.news.loading = false;
             state.error_msg = Some(e);
             Task::none()
         }
-        Msg::NewsPage(p) => {
-            state.news_page = p;
-            state.news_loading = true;
+        Msg::News(crate::state::NewsMsg::Page(p)) => {
+            state.news.page = p;
+            state.news.loading = true;
             Task::perform(api::fetch_news(p), |r| match r {
-                Ok(n) => Msg::NewsOk(n.data, n.meta.last_page),
-                Err(e) => Msg::NewsErr(e.to_string()),
+                Ok(n) => Msg::News(crate::state::NewsMsg::Ok(n.data, n.meta.last_page)),
+                Err(e) => Msg::News(crate::state::NewsMsg::Err(e.to_string())),
             })
+        }
+
+        Msg::Favorites(f_msg) => update_favorites(state, f_msg),
+        Msg::Export(e_msg) => update_export(state, e_msg),
+        Msg::ProfileEdit(p_msg) => update_profile_edit(state, p_msg),
+        Msg::Password(p_msg) => update_password(state, p_msg),
+        Msg::DeleteAccount(d_msg) => update_delete(state, d_msg),
+        Msg::Timer(t_msg) => {
+            use crate::state::TimerMsg;
+            match t_msg {
+                TimerMsg::Input(s) => {
+                    if s.chars().all(|c| c.is_ascii_digit()) || s.is_empty() {
+                        state.timer.minutes_input = s;
+                    }
+                }
+                TimerMsg::Add(delta) => {
+                    let current = state.timer.minutes_input.parse::<i32>().unwrap_or(0);
+                    let next = (current + delta).max(1);
+                    state.timer.minutes_input = next.to_string();
+                }
+                TimerMsg::Start => {
+                    if let Ok(mins) = state.timer.minutes_input.parse::<u64>() {
+                        if mins > 0 {
+                            state.timer.until =
+                                Some(Instant::now() + Duration::from_secs(mins * 60));
+                        }
+                    }
+                }
+                TimerMsg::Stop => state.timer.until = None,
+            }
+            Task::none()
         }
 
         Msg::MinimizeWin(id) => iced::window::minimize(id, true),
         Msg::DragWin(id) => iced::window::drag(id),
         Msg::OpenUrl(url) => {
-            let _ = std::process::Command::new("xdg-open").arg(&url).spawn();
+            open_url(&url);
             Task::none()
         }
 
@@ -853,6 +952,495 @@ fn update(state: &mut Plaza, msg: Msg) -> Task<Msg> {
         }),
         Msg::DismissErr => {
             state.error_msg = None;
+            Task::none()
+        }
+
+        Msg::Noop => Task::none(),
+
+        Msg::SpaceToggle(id) => {
+            if id == state.main_window {
+                return update(state, Msg::TogglePlay);
+            }
+            Task::none()
+        }
+
+        Msg::WinResized(id, size) => {
+            if dev_mode() {
+                let label = if id == state.main_window {
+                    "Main".to_string()
+                } else {
+                    state
+                        .child_windows
+                        .get(&id)
+                        .map(|w| format!("WinType::{:?}", w))
+                        .unwrap_or_else(|| "?".to_string())
+                };
+                eprintln!(
+                    "[winsize] {} => iced::Size::new({:.1}, {:.1}),",
+                    label, size.width, size.height
+                );
+            }
+            Task::none()
+        }
+
+        Msg::Media(event) => {
+            use souvlaki::MediaControlEvent as E;
+            let Some(ref p) = state.player else {
+                return Task::none();
+            };
+            match event {
+                E::Toggle => {
+                    if p.is_playing() {
+                        p.stop();
+                    } else {
+                        p.play();
+                    }
+                }
+                E::Play => {
+                    if !p.is_playing() {
+                        p.play();
+                    }
+                }
+                E::Pause | E::Stop => {
+                    if p.is_playing() {
+                        p.stop();
+                    }
+                }
+                _ => {}
+            }
+            Task::none()
+        }
+    }
+}
+
+fn close_windows_of(state: &mut Plaza, wt: WinType) -> Task<Msg> {
+    let ids: Vec<_> = state
+        .child_windows
+        .iter()
+        .filter(|(_, &t)| t == wt)
+        .map(|(&id, _)| id)
+        .collect();
+    state.child_windows.retain(|_, t| *t != wt);
+    Task::batch(ids.into_iter().map(iced::window::close))
+}
+
+fn update_history(state: &mut Plaza, msg: crate::state::HistoryMsg) -> Task<Msg> {
+    use crate::state::HistoryMsg;
+    match msg {
+        HistoryMsg::Ok(songs, pages, total, date_range) => {
+            state.history.loading = false;
+            state.history.list = songs;
+            state.history.pages = pages;
+            state.history.total = total;
+            state.history.page_input = state.history.page.to_string();
+            if let Some(dr) = date_range {
+                state.history.date_from = views::widgets::format_date(dr.from_date);
+                state.history.date_to = views::widgets::format_date(dr.to_date);
+            }
+            Task::none()
+        }
+        HistoryMsg::Err(e) => {
+            state.history.loading = false;
+            state.error_msg = Some(e);
+            Task::none()
+        }
+        HistoryMsg::Page(p) => {
+            state.history.page = p;
+            state.history.page_input = p.to_string();
+            state.history.loading = true;
+            Task::perform(api::fetch_history(p), |r| match r {
+                Ok(h) => Msg::History(HistoryMsg::Ok(h.data, h.meta.last_page, h.meta.total, h.date_range)),
+                Err(e) => Msg::History(HistoryMsg::Err(e.to_string())),
+            })
+        }
+        HistoryMsg::PageInput(s) => {
+            if s.chars().all(|c| c.is_ascii_digit()) || s.is_empty() {
+                state.history.page_input = s;
+            }
+            Task::none()
+        }
+        HistoryMsg::PageSubmit => {
+            if let Ok(p) = state.history.page_input.parse::<u32>() {
+                let p = p.clamp(1, state.history.pages.max(1));
+                if p != state.history.page {
+                    return update_history(state, HistoryMsg::Page(p));
+                }
+            }
+            state.history.page_input = state.history.page.to_string();
+            Task::none()
+        }
+    }
+}
+
+fn update_ratings(state: &mut Plaza, msg: crate::state::RatingsMsg) -> Task<Msg> {
+    use crate::state::RatingsMsg;
+    match msg {
+        RatingsMsg::Ok(songs, pages, total) => {
+            state.ratings.loading = false;
+            state.ratings.list = songs;
+            state.ratings.pages = pages;
+            state.ratings.total = total;
+            state.ratings.page_input = state.ratings.page.to_string();
+            Task::none()
+        }
+        RatingsMsg::Err(e) => {
+            state.ratings.loading = false;
+            state.error_msg = Some(e);
+            Task::none()
+        }
+        RatingsMsg::Page(p) => {
+            state.ratings.page = p;
+            state.ratings.page_input = p.to_string();
+            state.ratings.loading = true;
+            let range = state.ratings.range.clone();
+            Task::perform(
+                async move { api::fetch_ratings(&range, p).await },
+                |r| match r {
+                    Ok(h) => Msg::Ratings(RatingsMsg::Ok(h.data, h.meta.last_page, h.meta.total)),
+                    Err(e) => Msg::Ratings(RatingsMsg::Err(e.to_string())),
+                },
+            )
+        }
+        RatingsMsg::Range(range) => {
+            state.ratings.range = range.clone();
+            state.ratings.page = 1;
+            state.ratings.page_input = "1".into();
+            state.ratings.list.clear();
+            state.ratings.loading = true;
+            Task::perform(
+                async move { api::fetch_ratings(&range, 1).await },
+                |r| match r {
+                    Ok(h) => Msg::Ratings(RatingsMsg::Ok(h.data, h.meta.last_page, h.meta.total)),
+                    Err(e) => Msg::Ratings(RatingsMsg::Err(e.to_string())),
+                },
+            )
+        }
+        RatingsMsg::PageInput(s) => {
+            if s.chars().all(|c| c.is_ascii_digit()) || s.is_empty() {
+                state.ratings.page_input = s;
+            }
+            Task::none()
+        }
+        RatingsMsg::PageSubmit => {
+            if let Ok(p) = state.ratings.page_input.parse::<u32>() {
+                let p = p.clamp(1, state.ratings.pages.max(1));
+                if p != state.ratings.page {
+                    return update_ratings(state, RatingsMsg::Page(p));
+                }
+            }
+            state.ratings.page_input = state.ratings.page.to_string();
+            Task::none()
+        }
+    }
+}
+
+fn update_favorites(state: &mut Plaza, msg: crate::state::FavoritesMsg) -> Task<Msg> {
+    use crate::state::FavoritesMsg;
+    match msg {
+        FavoritesMsg::Ok(list, pages, total) => {
+            state.favorites.loading = false;
+            state.favorites.pages = pages;
+            state.favorites.total = total;
+            state.favorites.page_input = state.favorites.page.to_string();
+
+            // Fetch each row's thumbnail that we don't already have cached.
+            let mut seen = std::collections::HashSet::new();
+            let art_tasks: Vec<Task<Msg>> = list
+                .iter()
+                .filter_map(|f| f.song.thumb_url())
+                .filter(|url| {
+                    !state.favorites.artwork.contains_key(*url) && seen.insert(url.to_string())
+                })
+                .map(|url| {
+                    let url = url.to_string();
+                    Task::perform(
+                        async move {
+                            let bytes = api::fetch_artwork(&url).await;
+                            (url, bytes)
+                        },
+                        |(url, bytes)| match bytes {
+                            Ok(b) => Msg::Favorites(FavoritesMsg::ArtworkOk(url, b)),
+                            Err(_) => Msg::Noop,
+                        },
+                    )
+                })
+                .collect();
+
+            state.favorites.list = list;
+            Task::batch(art_tasks)
+        }
+        FavoritesMsg::ArtworkOk(url, bytes) => {
+            state
+                .favorites
+                .artwork
+                .insert(url, iced::widget::image::Handle::from_bytes(bytes));
+            Task::none()
+        }
+        FavoritesMsg::Err(e) => {
+            state.favorites.loading = false;
+            state.error_msg = Some(e);
+            Task::none()
+        }
+        FavoritesMsg::Page(p) => {
+            let Some(token) = state.auth_token.clone() else {
+                return Task::none();
+            };
+            state.favorites.page = p;
+            state.favorites.page_input = p.to_string();
+            state.favorites.loading = true;
+            state.favorites.deleted.clear();
+            Task::perform(
+                async move { api::fetch_favorites(&token, p).await },
+                |r| match r {
+                    Ok(f) => Msg::Favorites(FavoritesMsg::Ok(f.data, f.meta.last_page, f.meta.total)),
+                    Err(e) => Msg::Favorites(FavoritesMsg::Err(e)),
+                },
+            )
+        }
+        FavoritesMsg::PageInput(s) => {
+            if s.chars().all(|c| c.is_ascii_digit()) || s.is_empty() {
+                state.favorites.page_input = s;
+            }
+            Task::none()
+        }
+        FavoritesMsg::PageSubmit => {
+            if let Ok(p) = state.favorites.page_input.parse::<u32>() {
+                let p = p.clamp(1, state.favorites.pages.max(1));
+                if p != state.favorites.page {
+                    return update_favorites(state, FavoritesMsg::Page(p));
+                }
+            }
+            state.favorites.page_input = state.favorites.page.to_string();
+            Task::none()
+        }
+        FavoritesMsg::Delete(id) => {
+            let Some(token) = state.auth_token.clone() else {
+                return Task::none();
+            };
+            Task::perform(
+                async move { api::delete_favorite(&token, id).await },
+                move |r| match r {
+                    Ok(()) => Msg::Favorites(FavoritesMsg::DeleteOk(id)),
+                    Err(e) => Msg::Favorites(FavoritesMsg::DeleteErr(e)),
+                },
+            )
+        }
+        FavoritesMsg::DeleteOk(id) => {
+            if !state.favorites.deleted.contains(&id) {
+                state.favorites.deleted.push(id);
+            }
+            Task::none()
+        }
+        FavoritesMsg::DeleteErr(e) => {
+            state.error_msg = Some(e);
+            Task::none()
+        }
+    }
+}
+
+fn update_export(state: &mut Plaza, msg: crate::state::ExportMsg) -> Task<Msg> {
+    use crate::state::ExportMsg;
+    match msg {
+        ExportMsg::Start => {
+            let Some(token) = state.auth_token.clone() else {
+                return Task::none();
+            };
+            state.export.loading = true;
+            state.export.link = None;
+            state.export.error = None;
+            Task::perform(
+                async move { api::export_favorites(&token).await },
+                |r| match r {
+                    Ok(link) => Msg::Export(ExportMsg::Ok(link)),
+                    Err(e) => Msg::Export(ExportMsg::Err(e)),
+                },
+            )
+        }
+        ExportMsg::Ok(link) => {
+            state.export.loading = false;
+            state.export.link = Some(link);
+            Task::none()
+        }
+        ExportMsg::Err(e) => {
+            state.export.loading = false;
+            state.export.error = Some(e);
+            Task::none()
+        }
+    }
+}
+
+fn update_profile_edit(state: &mut Plaza, msg: crate::state::ProfileEditMsg) -> Task<Msg> {
+    use crate::state::ProfileEditMsg;
+    match msg {
+        ProfileEditMsg::Username(s) => {
+            state.profile_edit.username = s;
+            Task::none()
+        }
+        ProfileEditMsg::Email(s) => {
+            state.profile_edit.email = s;
+            Task::none()
+        }
+        ProfileEditMsg::CurrentPassword(s) => {
+            state.profile_edit.current_password = s;
+            Task::none()
+        }
+        ProfileEditMsg::Submit => {
+            if state.profile_edit.current_password.is_empty() {
+                state.profile_edit.error = Some("Current password is required.".into());
+                return Task::none();
+            }
+            let Some(token) = state.auth_token.clone() else {
+                return Task::none();
+            };
+            state.profile_edit.loading = true;
+            state.profile_edit.error = None;
+            let current = state.profile_edit.current_password.clone();
+            let username = state.profile_edit.username.clone();
+            let email = state.profile_edit.email.clone();
+            Task::perform(
+                async move { api::update_profile(&token, &current, &username, &email).await },
+                |r| match r {
+                    Ok(()) => Msg::ProfileEdit(ProfileEditMsg::Ok),
+                    Err(e) => Msg::ProfileEdit(ProfileEditMsg::Err(e)),
+                },
+            )
+        }
+        ProfileEditMsg::Ok => {
+            state.profile_edit.loading = false;
+            if let Some(ref mut u) = state.user {
+                u.username = state.profile_edit.username.clone();
+                u.email = state.profile_edit.email.clone();
+                if let Some(ref token) = state.auth_token {
+                    session::save(token, u);
+                }
+            }
+            state.profile_edit.current_password.clear();
+            state.error_msg = Some("Profile has been updated.".into());
+            close_windows_of(state, WinType::UserProfileEdit)
+        }
+        ProfileEditMsg::Err(e) => {
+            state.profile_edit.loading = false;
+            state.profile_edit.error = Some(e);
+            Task::none()
+        }
+    }
+}
+
+fn update_password(state: &mut Plaza, msg: crate::state::PasswordMsg) -> Task<Msg> {
+    use crate::state::PasswordMsg;
+    match msg {
+        PasswordMsg::Current(s) => {
+            state.password.current_password = s;
+            Task::none()
+        }
+        PasswordMsg::New(s) => {
+            state.password.password = s;
+            Task::none()
+        }
+        PasswordMsg::Repeat(s) => {
+            state.password.password_repeat = s;
+            Task::none()
+        }
+        PasswordMsg::Submit => {
+            if state.password.current_password.is_empty() {
+                state.password.error = Some("Current password is required.".into());
+                return Task::none();
+            }
+            if state.password.password.len() < 3 {
+                state.password.error = Some("Password is too short.".into());
+                return Task::none();
+            }
+            if state.password.password != state.password.password_repeat {
+                state.password.error = Some("Passwords do not match.".into());
+                return Task::none();
+            }
+            let Some(token) = state.auth_token.clone() else {
+                return Task::none();
+            };
+            state.password.loading = true;
+            state.password.error = None;
+            let current = state.password.current_password.clone();
+            let new = state.password.password.clone();
+            Task::perform(
+                async move { api::update_password(&token, &current, &new).await },
+                |r| match r {
+                    Ok(()) => Msg::Password(PasswordMsg::Ok),
+                    Err(e) => Msg::Password(PasswordMsg::Err(e)),
+                },
+            )
+        }
+        PasswordMsg::Ok => {
+            state.password = crate::state::PasswordState::default();
+            // Changing the password invalidates the session server-side; sign out
+            // locally and prompt the user to log in again, matching the web app.
+            session::clear();
+            state.auth_token = None;
+            state.user = None;
+            state.user_stats = None;
+            state.error_msg = Some("Password updated. Please log in again.".into());
+            Task::batch([
+                close_windows_of(state, WinType::UserPassword),
+                close_windows_of(state, WinType::UserProfile),
+            ])
+        }
+        PasswordMsg::Err(e) => {
+            state.password.loading = false;
+            state.password.error = Some(e);
+            Task::none()
+        }
+    }
+}
+
+fn update_delete(state: &mut Plaza, msg: crate::state::DeleteMsg) -> Task<Msg> {
+    use crate::state::DeleteMsg;
+    match msg {
+        DeleteMsg::Password(s) => {
+            state.delete.current_password = s;
+            Task::none()
+        }
+        DeleteMsg::Confirm(b) => {
+            state.delete.confirm = b;
+            Task::none()
+        }
+        DeleteMsg::Submit => {
+            if !state.delete.confirm {
+                state.delete.error = Some("You must confirm account deletion.".into());
+                return Task::none();
+            }
+            if state.delete.current_password.is_empty() {
+                state.delete.error = Some("Current password is required.".into());
+                return Task::none();
+            }
+            let Some(token) = state.auth_token.clone() else {
+                return Task::none();
+            };
+            state.delete.loading = true;
+            state.delete.error = None;
+            let current = state.delete.current_password.clone();
+            Task::perform(
+                async move { api::delete_profile(&token, &current).await },
+                |r| match r {
+                    Ok(()) => Msg::DeleteAccount(DeleteMsg::Ok),
+                    Err(e) => Msg::DeleteAccount(DeleteMsg::Err(e)),
+                },
+            )
+        }
+        DeleteMsg::Ok => {
+            state.delete = crate::state::DeleteState::default();
+            session::clear();
+            state.auth_token = None;
+            state.user = None;
+            state.user_stats = None;
+            state.error_msg = Some("Your account has been deleted.".into());
+            Task::batch([
+                close_windows_of(state, WinType::UserProfileDelete),
+                close_windows_of(state, WinType::UserProfileEdit),
+                close_windows_of(state, WinType::UserProfile),
+            ])
+        }
+        DeleteMsg::Err(e) => {
+            state.delete.loading = false;
+            state.delete.error = Some(e);
             Task::none()
         }
     }

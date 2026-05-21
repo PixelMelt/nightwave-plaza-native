@@ -1,24 +1,16 @@
 use crate::state::Msg;
 use crate::theme;
-use crate::views::widgets::{d3_raised, d3_sunken};
-use iced::widget::{button, column, container, rich_text, span, text, Space};
+use crate::views::widgets::{bold_font, close_btn_padded, d3_sunken, LINK_COLOR};
+use iced::widget::{column, container, rich_text, span, Space};
 use iced::{Element, Fill};
 
-const LINK_COLOR: iced::Color = iced::Color::from_rgb(0.024, 0.271, 0.678);
-
 pub fn view(wid: iced::window::Id) -> Element<'static, Msg> {
-    let bold = iced::Font {
-        weight: iced::font::Weight::Bold,
-        ..iced::Font::DEFAULT
-    };
+    let bold = bold_font();
 
     let para1 = rich_text![
         span("Nightwave Plaza").font(bold).size(12),
         span(" website and apps are created and maintained by ").size(12),
-        span("Alexander Morozov")
-            .color(LINK_COLOR)
-            .underline(true)
-            .size(12),
+        span("Alexander Morozov").color(LINK_COLOR).underline(true).size(12),
         span(".").size(12),
     ];
 
@@ -38,14 +30,7 @@ pub fn view(wid: iced::window::Id) -> Element<'static, Msg> {
             .padding(4),
     );
 
-    let close_btn = d3_raised(
-        button(text("Close").size(11).center())
-            .on_press(Msg::CloseWin(wid))
-            .style(theme::raised)
-            .padding([4, 24]),
-    );
-
-    let bottom = container(close_btn)
+    let bottom = container(close_btn_padded(wid))
         .width(Fill)
         .center_x(Fill)
         .padding([8, 0]);

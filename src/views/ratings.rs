@@ -1,148 +1,35 @@
+use crate::api::RatingEntry;
 use crate::state::{Msg, Plaza};
 use crate::theme;
-use crate::views::widgets::{self, d3_raised, d3_sunken, divider, pagination, shaped, status_bar};
-use iced::widget::{
-    button, column, container, horizontal_space, image, row, scrollable, text, Column, Space,
+use crate::views::bevel::bevel_button;
+use crate::views::widgets::{
+    self, bold_font, close_btn, divider, empty_panel, loading_panel, pagination, scroll_panel,
+    shaped, status_bar,
 };
+use iced::widget::{button, column, horizontal_space, row, text, Column, Space};
 use iced::{Element, Fill};
 
-const LOADING_IMG: &[u8] = include_bytes!("../../assets/icons/loading.png");
-
-pub fn view(state: &Plaza, wid: iced::window::Id) -> Element<Msg> {
-    let bold = iced::Font {
-        weight: iced::font::Weight::Bold,
-        ..iced::Font::DEFAULT
-    };
-    let r = &state.ratings_range;
-
+pub fn view(state: &Plaza, wid: iced::window::Id) -> Element<'_, Msg> {
+    let r = &state.ratings.range;
     let range_row = row![
         range_btn("All Time", "overtime", r == "overtime"),
         Space::with_width(4),
         range_btn("Monthly", "monthly", r == "monthly"),
         Space::with_width(4),
         range_btn("Weekly", "weekly", r == "weekly"),
-    ];
+    ]
+    .width(Fill);
 
-    let list_area: Element<Msg> = if state.ratings_loading {
-        d3_sunken(
-            container(
-                image(image::Handle::from_bytes(LOADING_IMG))
-                    .width(36)
-                    .height(36),
-            )
-            .style(theme::sunken_inner)
-            .width(Fill)
-            .height(Fill)
-            .center_x(Fill)
-            .center_y(Fill),
-        )
-        .width(Fill)
-        .height(Fill)
-        .into()
-    } else {
-        let mut list = Column::new().spacing(0).width(Fill);
+    let list_area = render_list(state);
+    let pages_row = render_pagination(state);
 
-        if state.ratings.is_empty() {
-            list = list.push(
-                container(text("No data").size(11))
-                    .padding(8)
-                    .center_x(Fill)
-                    .width(Fill),
-            );
-        } else {
-            for (i, entry) in state.ratings.iter().enumerate() {
-                let rank = (state.ratings_page - 1) * 25 + (i as u32) + 1;
-
-                let entry_content = row![
-                    text(format!("{:03}", rank)).size(11).width(28),
-                    column![
-                        shaped(entry.song.artist.clone()).size(11).font(bold),
-                        shaped(entry.song.title.clone()).size(11),
-                    ]
-                    .spacing(1)
-                    .width(Fill),
-                    row![
-                        text(format!("{}", entry.likes)).size(11),
-                        widgets::icon_like().size(11),
-                    ]
-                    .spacing(2),
-                    Space::with_width(16),
-                ]
-                .spacing(4)
-                .padding([3, 4]);
-
-                let entry_row: Element<Msg> = if !entry.song.id.is_empty() {
-                    button(entry_content)
-                        .on_press(Msg::OpenSongInfo(entry.song.id.clone()))
-                        .style(theme::list_row_btn)
-                        .padding(0)
-                        .width(Fill)
-                        .into()
-                } else {
-                    entry_content.into()
-                };
-
-                list = list.push(entry_row);
-                if i < state.ratings.len() - 1 {
-                    list = list.push(divider());
-                }
-            }
-        }
-
-        d3_sunken(
-            container(scrollable(list).height(Fill).style(theme::scrollbar))
-                .style(theme::sunken_inner)
-                .width(Fill)
-                .height(Fill),
-        )
-        .width(Fill)
-        .height(Fill)
-        .into()
-    };
-
-    let pages_row = if state.ratings_pages > 1 {
-        let prev_msg = if state.ratings_page > 1 && !state.ratings_loading {
-            Some(Msg::RatingsPage(state.ratings_page - 1))
-        } else {
-            None
-        };
-        let next_msg = if state.ratings_page < state.ratings_pages && !state.ratings_loading {
-            Some(Msg::RatingsPage(state.ratings_page + 1))
-        } else {
-            None
-        };
-        pagination(
-            state.ratings_page,
-            state.ratings_pages,
-            &state.ratings_page_input,
-            state.ratings_loading,
-            Msg::RatingsPageInput,
-            Msg::RatingsPageSubmit,
-            prev_msg,
-            next_msg,
-        )
-    } else {
-        Space::with_width(0).into()
-    };
-
-    let close_btn = d3_raised(
-        button(text("Close").size(11).center().width(80))
-            .on_press(Msg::CloseWin(wid))
-            .width(80)
-            .style(theme::raised),
-    );
-
-    let bottom = row![pages_row, horizontal_space(), close_btn]
+    let bottom = row![pages_row, horizontal_space(), close_btn(wid)]
         .align_y(iced::Alignment::Center)
         .padding([4, 0]);
 
     let status = status_bar(vec![
-        text(format!("Pages: {}", state.ratings_pages))
-            .size(10)
-            .into(),
-        text(format!("Songs: {}", state.ratings_total))
-            .size(10)
-            .into(),
+        text(format!("Pages: {}", state.ratings.pages)).size(10).into(),
+        text(format!("Songs: {}", state.ratings.total)).size(10).into(),
     ]);
 
     column![
@@ -159,16 +46,86 @@ pub fn view(state: &Plaza, wid: iced::window::Id) -> Element<Msg> {
     .into()
 }
 
-fn range_btn(label: &str, range: &str, active: bool) -> Element<'static, Msg> {
-    d3_raised(
-        button(text(label.to_string()).size(10).center().width(Fill))
-            .on_press(Msg::RatingsRange(range.to_string()))
-            .style(if active {
-                theme::active_tab
-            } else {
-                theme::raised
-            })
-            .padding([3, 10]),
+fn render_list(state: &Plaza) -> Element<'_, Msg> {
+    if state.ratings.loading {
+        return loading_panel();
+    }
+
+    if state.ratings.list.is_empty() {
+        return empty_panel("No data");
+    }
+
+    let mut list = Column::new().spacing(0).width(Fill);
+    for (i, entry) in state.ratings.list.iter().enumerate() {
+        let rank = (state.ratings.page - 1) * 25 + (i as u32) + 1;
+        list = list.push(render_row(entry, rank));
+        if i < state.ratings.list.len() - 1 {
+            list = list.push(divider());
+        }
+    }
+    scroll_panel(list)
+}
+
+fn render_row(entry: &RatingEntry, rank: u32) -> Element<'_, Msg> {
+    let bold = bold_font();
+
+    let entry_content = row![
+        text(format!("{:03}", rank)).size(11).width(28),
+        column![
+            shaped(&entry.song.artist).size(11).font(bold),
+            shaped(&entry.song.title).size(11),
+        ]
+        .spacing(1)
+        .width(Fill),
+        row![
+            text(entry.likes.to_string()).size(11),
+            widgets::icon_like().size(11),
+        ]
+        .spacing(2),
+        Space::with_width(16),
+    ]
+    .spacing(4)
+    .padding([3, 4]);
+
+    if !entry.song.id.is_empty() {
+        button(entry_content)
+            .on_press(Msg::SongInfo(crate::state::SongInfoMsg::Open(entry.song.id.clone())))
+            .style(theme::list_row_btn)
+            .padding(0)
+            .width(Fill)
+            .into()
+    } else {
+        entry_content.into()
+    }
+}
+
+fn render_pagination(state: &Plaza) -> Element<'_, Msg> {
+    if state.ratings.pages <= 1 {
+        return Space::with_width(0).into();
+    }
+
+    let prev_msg = (state.ratings.page > 1 && !state.ratings.loading)
+        .then_some(Msg::Ratings(crate::state::RatingsMsg::Page(state.ratings.page - 1)));
+    let next_msg = (state.ratings.page < state.ratings.pages && !state.ratings.loading)
+        .then_some(Msg::Ratings(crate::state::RatingsMsg::Page(state.ratings.page + 1)));
+
+    pagination(
+        state.ratings.page,
+        state.ratings.pages,
+        &state.ratings.page_input,
+        state.ratings.loading,
+        |s| Msg::Ratings(crate::state::RatingsMsg::PageInput(s)),
+        Msg::Ratings(crate::state::RatingsMsg::PageSubmit),
+        prev_msg,
+        next_msg,
     )
-    .into()
+}
+
+fn range_btn(label: &'static str, range: &str, active: bool) -> Element<'static, Msg> {
+    bevel_button(text(label).size(10).center().width(Fill))
+        .on_press(Msg::Ratings(crate::state::RatingsMsg::Range(range.to_string())))
+        .active(active)
+        .padding([3, 10])
+        .width(Fill)
+        .into()
 }

@@ -1,40 +1,59 @@
-use crate::state::{Msg, Plaza};
+use crate::state::{Msg, Plaza, WinType};
 use crate::theme;
-use crate::views::widgets::{d3_raised, d3_sunken, format_date, menu_btn_underline, status_bar};
-use iced::widget::{button, column, container, horizontal_space, image, row, text, Space};
+use crate::views::bevel::bevel_button;
+use crate::views::widgets::{bold_font, d3_sunken, format_date, group_box, menu_bar};
+use iced::widget::{column, container, horizontal_space, image, row, text, Space};
 use iced::{Element, Fill};
 
-const USER_CARD_IMG: &[u8] = include_bytes!("../../assets/icons/user_card.png");
+const USER_CARD_IMG: &[u8] = include_bytes!("../assets/img/user_card.png");
 
-pub fn view(state: &Plaza, wid: iced::window::Id) -> Element<Msg> {
-    let bold = iced::Font {
-        weight: iced::font::Weight::Bold,
-        ..iced::Font::DEFAULT
-    };
+pub fn view(state: &Plaza, wid: iced::window::Id) -> Element<'_, Msg> {
+    let menu = menu_bar([
+        ("Edit Profile", Msg::OpenWin(WinType::UserProfileEdit)),
+        ("Change Password", Msg::OpenWin(WinType::UserPassword)),
+        ("Log Out", Msg::Logout),
+    ]);
 
-    let menu = row![
-        menu_btn_underline("Edit Profile", Msg::Refresh),
-        menu_btn_underline("Change Password", Msg::Refresh),
-        menu_btn_underline("Log Out", Msg::Logout),
+    let card_panel = render_user_card(state);
+
+    let info_row = row![
+        container(render_stats_box(state)).width(Fill),
+        Space::with_width(8),
+        container(render_account_box(state)).width(Fill),
+    ];
+
+    let bottom = render_bottom_row(wid);
+
+    column![
+        menu,
+        container(column![
+            card_panel,
+            Space::with_height(8),
+            info_row,
+            Space::with_height(12),
+            bottom,
+        ])
+        .padding(8),
     ]
-    .padding([1, 1]);
+    .spacing(0)
+    .into()
+}
 
-    let (username, email, created_at) = if let Some(ref u) = state.user {
-        (u.username.as_str(), u.email.as_str(), u.created_at)
+fn render_user_card(state: &Plaza) -> Element<'_, Msg> {
+    let bold = bold_font();
+
+    let (username, email) = if let Some(ref u) = state.user {
+        (u.username.as_str(), u.email.as_str())
     } else {
-        ("...", "...", 0)
+        ("...", "...")
     };
 
-    let user_card_img = image(image::Handle::from_bytes(USER_CARD_IMG))
-        .width(32)
-        .height(32);
+    let user_card_img = image(image::Handle::from_bytes(USER_CARD_IMG)).width(32).height(32);
 
     let user_info = column![
         text(username).size(14).font(bold),
         Space::with_height(4),
-        text(email)
-            .size(11)
-            .color(iced::Color::from_rgb(0.5, 0.5, 0.5)),
+        text(email).size(11).color(iced::Color::from_rgb(0.5, 0.5, 0.5)),
     ];
 
     let user_card = row![
@@ -44,120 +63,58 @@ pub fn view(state: &Plaza, wid: iced::window::Id) -> Element<Msg> {
     ]
     .align_y(iced::Alignment::Center);
 
-    let card_panel = d3_sunken(
-        container(user_card)
-            .style(theme::panel)
-            .width(Fill)
-            .padding(8),
-    );
+    d3_sunken(container(user_card).style(theme::panel).width(Fill).padding(8)).into()
+}
+
+fn render_stats_box(state: &Plaza) -> Element<'_, Msg> {
+    let bold = bold_font();
 
     let (likes_str, favs_str) = if let Some(ref stats) = state.user_stats {
-        (
-            format!("{}", stats.reactions),
-            format!("{}", stats.favorites),
-        )
+        (format!("{}", stats.reactions), format!("{}", stats.favorites))
     } else if state.stats_loading {
         ("...".into(), "...".into())
     } else {
         ("0".into(), "0".into())
     };
 
-    let stats_label = container(text(" Statistics ").size(11).font(bold))
-        .style(theme::group_label)
-        .padding([0, 4]);
-
-    let stats_content = column![
-        row![
-            text("Likes:").size(11).font(bold).width(75),
-            text(likes_str).size(11),
-        ],
-        row![
-            text("Favorites:").size(11).font(bold).width(75),
-            text(favs_str).size(11),
-        ],
+    let body = column![
+        row![text("Likes:").size(11).font(bold).width(75), text(likes_str).size(11)],
+        row![text("Favorites:").size(11).font(bold).width(75), text(favs_str).size(11)],
     ]
     .spacing(2);
 
-    let stats_box = column![
-        stats_label,
-        d3_sunken(
-            container(stats_content)
-                .style(theme::panel)
-                .width(Fill)
-                .padding(8),
-        ),
-    ]
-    .spacing(0);
+    group_box("Statistics", body)
+}
 
-    let registered = if created_at > 0 {
-        format_date(created_at)
-    } else {
-        "...".into()
-    };
+fn render_account_box(state: &Plaza) -> Element<'_, Msg> {
+    let bold = bold_font();
 
-    let account_label = container(text(" Account ").size(11).font(bold))
-        .style(theme::group_label)
-        .padding([0, 4]);
+    let created_at = state.user.as_ref().map_or(0, |u| u.created_at);
+    let registered = if created_at > 0 { format_date(created_at) } else { "...".into() };
 
-    let account_content = column![
+    let body = column![
         text("Registered:").size(11).font(bold),
         text(registered).size(11),
     ]
     .spacing(2);
 
-    let account_box = column![
-        account_label,
-        d3_sunken(
-            container(account_content)
-                .style(theme::panel)
-                .width(Fill)
-                .padding(8),
-        ),
-    ]
-    .spacing(0);
+    group_box("Account", body)
+}
 
-    let info_row = row![
-        container(stats_box).width(Fill),
-        Space::with_width(8),
-        container(account_box).width(Fill),
-    ];
+fn render_bottom_row(wid: iced::window::Id) -> Element<'static, Msg> {
+    let favorites_btn = bevel_button(text("My Favorites").size(11).center())
+        .on_press(Msg::OpenWin(WinType::UserFavorites))
+        .padding([4, 12]);
 
-    let favorites_btn = d3_raised(
-        button(text("Favorites").size(11).center())
-            .on_press(Msg::Refresh)
-            .style(theme::raised)
-            .padding([4, 12]),
-    );
+    let close_btn = bevel_button(text("Close").size(11).center().width(Fill))
+        .on_press(Msg::CloseWin(wid))
+        .width(Fill);
 
-    let close_btn = d3_raised(
-        button(text("Close").size(11).center().width(Fill))
-            .on_press(Msg::CloseWin(wid))
-            .style(theme::raised),
-    );
-
-    let bottom = row![
+    row![
         favorites_btn,
         horizontal_space(),
-        container(close_btn).width(iced::Length::FillPortion(4)),
-    ];
-
-    let status = status_bar(vec![text(format!("Logged in as: {}", username))
-        .size(10)
-        .width(Fill)
-        .into()]);
-
-    column![
-        menu,
-        container(column![
-            card_panel,
-            Space::with_height(8),
-            info_row,
-            Space::with_height(16),
-            bottom,
-        ])
-        .padding(8),
-        status,
+        container(close_btn).width(88),
     ]
-    .spacing(0)
+    .align_y(iced::Alignment::Center)
     .into()
 }

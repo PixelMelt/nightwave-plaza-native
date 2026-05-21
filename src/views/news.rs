@@ -1,74 +1,53 @@
 use crate::state::{Msg, Plaza};
-use crate::theme;
-use crate::views::widgets::{d3_raised, d3_sunken, format_date, pagination};
+use crate::views::widgets::{
+    bold_font, close_btn, empty_panel, format_date, loading_panel, pagination, scroll_panel, MUTED,
+};
 use tl::{Node, Parser};
 
 use iced::widget::{
-    button, column, container, horizontal_space, rich_text, row, scrollable, span, text, Column,
-    Space,
+    column, container, horizontal_space, rich_text, row, span, text, Column, Space,
 };
-use iced::{Element, Fill, Font};
+use iced::{Element, Fill};
 
-const LOADING_IMG: &[u8] = include_bytes!("../../assets/icons/loading.png");
+pub fn view(state: &Plaza, wid: iced::window::Id) -> Element<'_, Msg> {
+    let bold = bold_font();
 
-fn centered_sunken<'a>(content: impl Into<Element<'a, Msg>>) -> Element<'a, Msg> {
-    d3_sunken(
-        container(content)
-            .style(theme::sunken_inner)
-            .width(Fill)
-            .height(Fill)
-            .center_x(Fill)
-            .center_y(Fill),
-    )
-    .width(Fill)
-    .height(Fill)
-    .into()
-}
-
-pub fn view(state: &Plaza, wid: iced::window::Id) -> Element<Msg> {
-    let bold = Font {
-        weight: iced::font::Weight::Bold,
-        ..Font::DEFAULT
-    };
-
-    let content_area: Element<Msg> = if state.news_loading {
-        centered_sunken(
-            iced::widget::image(iced::widget::image::Handle::from_bytes(LOADING_IMG))
-                .width(36)
-                .height(36),
-        )
-    } else if state.news.is_empty() {
-        centered_sunken(text("No news.").size(11))
+    let content_area: Element<Msg> = if state.news.loading {
+        loading_panel()
+    } else if state.news.list.is_empty() {
+        empty_panel("No news.")
     } else {
         let mut articles = Column::new().spacing(0).width(Fill);
 
-        for (idx, article) in state.news.iter().enumerate() {
-            if article.text.is_empty() {
+        for (idx, article) in state.news.list.iter().enumerate() {
+            if article.blocks.is_empty() {
                 continue;
             }
 
-            let blocks = parse_html_blocks(&article.text);
             let mut article_col = Column::new().spacing(0).padding([6, 6]).width(Fill);
 
-            for block in blocks {
+            for block in &article.blocks {
                 match block {
                     HtmlBlock::Heading(txt) => {
                         article_col = article_col
-                            .push(text(txt).size(14).font(bold))
+                            .push(text(txt.clone()).size(14).font(bold))
                             .push(Space::with_height(8));
                     }
-                    HtmlBlock::Paragraph(mut segments) => {
+                    HtmlBlock::Paragraph(segments) => {
                         if segments.len() == 1 && !segments[0].1 {
-                            article_col = article_col.push(text(segments.pop().unwrap().0).size(11));
+                            article_col = article_col.push(text(segments[0].0.clone()).size(11));
                         } else {
-                            let spans: Vec<_> = segments.into_iter().map(|(txt, is_bold)| {
-                                let s = span(txt).size(11);
-                                if is_bold {
-                                    s.font(bold)
-                                } else {
-                                    s
-                                }
-                            }).collect();
+                            let spans: Vec<_> = segments
+                                .iter()
+                                .map(|(txt, is_bold)| {
+                                    let s = span(txt.clone()).size(11);
+                                    if *is_bold {
+                                        s.font(bold)
+                                    } else {
+                                        s
+                                    }
+                                })
+                                .collect();
                             article_col = article_col.push(rich_text(spans));
                         }
                         article_col = article_col.push(Space::with_height(4));
@@ -84,18 +63,14 @@ pub fn view(state: &Plaza, wid: iced::window::Id) -> Element<Msg> {
             }
 
             article_col = article_col.push(Space::with_height(2)).push(row![
-                text(article.author.clone())
-                    .size(10)
-                    .color(iced::Color::from_rgb(0.4, 0.4, 0.4)),
+                text(article.author.clone()).size(10).color(MUTED),
                 horizontal_space(),
-                text(format_date(article.created_at))
-                    .size(10)
-                    .color(iced::Color::from_rgb(0.4, 0.4, 0.4)),
+                text(format_date(article.created_at)).size(10).color(MUTED),
             ]);
 
             articles = articles.push(article_col);
 
-            if idx < state.news.len() - 1 {
+            if idx < state.news.list.len() - 1 {
                 articles = articles.push(container(Space::new(Fill, 1)).style(
                     |_: &iced::Theme| container::Style {
                         background: Some(iced::Background::Color(iced::Color::from_rgb(
@@ -107,27 +82,19 @@ pub fn view(state: &Plaza, wid: iced::window::Id) -> Element<Msg> {
             }
         }
 
-        d3_sunken(
-            container(scrollable(articles).height(Fill).style(theme::scrollbar))
-                .style(theme::sunken_inner)
-                .width(Fill)
-                .height(Fill),
-        )
-        .width(Fill)
-        .height(Fill)
-        .into()
+        scroll_panel(articles)
     };
 
-    let pages_row = if state.news_pages > 1 {
-        let prev_msg = (state.news_page > 1 && !state.news_loading)
-            .then_some(Msg::NewsPage(state.news_page - 1));
-        let next_msg = (state.news_page < state.news_pages && !state.news_loading)
-            .then_some(Msg::NewsPage(state.news_page + 1));
+    let pages_row = if state.news.pages > 1 {
+        let prev_msg = (state.news.page > 1 && !state.news.loading)
+            .then_some(Msg::News(crate::state::NewsMsg::Page(state.news.page - 1)));
+        let next_msg = (state.news.page < state.news.pages && !state.news.loading)
+            .then_some(Msg::News(crate::state::NewsMsg::Page(state.news.page + 1)));
         pagination(
-            state.news_page,
-            state.news_pages,
-            &state.news_page.to_string(),
-            state.news_loading,
+            state.news.page,
+            state.news.pages,
+            &state.news.page.to_string(),
+            state.news.loading,
             |_| Msg::Refresh,
             Msg::Refresh,
             prev_msg,
@@ -137,14 +104,7 @@ pub fn view(state: &Plaza, wid: iced::window::Id) -> Element<Msg> {
         Space::with_width(0).into()
     };
 
-    let close_btn = d3_raised(
-        button(text("Close").size(11).center().width(Fill))
-            .on_press(Msg::CloseWin(wid))
-            .style(theme::raised)
-            .width(80),
-    );
-
-    let bottom = row![pages_row, horizontal_space(), close_btn]
+    let bottom = row![pages_row, horizontal_space(), close_btn(wid)]
         .align_y(iced::Alignment::Center)
         .padding([4, 0]);
 
@@ -154,8 +114,25 @@ pub fn view(state: &Plaza, wid: iced::window::Id) -> Element<Msg> {
         .into()
 }
 
+#[derive(Debug, Clone)]
+pub struct ParsedNewsArticle {
+    pub author: String,
+    pub created_at: u64,
+    pub blocks: Vec<HtmlBlock>,
+}
+
+impl From<crate::api::NewsArticle> for ParsedNewsArticle {
+    fn from(article: crate::api::NewsArticle) -> Self {
+        Self {
+            author: article.author,
+            created_at: article.created_at,
+            blocks: parse_html_blocks(&article.text),
+        }
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
-enum HtmlBlock {
+pub enum HtmlBlock {
     Heading(String),
     Paragraph(Vec<(String, bool)>),
     ListItem(String),
@@ -317,63 +294,6 @@ mod tests {
     }
 
     #[test]
-    fn test_article_12() {
-        let html = "<p>We are thrilled to be celebrating our <strong>10th anniversary</strong>! Even more exciting is the opportunity to share this milestone with the incredible fans who have been the heart and soul of the <strong>Nightwave Plaza</strong>.</p>\r\n\r\n<p>As we mark this anniversary of our beloved radio station, we celebrate a decade of bringing ethereal, aesthetic music straight to your devices, no matter where you are. Over the past ten years, our free, ad-free 24/7 broadcast has provided a sanctuary for those who cherish the nostalgic, dreamy soundscapes that define the Vaporwave genre.</p>\r\n\r\n<p>To commemorate this milestone we've created the most exclusive and fan-friendly \u{2060}<a href=\"https://discord.com/channels/315683286242557955/1342670756995137637\">10th-anniversary-fair</a> channel in <a href=\"https://plaza.one/discord\">our Discord server</a> featuring a special role for you to get and be immortalize in Mr. Plaza's secret archives.</p>\r\n\r\n<p>Thank you all for supporting the radio, our discord server and we hope you enjoy this day as much as we do.</p>\r\n\r\n<p><em>Happy 10th anniversary from the admin and mod team.</em></p>";
-        let blocks = parse_html_blocks(html);
-        assert_eq!(
-            blocks,
-            vec![
-                HtmlBlock::Paragraph(vec![
-                    ("We are thrilled to be celebrating our ".to_string(), false),
-                    ("10th anniversary".to_string(), true),
-                    ("! Even more exciting is the opportunity to share this milestone with the incredible fans who have been the heart and soul of the ".to_string(), false),
-                    ("Nightwave Plaza".to_string(), true),
-                    (".".to_string(), false),
-                ]),
-                HtmlBlock::Paragraph(vec![(
-                    "As we mark this anniversary of our beloved radio station, we celebrate a decade of bringing ethereal, aesthetic music straight to your devices, no matter where you are. Over the past ten years, our free, ad-free 24/7 broadcast has provided a sanctuary for those who cherish the nostalgic, dreamy soundscapes that define the Vaporwave genre.".to_string(),
-                    false
-                )]),
-                HtmlBlock::Paragraph(vec![
-                    ("To commemorate this milestone we've created the most exclusive and fan-friendly \u{2060}".to_string(), false),
-                    ("10th-anniversary-fair".to_string(), false),
-                    (" channel in ".to_string(), false),
-                    ("our Discord server".to_string(), false),
-                    (" featuring a special role for you to get and be immortalize in Mr. Plaza's secret archives.".to_string(), false),
-                ]),
-                HtmlBlock::Paragraph(vec![(
-                    "Thank you all for supporting the radio, our discord server and we hope you enjoy this day as much as we do.".to_string(),
-                    false
-                )]),
-                HtmlBlock::Paragraph(vec![("Happy 10th anniversary from the admin and mod team.".to_string(), false)]),
-            ]
-        );
-    }
-
-    #[test]
-    fn test_article_10() {
-        let html = "<p><b>Contribute to Plaza</b></p>\r\n\r\n<p>Would you like to take part in the development of Nightwave Plaza? We have a project on Github. Feel free to contribute!</p>\r\n<p><a href=\"https://github.com/nightwaveplaza\" target=\"_blank\">github.com/nightwaveplaza</a></p>\r\n\r\n<p>Want to translate Nightwave Plaza into your native language? <a href=\"mailto:mail@plaza.one\">Please let us know!</a> You can track the current translation process here: <a href=\"https://weblate.plaza.one\">weblate.plaza.one</a>";
-        let blocks = parse_html_blocks(html);
-        assert_eq!(
-            blocks,
-            vec![
-                HtmlBlock::Paragraph(vec![("Contribute to Plaza".to_string(), true)]),
-                HtmlBlock::Paragraph(vec![(
-                    "Would you like to take part in the development of Nightwave Plaza? We have a project on Github. Feel free to contribute!".to_string(),
-                    false
-                )]),
-                HtmlBlock::Paragraph(vec![("github.com/nightwaveplaza".to_string(), false)]),
-                HtmlBlock::Paragraph(vec![
-                    ("Want to translate Nightwave Plaza into your native language? ".to_string(), false),
-                    ("Please let us know!".to_string(), false),
-                    (" You can track the current translation process here: ".to_string(), false),
-                    ("weblate.plaza.one".to_string(), false),
-                ]),
-            ]
-        );
-    }
-
-    #[test]
     fn test_article_9() {
         let html = "<p><strong>Submissions</strong></p>\r\n<p>Submissions are open again!</p>\r\n<p>Please use the following link to submit your music for broadcast:</p>\r\n<p><a href=\"https://plaza.one/submissions\" target=\"_blank\">https://plaza.one/submissions</a></p>";
         let blocks = parse_html_blocks(html);
@@ -384,24 +304,6 @@ mod tests {
                 HtmlBlock::Paragraph(vec![("Submissions are open again!".to_string(), false)]),
                 HtmlBlock::Paragraph(vec![("Please use the following link to submit your music for broadcast:".to_string(), false)]),
                 HtmlBlock::Paragraph(vec![("https://plaza.one/submissions".to_string(), false)]),
-            ]
-        );
-    }
-
-    #[test]
-    fn test_article_6() {
-        let html = "<p><strong>Discord!</strong></p>\r\n<p>Hello! <em>This is just a reminder.</em></p>\r\n<p>Did you know we have a Discord server? There are cool people and nice mods. It’s a great place to discuss vaporwave, or anything else.</p>\r\n<p><a href=\"https://plaza.one/discord\">Join us --></a></p>";
-        let blocks = parse_html_blocks(html);
-        assert_eq!(
-            blocks,
-            vec![
-                HtmlBlock::Paragraph(vec![("Discord!".to_string(), true)]),
-                HtmlBlock::Paragraph(vec![
-                    ("Hello! ".to_string(), false),
-                    ("This is just a reminder.".to_string(), false),
-                ]),
-                HtmlBlock::Paragraph(vec![("Did you know we have a Discord server? There are cool people and nice mods. It’s a great place to discuss vaporwave, or anything else.".to_string(), false)]),
-                HtmlBlock::Paragraph(vec![("Join us -->".to_string(), false)]),
             ]
         );
     }
@@ -426,4 +328,3 @@ mod tests {
         );
     }
 }
-

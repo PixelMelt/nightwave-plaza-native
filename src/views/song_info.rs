@@ -1,55 +1,47 @@
-use crate::state::{Msg, Plaza};
+use crate::state::{Msg, Plaza, SongInfoMsg};
 use crate::theme;
+use crate::views::bevel::bevel_button;
 use crate::views::widgets::{
-    self, d3_raised, d3_sunken, format_date, format_time, shaped, status_bar,
+    self, bold_font, close_btn, d3_sunken, d3_thin_sunken, format_date, format_time, shaped,
+    status_bar,
 };
 use iced::widget::{
-    button, column, container, horizontal_space, image, row, text, vertical_space, Space,
+    column, container, horizontal_space, image, row, text, vertical_space, Space,
 };
 use iced::{Element, Fill};
 
-pub fn view(state: &Plaza, wid: iced::window::Id) -> Element<Msg> {
-    let bold = iced::Font {
-        weight: iced::font::Weight::Bold,
-        ..iced::Font::DEFAULT
-    };
+const FAVORITE_GOLD: iced::Color = iced::Color::from_rgb(1.0, 0.827, 0.0);
 
-    if state.song_info_loading {
-        let loading = container(text("Loading...").size(11).center().width(Fill))
+pub fn view(state: &Plaza, wid: iced::window::Id) -> Element<'_, Msg> {
+    let bold = bold_font();
+
+    if state.song_info.loading {
+        let loading = container(text("Loading...").size(11))
             .width(Fill)
             .height(Fill)
             .center_x(Fill)
             .center_y(Fill);
-        let close = d3_raised(
-            button(text("Close").size(11).center().width(80))
-                .on_press(Msg::CloseWin(wid))
-                .width(80)
-                .style(theme::raised),
-        );
-        let bottom = row![horizontal_space(), close].padding([4, 2]);
+        let bottom = row![horizontal_space(), close_btn(wid)].padding([4, 2]);
         return column![loading, bottom].spacing(2).padding(2).into();
     }
 
     let (artist, album, title_str, length, likes, first_played, art_handle) =
-        if let Some(ref info) = state.song_info {
+        if let Some(ref info) = state.song_info.data {
             (
-                info.data.artist.clone(),
-                info.data.album.clone(),
-                info.data.title.clone(),
+                &info.data.artist,
+                &info.data.album,
+                &info.data.title,
                 info.data.length,
                 info.stats.likes,
                 info.stats.first_played_at,
-                state
-                    .song_info_artwork
-                    .as_ref()
-                    .or(state.artwork_handle.as_ref()),
+                state.song_info.artwork.as_ref().or(state.artwork_handle.as_ref()),
             )
         } else {
             let song = &state.status.song;
             (
-                song.artist.clone(),
-                song.album.clone(),
-                song.title.clone(),
+                &song.artist,
+                &song.album,
+                &song.title,
                 song.length,
                 song.reactions,
                 None,
@@ -57,12 +49,12 @@ pub fn view(state: &Plaza, wid: iced::window::Id) -> Element<Msg> {
             )
         };
 
-    let art: Element<Msg> = if let Some(h) = art_handle {
-        d3_sunken(container(image(h.clone()).width(100).height(100)).style(theme::sunken_inner))
-            .into()
+    let art_content: Element<Msg> = if let Some(h) = art_handle {
+        image(h.clone()).width(100).height(100).into()
     } else {
-        d3_sunken(container(Space::new(100, 100)).style(theme::sunken_inner)).into()
+        Space::new(100, 100).into()
     };
+    let art: Element<Msg> = d3_thin_sunken(container(art_content).style(theme::sunken_inner)).into();
 
     let info = column![
         text("Artist:").size(10).font(bold),
@@ -89,33 +81,28 @@ pub fn view(state: &Plaza, wid: iced::window::Id) -> Element<Msg> {
 
     let info_row = row![info, horizontal_space(), art].padding(4);
     let panel = d3_sunken(
-        container(info_row)
-            .style(theme::sunken_inner)
-            .width(Fill)
-            .padding(4),
+        container(info_row).style(theme::panel).width(Fill).padding(4),
     );
 
-    let preview_btn = d3_raised(
-        button(text("Play Preview").size(11).center().width(100))
-            .style(theme::raised)
-            .width(100),
-    );
-    let close = d3_raised(
-        button(text("Close").size(11).center().width(80))
-            .on_press(Msg::CloseWin(wid))
-            .width(80)
-            .style(theme::raised),
-    );
-    let bottom = row![preview_btn, horizontal_space(), close].padding([4, 2]);
-
-    let status = if let Some(fp) = first_played {
-        status_bar(vec![text(format!("First Played: {}", format_date(fp)))
-            .size(10)
+    let favorited = state.song_info.favorite_id.is_some();
+    let can_favorite = state.song_info.data.is_some() && !state.song_info.fav_sending;
+    let fav_btn = bevel_button(
+        text(widgets::IC_FAVORITE)
+            .font(widgets::ICON_FONT)
+            .size(12)
+            .center()
             .width(Fill)
-            .into()])
-    } else {
-        status_bar(vec![text("").size(10).width(Fill).into()])
-    };
+            .color(if favorited { FAVORITE_GOLD } else { theme::BLACK })
+            .shaping(iced::widget::text::Shaping::Advanced),
+    )
+    .maybe_on_press(can_favorite.then_some(Msg::SongInfo(SongInfoMsg::ToggleFavorite)))
+    .width(44);
+    let bottom = row![fav_btn, horizontal_space(), close_btn(wid)].padding([4, 2]);
+
+    let status_text = first_played
+        .map(|fp| format!("First Played: {}", format_date(fp)))
+        .unwrap_or_default();
+    let status = status_bar(vec![text(status_text).size(10).width(Fill).into()]);
 
     column![panel, bottom, status].spacing(2).padding(2).into()
 }

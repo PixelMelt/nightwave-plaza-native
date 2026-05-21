@@ -26,15 +26,15 @@ pub fn save(token: &str, user: &User) {
         token: token.to_string(),
         user: user.clone(),
     };
-    if let Ok(json) = serde_json::to_string_pretty(&session) {
-        let _ = fs::write(&path, json);
+    if let Ok(bytes) = serde_json::to_vec(&session) {
+        let _ = fs::write(&path, bytes);
     }
 }
 
 pub fn load() -> Option<Session> {
     let path = session_path()?;
-    let data = fs::read_to_string(path).ok()?;
-    serde_json::from_str(&data).ok()
+    let file = fs::File::open(path).ok()?;
+    serde_json::from_reader(file).ok()
 }
 
 pub fn clear() {

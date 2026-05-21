@@ -1,149 +1,301 @@
-use rodio::{Decoder, OutputStream, OutputStreamHandle, Sink};
-use std::io::{BufReader, Cursor, Read};
-use std::sync::{Arc, Mutex};
+use crate::api::StatusSong;
+use futures::channel::mpsc::UnboundedSender;
+use rodio::{buffer::SamplesBuffer, Decoder, OutputStream, OutputStreamHandle, Sink, Source};
+use souvlaki::{
+    MediaControlEvent, MediaControls, MediaMetadata, MediaPlayback, MediaPosition,
+};
+use std::io::{self, Read, Seek, SeekFrom};
+use std::sync::{
+    atomic::{AtomicBool, Ordering},
+    Arc, Mutex,
+};
+use std::time::Duration;
+
+const STREAM_URL: &str = "https://radio.plaza.one/mp3";
+
+// PREBUFFER is how much decoded audio we queue before playback starts; it becomes
+// the sink's cushion against network jitter, which the stream then keeps topped up
+// at real time. CHUNK is how often we hand decoded PCM to the sink afterwards —
+// small enough to stay responsive, large enough to avoid churn.
+const PREBUFFER: Duration = Duration::from_secs(5);
+const CHUNK: Duration = Duration::from_millis(250);
+
+const DEFAULT_VOLUME: f32 = 0.5;
+const RECONNECT_DELAY: Duration = Duration::from_secs(2);
 
 pub struct AudioPlayer {
     _stream: OutputStream,
     _stream_handle: OutputStreamHandle,
     sink: Arc<Sink>,
-    playing: Arc<Mutex<bool>>,
-    streaming: Arc<Mutex<bool>>,
+    muted: Arc<AtomicBool>,
+    streaming: Arc<AtomicBool>,
+    target_volume: Mutex<f32>,
+    controls: Mutex<Option<MediaControls>>,
+    progress: Mutex<Option<Duration>>,
+    length: Mutex<Option<Duration>>,
 }
 
 impl AudioPlayer {
-    pub fn new() -> Result<Self, Box<dyn std::error::Error>> {
+    pub fn new(
+        media_tx: Option<UnboundedSender<MediaControlEvent>>,
+    ) -> Result<Self, Box<dyn std::error::Error>> {
         let (stream, stream_handle) = OutputStream::try_default()?;
         let sink = Sink::try_new(&stream_handle)?;
-        sink.set_volume(0.5);
-        Ok(Self {
+        sink.set_volume(DEFAULT_VOLUME);
+
+        // souvlaki's Windows backend panics without an HWND, and iced does
+        // not expose its raw window handle in a stable way. Skip media
+        // controls on Windows for now — every controls call site is already
+        // guarded by `if let Some(...)`, so the rest of the app is unaffected.
+        #[cfg(not(target_os = "windows"))]
+        let controls = media_tx.and_then(|tx| build_controls(tx).ok());
+        #[cfg(target_os = "windows")]
+        let controls: Option<MediaControls> = {
+            let _ = media_tx;
+            None
+        };
+
+        let player = Self {
             _stream: stream,
             _stream_handle: stream_handle,
             sink: Arc::new(sink),
-            playing: Arc::new(Mutex::new(false)),
-            streaming: Arc::new(Mutex::new(false)),
-        })
+            muted: Arc::new(AtomicBool::new(false)),
+            streaming: Arc::new(AtomicBool::new(false)),
+            target_volume: Mutex::new(DEFAULT_VOLUME),
+            controls: Mutex::new(controls),
+            progress: Mutex::new(None),
+            length: Mutex::new(None),
+        };
+
+        let sink = player.sink.clone();
+        let streaming = player.streaming.clone();
+        std::thread::spawn(move || stream_forever(sink, streaming));
+
+        player.emit_playback();
+
+        Ok(player)
     }
 
     pub fn is_playing(&self) -> bool {
-        *self.playing.lock().unwrap()
+        !self.muted.load(Ordering::Relaxed)
     }
 
     pub fn is_streaming(&self) -> bool {
-        *self.streaming.lock().unwrap()
-    }
-
-    #[allow(dead_code)]
-    pub fn volume(&self) -> f32 {
-        self.sink.volume()
+        self.streaming.load(Ordering::Relaxed)
     }
 
     pub fn set_volume(&self, vol: f32) {
-        self.sink.set_volume(vol.clamp(0.0, 1.0));
+        let v = vol.clamp(0.0, 1.0);
+        if let Ok(mut g) = self.target_volume.lock() {
+            *g = v;
+        }
+        if !self.muted.load(Ordering::Relaxed) {
+            self.sink.set_volume(v);
+        }
     }
 
     pub fn play(&self) {
-        if self.is_playing() {
+        if !self.muted.swap(false, Ordering::Relaxed) {
             return;
         }
-        *self.playing.lock().unwrap() = true;
-        *self.streaming.lock().unwrap() = false;
-        let sink = self.sink.clone();
-        let playing = self.playing.clone();
-        let streaming = self.streaming.clone();
-
-        std::thread::spawn(move || {
-            let result = stream_audio(sink, playing.clone(), streaming);
-            if let Err(e) = result {
-                eprintln!("Audio stream error: {}", e);
-            }
-            *playing.lock().unwrap() = false;
-        });
+        let v = self.target_volume.lock().map(|g| *g).unwrap_or(DEFAULT_VOLUME);
+        self.sink.set_volume(v);
+        self.emit_playback();
     }
 
     pub fn stop(&self) {
-        *self.playing.lock().unwrap() = false;
-        *self.streaming.lock().unwrap() = false;
-        self.sink.stop();
+        if self.muted.swap(true, Ordering::Relaxed) {
+            return;
+        }
+        self.sink.set_volume(0.0);
+        self.emit_playback();
+    }
+
+    pub fn update_metadata(&self, song: &StatusSong) {
+        let length = (song.length > 0.0).then(|| Duration::from_secs_f64(song.length));
+        let position = (song.position >= 0.0)
+            .then(|| Duration::from_secs_f64(song.position.max(0.0)));
+
+        if let Ok(mut g) = self.length.lock() {
+            *g = length;
+        }
+        if let Ok(mut g) = self.progress.lock() {
+            *g = position;
+        }
+
+        if let Ok(mut guard) = self.controls.lock() {
+            if let Some(controls) = guard.as_mut() {
+                let _ = controls.set_metadata(MediaMetadata {
+                    title: opt_str(&song.title),
+                    album: opt_str(&song.album),
+                    artist: opt_str(&song.artist),
+                    cover_url: song.artwork_src.as_deref(),
+                    duration: length,
+                });
+            }
+        }
+
+        self.emit_playback();
+    }
+
+    fn emit_playback(&self) {
+        let progress = self
+            .progress
+            .lock()
+            .ok()
+            .and_then(|g| *g)
+            .map(MediaPosition);
+        let playback = if self.muted.load(Ordering::Relaxed) {
+            MediaPlayback::Paused { progress }
+        } else {
+            MediaPlayback::Playing { progress }
+        };
+        if let Ok(mut guard) = self.controls.lock() {
+            if let Some(controls) = guard.as_mut() {
+                let _ = controls.set_playback(playback);
+            }
+        }
     }
 }
 
-fn stream_audio(
-    sink: Arc<Sink>,
-    playing: Arc<Mutex<bool>>,
-    streaming: Arc<Mutex<bool>>,
+fn opt_str(s: &str) -> Option<&str> {
+    if s.is_empty() { None } else { Some(s) }
+}
+
+#[cfg(not(target_os = "windows"))]
+fn build_controls(tx: UnboundedSender<MediaControlEvent>) -> Result<MediaControls, souvlaki::Error> {
+    let config = souvlaki::PlatformConfig {
+        dbus_name: "nightwave_plaza",
+        display_name: "Nightwave Plaza",
+        hwnd: None,
+    };
+    let mut controls = MediaControls::new(config)?;
+    controls.attach(move |event| {
+        let _ = tx.unbounded_send(event);
+    })?;
+    Ok(controls)
+}
+
+fn stream_forever(sink: Arc<Sink>, streaming: Arc<AtomicBool>) {
+    loop {
+        if let Err(e) = stream_once(&sink, &streaming) {
+            eprintln!("Audio stream error: {e}");
+        }
+        streaming.store(false, Ordering::Relaxed);
+        std::thread::sleep(RECONNECT_DELAY);
+    }
+}
+
+fn stream_once(
+    sink: &Sink,
+    streaming: &AtomicBool,
 ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     let url = format!(
-        "https://radio.plaza.one/mp3?nocache={}",
+        "{}?nocache={}",
+        STREAM_URL,
         std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
             .unwrap()
             .as_millis()
     );
 
-    let mut resp = reqwest::blocking::get(&url)?;
+    let resp = reqwest::blocking::get(&url)?;
 
-    let mut buffer = Vec::with_capacity(256 * 1024);
-    let mut chunk = [0u8; 16384];
+    // Decode the whole response as ONE continuous MP3 source. Decoding here on the
+    // background thread (not lazily on rodio's audio thread) keeps blocking network
+    // reads off the output path, and a single decoder means no per-fragment frame
+    // re-sync or decoder re-priming — the seams that used to stutter every refill.
+    let decoder = Decoder::new_mp3(StreamReader::new(resp))?;
+    let channels = decoder.channels();
+    let sample_rate = decoder.sample_rate();
+    let per_sec = sample_rate as usize * channels.max(1) as usize;
+    let prebuffer_len = per_sec * PREBUFFER.as_millis() as usize / 1000;
+    let chunk_len = (per_sec * CHUNK.as_millis() as usize / 1000).max(1);
 
-    loop {
-        if !*playing.lock().unwrap() {
-            return Ok(());
-        }
-        let n = resp.read(&mut chunk)?;
-        if n == 0 {
-            return Ok(());
-        }
-        buffer.extend_from_slice(&chunk[..n]);
-        if buffer.len() >= 65536 {
-            break;
+    // Accumulate decoded PCM and hand it to the sink in chunks. PCM chunk
+    // boundaries are gapless, so the sink plays a seamless stream.
+    let mut buf: Vec<i16> = Vec::with_capacity(prebuffer_len.max(chunk_len));
+    let mut prebuffered = false;
+
+    for sample in decoder {
+        buf.push(sample);
+        let threshold = if prebuffered { chunk_len } else { prebuffer_len };
+        if buf.len() >= threshold {
+            let chunk = std::mem::replace(&mut buf, Vec::with_capacity(chunk_len));
+            sink.append(SamplesBuffer::new(channels, sample_rate, chunk));
+            if !prebuffered {
+                prebuffered = true;
+                streaming.store(true, Ordering::Relaxed);
+            }
         }
     }
 
-    let cursor = Cursor::new(buffer.clone());
-    match Decoder::new(BufReader::new(cursor)) {
-        Ok(source) => {
-            sink.append(source);
-
-            *streaming.lock().unwrap() = true;
-        }
-        Err(e) => {
-            eprintln!("Initial decode failed: {}, retrying with more data...", e);
-        }
-    }
-
-    loop {
-        if !*playing.lock().unwrap() {
-            break;
-        }
-
-        buffer.clear();
-        let mut accumulated = 0usize;
-
-        while accumulated < 131072 {
-            if !*playing.lock().unwrap() {
-                return Ok(());
-            }
-            let n = resp.read(&mut chunk)?;
-            if n == 0 {
-                return Ok(());
-            }
-            buffer.extend_from_slice(&chunk[..n]);
-            accumulated += n;
-        }
-
-        let cursor = Cursor::new(buffer.clone());
-        match Decoder::new(BufReader::new(cursor)) {
-            Ok(source) => {
-                sink.append(source);
-                if !*streaming.lock().unwrap() {
-                    *streaming.lock().unwrap() = true;
-                }
-            }
-            Err(e) => {
-                eprintln!("Chunk decode error: {}", e);
-            }
-        }
+    // The decoder ended (stream closed or unrecoverable decode error). Flush any
+    // tail so we don't drop it, then let the caller reconnect.
+    if !buf.is_empty() {
+        sink.append(SamplesBuffer::new(channels, sample_rate, buf));
     }
 
     Ok(())
+}
+
+/// `rodio::Decoder` requires a `Read + Seek` source, but a live Icecast response
+/// is forward-only. This wraps the blocking response, tracks the byte offset, and
+/// supports the limited seeks symphonia performs while setting up a stream:
+/// reporting the current position and skipping forward. Backward seeks are
+/// rejected — symphonia's `MediaSourceStream` serves short rewinds from its own
+/// internal buffer, so they don't reach us during normal playback.
+struct StreamReader {
+    resp: reqwest::blocking::Response,
+    pos: u64,
+}
+
+impl StreamReader {
+    fn new(resp: reqwest::blocking::Response) -> Self {
+        Self { resp, pos: 0 }
+    }
+}
+
+impl Read for StreamReader {
+    fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
+        let n = self.resp.read(buf)?;
+        self.pos += n as u64;
+        Ok(n)
+    }
+}
+
+impl Seek for StreamReader {
+    fn seek(&mut self, pos: SeekFrom) -> io::Result<u64> {
+        let target = match pos {
+            SeekFrom::Start(n) => n,
+            SeekFrom::Current(off) => (self.pos as i64).saturating_add(off) as u64,
+            SeekFrom::End(_) => {
+                return Err(io::Error::new(
+                    io::ErrorKind::Unsupported,
+                    "cannot seek from the end of a live stream",
+                ))
+            }
+        };
+        if target == self.pos {
+            return Ok(self.pos);
+        }
+        if target < self.pos {
+            return Err(io::Error::new(
+                io::ErrorKind::Unsupported,
+                "cannot seek backward in a live stream",
+            ));
+        }
+        // Forward skip: read and discard.
+        let mut remaining = target - self.pos;
+        let mut scratch = [0u8; 8192];
+        while remaining > 0 {
+            let want = remaining.min(scratch.len() as u64) as usize;
+            let n = self.read(&mut scratch[..want])?;
+            if n == 0 {
+                break;
+            }
+            remaining -= n as u64;
+        }
+        Ok(self.pos)
+    }
 }
