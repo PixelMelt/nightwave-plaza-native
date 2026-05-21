@@ -1,0 +1,8 @@
+[Desktop Entry]
+Type=Application
+Name=Nightwave Plaza
+Comment=Native Nightwave Plaza client
+Exec=nightwave-plaza
+Icon=nightwave-plaza
+Categories=Audio;Music;
+StartupWMClass=nightwave-plaza
