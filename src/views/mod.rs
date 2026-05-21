@@ -5,6 +5,7 @@ pub mod history;
 pub mod news;
 pub mod player;
 pub mod ratings;
+pub mod settings;
 pub mod song_info;
 pub mod support;
 pub mod player_timer;

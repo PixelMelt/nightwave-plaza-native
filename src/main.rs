@@ -1,5 +1,6 @@
 mod api;
 mod audio;
+mod lastfm;
 mod session;
 mod state;
 mod theme;
@@ -24,9 +25,8 @@ fn app_icon() -> Option<iced::window::Icon> {
     iced::window::icon::from_file_data(APP_ICON, Some(::image::ImageFormat::Png)).ok()
 }
 
-// Set NIGHTWAVE_DEV=1 to make every window resizable and log each resize to
-// stderr in a paste-ready form. Useful for dialling in WinType::size() values
-// without recompiling between attempts.
+// NIGHTWAVE_DEV=1 makes windows resizable and logs each resize, for tuning
+// WinType::size() without recompiling.
 fn dev_mode() -> bool {
     static FLAG: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
     *FLAG.get_or_init(|| std::env::var("NIGHTWAVE_DEV").is_ok())
@@ -45,7 +45,7 @@ fn platform_specific() -> iced::window::settings::PlatformSpecific {
     iced::window::settings::PlatformSpecific::default()
 }
 
-// Open a URL in the user's default browser. Each desktop OS has its own opener.
+// Open a URL in the user's default browser.
 fn open_url(url: &str) {
     #[cfg(target_os = "macos")]
     let result = std::process::Command::new("open").arg(url).spawn();
@@ -63,6 +63,79 @@ fn open_url(url: &str) {
 use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
+
+pub(crate) fn now_unix() -> u64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_secs())
+        .unwrap_or(0)
+}
+
+// "Now playing" update for the current track if scrobbling is active. Failures
+// are swallowed — a flaky ping shouldn't show as a UI error.
+fn lastfm_now_playing_task(state: &Plaza) -> Task<Msg> {
+    let Some(sk) = state.lastfm.is_active().then(|| state.lastfm.session_key.clone()).flatten()
+    else {
+        return Task::none();
+    };
+    let song = &state.status.song;
+    if song.artist.is_empty() || song.title.is_empty() {
+        return Task::none();
+    }
+    let (artist, title, album) = (song.artist.clone(), song.title.clone(), song.album.clone());
+    Task::perform(
+        async move { lastfm::update_now_playing(&sk, &artist, &title, &album).await },
+        |_| Msg::Noop,
+    )
+}
+
+// Scrobbling became active mid-song: start timing the current track and announce it.
+fn lastfm_begin_current(state: &mut Plaza) -> Task<Msg> {
+    let is_playing = state.player.as_ref().map_or(false, |p| p.is_playing());
+    if !is_playing {
+        return Task::none();
+    }
+    if let Some(s) = state.scrobble.as_mut() {
+        s.resume(Instant::now());
+    }
+    lastfm_now_playing_task(state)
+}
+
+// Scrobble `track` if played past half its length (capped 4 min) and over 30s,
+// counting actual playback only (paused time excluded).
+fn lastfm_scrobble_task(
+    state: &Plaza,
+    track: &crate::state::ScrobbleTrack,
+    now: Instant,
+) -> Task<Msg> {
+    let Some(sk) = state.lastfm.is_active().then(|| state.lastfm.session_key.clone()).flatten()
+    else {
+        return Task::none();
+    };
+    let Some(start_unix) = track.start_unix else {
+        return Task::none();
+    };
+    if track.artist.is_empty() || track.title.is_empty() {
+        return Task::none();
+    }
+    if track.duration > 0.0 && track.duration < 30.0 {
+        return Task::none();
+    }
+    let played = track.total_played(now);
+    let threshold = if track.duration > 0.0 {
+        (track.duration / 2.0).min(240.0)
+    } else {
+        30.0
+    };
+    if played < threshold {
+        return Task::none();
+    }
+    let (artist, title, album) = (track.artist.clone(), track.title.clone(), track.album.clone());
+    Task::perform(
+        async move { lastfm::scrobble(&sk, &artist, &title, &album, start_unix).await },
+        |_| Msg::Noop,
+    )
+}
 
 fn load_cjk_font() -> Option<Vec<u8>> {
     let paths = [
@@ -153,6 +226,12 @@ fn main() -> iced::Result {
                 stats_loading: false,
                 reaction_rate: 0,
                 reaction_song_id: String::new(),
+
+                lastfm: lastfm::load(),
+                lastfm_token: None,
+                lastfm_busy: false,
+                lastfm_status: None,
+                scrobble: None,
             };
 
             let session_task = if let Some(saved) = session::load() {
@@ -224,6 +303,7 @@ fn win_view(state: &Plaza, wid: iced::window::Id) -> Element<'_, Msg> {
             Some(WinType::UserPassword) => views::user_password::view(state, wid),
             Some(WinType::UserProfileDelete) => views::user_profile_delete::view(state, wid),
             Some(WinType::PlayerTimer) => views::player_timer::view(state, wid),
+            Some(WinType::Settings) => views::settings::view(state, wid),
             None => iced::widget::text("").into(),
         };
         let title = match state.child_windows.get(&wid) {
@@ -240,12 +320,7 @@ fn win_view(state: &Plaza, wid: iced::window::Id) -> Element<'_, Msg> {
     };
     let title_bar = views::widgets::title_bar(title, wid, wt, true, show_close);
 
-    // Plaza layout inside `.win-window`:
-    //   - `.inner` has 2px padding (the container padding below),
-    //   - header has 1px margin on all sides,
-    //   - content has 1px margin on top/sides, 0 on bottom,
-    //   - approximated here with column padding(1) + spacing(1) (the gap is
-    //     1px after vertical margin collapsing on adjacent siblings).
+    // Approximates plaza's `.win-window`: 2px inner padding, 1px gaps/margins.
     let framed = iced::widget::column![title_bar, inner]
         .spacing(1)
         .padding(1)
@@ -270,10 +345,8 @@ fn subscription(_state: &Plaza) -> Subscription<Msg> {
         iced::time::every(Duration::from_secs(5)).map(|_| Msg::Refresh),
         iced::window::close_events().map(Msg::WinClosed),
         iced::window::resize_events().map(|(id, size)| Msg::WinResized(id, size)),
-        // Spacebar toggles play/pause. `id` is the focused window the key event
-        // was routed to; `update` only acts when it's the player window. The
-        // `Ignored` guard means a focused text field consumes the space first,
-        // so the shortcut never fires mid-typing.
+        // Spacebar toggles play/pause. The `Ignored` guard lets a focused text
+        // field consume the space first, so it never fires mid-typing.
         iced::event::listen_with(|event, status, id| match event {
             iced::Event::Keyboard(iced::keyboard::Event::KeyPressed {
                 key: iced::keyboard::Key::Named(iced::keyboard::key::Named::Space),
@@ -304,13 +377,45 @@ fn update(state: &mut Plaza, msg: Msg) -> Task<Msg> {
         Msg::StatusOk(status) => {
             let new_art = status.song.artwork_src.clone().unwrap_or_default();
             let need = !new_art.is_empty() && new_art != state.artwork_url;
+
+            // Last.fm scrobble tracking (reads the old song id before overwrite).
+            let is_playing = state.player.as_ref().map_or(false, |p| p.is_playing());
+            let now = Instant::now();
+            let new_id = status.song.id.clone();
+            let prev = state.scrobble.take();
+            let song_changed = prev.as_ref().map_or(true, |p| p.song_id != new_id);
+            let mut lf_tasks: Vec<Task<Msg>> = Vec::new();
+            if song_changed {
+                if let Some(ref old) = prev {
+                    lf_tasks.push(lastfm_scrobble_task(state, old, now));
+                }
+                let mut track = crate::state::ScrobbleTrack::new(&status.song);
+                if is_playing {
+                    track.resume(now);
+                }
+                state.scrobble = Some(track);
+            } else if let Some(mut same) = prev {
+                // Reconcile the accumulator with playback each poll, so a stop from
+                // any source freezes the timer even without an explicit handler.
+                if is_playing {
+                    same.resume(now);
+                } else {
+                    same.pause(now);
+                }
+                state.scrobble = Some(same);
+            }
+
             state.status = status;
             state.elapsed = state.status.song.position;
             state.last_tick = Instant::now();
             if let Some(ref p) = state.player {
                 p.update_metadata(&state.status.song);
             }
-            if need {
+            if song_changed && is_playing {
+                lf_tasks.push(lastfm_now_playing_task(state));
+            }
+
+            let art_task = if need {
                 state.artwork_url = new_art.clone();
                 Task::perform(
                     async move {
@@ -325,7 +430,10 @@ fn update(state: &mut Plaza, msg: Msg) -> Task<Msg> {
                 )
             } else {
                 Task::none()
-            }
+            };
+
+            lf_tasks.push(art_task);
+            Task::batch(lf_tasks)
         }
         Msg::StatusErr(e) => {
             state.error_msg = Some(e);
@@ -357,12 +465,25 @@ fn update(state: &mut Plaza, msg: Msg) -> Task<Msg> {
             Task::none()
         }
         Msg::TogglePlay => {
+            let now = Instant::now();
+            let was_playing = state.player.as_ref().map_or(false, |p| p.is_playing());
             if let Some(ref p) = state.player {
-                if p.is_playing() {
+                if was_playing {
                     p.stop();
                 } else {
                     p.play();
                 }
+            }
+            let playing_now = state.player.as_ref().map_or(false, |p| p.is_playing());
+            if let Some(s) = state.scrobble.as_mut() {
+                if playing_now {
+                    s.resume(now);
+                } else {
+                    s.pause(now);
+                }
+            }
+            if playing_now {
+                return lastfm_now_playing_task(state);
             }
             Task::none()
         }
@@ -502,7 +623,6 @@ fn update(state: &mut Plaza, msg: Msg) -> Task<Msg> {
             }
         }
 
-        // History extraction will be above
         Msg::History(h_msg) => update_history(state, h_msg),
 
         Msg::Ratings(r_msg) => update_ratings(state, r_msg),
@@ -913,6 +1033,7 @@ fn update(state: &mut Plaza, msg: Msg) -> Task<Msg> {
         Msg::ProfileEdit(p_msg) => update_profile_edit(state, p_msg),
         Msg::Password(p_msg) => update_password(state, p_msg),
         Msg::DeleteAccount(d_msg) => update_delete(state, d_msg),
+        Msg::Lastfm(l_msg) => update_lastfm(state, l_msg),
         Msg::Timer(t_msg) => {
             use crate::state::TimerMsg;
             match t_msg {
@@ -985,28 +1106,49 @@ fn update(state: &mut Plaza, msg: Msg) -> Task<Msg> {
 
         Msg::Media(event) => {
             use souvlaki::MediaControlEvent as E;
-            let Some(ref p) = state.player else {
-                return Task::none();
+            let now = Instant::now();
+            // Scope the player borrow so we can touch other state afterwards.
+            let started_playing = {
+                let Some(ref p) = state.player else {
+                    return Task::none();
+                };
+                match event {
+                    E::Toggle => {
+                        if p.is_playing() {
+                            p.stop();
+                            false
+                        } else {
+                            p.play();
+                            true
+                        }
+                    }
+                    E::Play => {
+                        if !p.is_playing() {
+                            p.play();
+                            true
+                        } else {
+                            false
+                        }
+                    }
+                    E::Pause | E::Stop => {
+                        if p.is_playing() {
+                            p.stop();
+                        }
+                        false
+                    }
+                    _ => false,
+                }
             };
-            match event {
-                E::Toggle => {
-                    if p.is_playing() {
-                        p.stop();
-                    } else {
-                        p.play();
-                    }
+            let playing_now = state.player.as_ref().map_or(false, |p| p.is_playing());
+            if let Some(s) = state.scrobble.as_mut() {
+                if playing_now {
+                    s.resume(now);
+                } else {
+                    s.pause(now);
                 }
-                E::Play => {
-                    if !p.is_playing() {
-                        p.play();
-                    }
-                }
-                E::Pause | E::Stop => {
-                    if p.is_playing() {
-                        p.stop();
-                    }
-                }
-                _ => {}
+            }
+            if started_playing {
+                return lastfm_now_playing_task(state);
             }
             Task::none()
         }
@@ -1022,6 +1164,74 @@ fn close_windows_of(state: &mut Plaza, wt: WinType) -> Task<Msg> {
         .collect();
     state.child_windows.retain(|_, t| *t != wt);
     Task::batch(ids.into_iter().map(iced::window::close))
+}
+
+fn update_lastfm(state: &mut Plaza, msg: crate::state::LastfmMsg) -> Task<Msg> {
+    use crate::state::LastfmMsg;
+    match msg {
+        LastfmMsg::ToggleEnabled(b) => {
+            state.lastfm.enabled = b;
+            lastfm::save(&state.lastfm);
+            if b {
+                lastfm_begin_current(state)
+            } else {
+                Task::none()
+            }
+        }
+        LastfmMsg::Connect => {
+            if !lastfm::is_configured() {
+                return Task::none();
+            }
+            state.lastfm_busy = true;
+            state.lastfm_status = None;
+            Task::perform(async { lastfm::get_token().await }, |r| match r {
+                Ok(token) => Msg::Lastfm(LastfmMsg::TokenReady(token)),
+                Err(e) => Msg::Lastfm(LastfmMsg::Err(e)),
+            })
+        }
+        LastfmMsg::TokenReady(token) => {
+            state.lastfm_busy = false;
+            open_url(&lastfm::auth_url(&token));
+            state.lastfm_token = Some(token);
+            state.lastfm_status = None;
+            Task::none()
+        }
+        LastfmMsg::Finish => {
+            let Some(token) = state.lastfm_token.clone() else {
+                return Task::none();
+            };
+            state.lastfm_busy = true;
+            state.lastfm_status = None;
+            Task::perform(async move { lastfm::get_session(&token).await }, |r| match r {
+                Ok((name, key)) => Msg::Lastfm(LastfmMsg::SessionOk(name, key)),
+                Err(e) => Msg::Lastfm(LastfmMsg::Err(e)),
+            })
+        }
+        LastfmMsg::SessionOk(username, key) => {
+            state.lastfm_busy = false;
+            state.lastfm_token = None;
+            state.lastfm.username = Some(username);
+            state.lastfm.session_key = Some(key);
+            state.lastfm.enabled = true;
+            state.lastfm_status = Some("Connected. Scrobbling is on.".into());
+            lastfm::save(&state.lastfm);
+            lastfm_begin_current(state)
+        }
+        LastfmMsg::Disconnect => {
+            state.lastfm.session_key = None;
+            state.lastfm.username = None;
+            state.lastfm.enabled = false;
+            state.lastfm_token = None;
+            state.lastfm_status = None;
+            lastfm::save(&state.lastfm);
+            Task::none()
+        }
+        LastfmMsg::Err(e) => {
+            state.lastfm_busy = false;
+            state.lastfm_status = Some(e);
+            Task::none()
+        }
+    }
 }
 
 fn update_history(state: &mut Plaza, msg: crate::state::HistoryMsg) -> Task<Msg> {
@@ -1371,8 +1581,7 @@ fn update_password(state: &mut Plaza, msg: crate::state::PasswordMsg) -> Task<Ms
         }
         PasswordMsg::Ok => {
             state.password = crate::state::PasswordState::default();
-            // Changing the password invalidates the session server-side; sign out
-            // locally and prompt the user to log in again, matching the web app.
+            // A password change invalidates the session server-side; sign out locally.
             session::clear();
             state.auth_token = None;
             state.user = None;

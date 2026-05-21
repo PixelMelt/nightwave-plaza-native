@@ -52,17 +52,13 @@ pub fn bold_font() -> iced::Font {
     }
 }
 
-// Win9x 3D bevels, matching plaza/src/app/styles/ui/_mixins.scss exactly.
-// Each layer is a container whose background is revealed as a 1px strip on
-// the side(s) where its padding pushes the inner content away. The raised
-// button bevel (`d3-object`) lives in `bevel.rs` instead because it needs
-// to flip into the pressed state on click.
+// Win9x 3D bevels (plaza's _mixins.scss). Each layer is a container whose bg
+// shows as a 1px strip where its padding pushes content away. The pressed
+// button bevel lives in bevel.rs.
 //
-//   d3_raised_window (d3-window)   window frame    TL: LIGHT_GRAY / WHITE    BR: DARK_GRAY / BLACK
-//   d3_sunken        (d3-content)  panels/inputs   TL: DARK_GRAY / BLACK     BR: LIGHT_GRAY / WHITE
-//   d3_thin_sunken   (simple-      text-field,     TL: DARK_GRAY (1px)       BR: WHITE (1px)
-//                     border)      status cells,
-//                                  time display
+//   d3_raised_window   window frame   TL: LIGHT_GRAY/WHITE   BR: DARK_GRAY/BLACK
+//   d3_sunken          panels/inputs  TL: DARK_GRAY/BLACK    BR: LIGHT_GRAY/WHITE
+//   d3_thin_sunken     text fields    TL: DARK_GRAY          BR: WHITE
 
 fn bevel_layer<'a>(
     content: impl Into<Element<'a, Msg>>,
@@ -150,6 +146,7 @@ fn win_icon_bytes(wt: Option<&WinType>) -> &'static [u8] {
         Some(WinType::UserPassword) => WIN_KEYS,
         Some(WinType::UserProfileDelete) => WIN_RECYCLE,
         Some(WinType::PlayerTimer) => WIN_CLOCK,
+        Some(WinType::Settings) => WIN_GEAR,
         None => FAVICON,
     }
 }
@@ -299,7 +296,7 @@ pub fn pagination<'a>(
 }
 
 pub fn status_bar<'a>(cells: Vec<Element<'a, Msg>>) -> Element<'a, Msg> {
-    // Plaza: `.statusbar { margin: 2px 1px } .cell { padding: 3px 4px }`.
+    // Plaza: statusbar margin 2px 1px, cell padding 3px 4px.
     let mut r = Row::new().spacing(2);
     for cell in cells {
         r = r.push(d3_thin_sunken(
@@ -325,9 +322,7 @@ pub fn title_bar(
         .width(16)
         .height(16);
 
-    // Pin the line height to the 16px row height so the title box matches the
-    // icon and buttons; the default (~1.3x) makes the text taller and biases the
-    // vertical centering, leaving a gap above the title-bar contents.
+    // Pin line height to the 16px row so the title aligns with the icon/buttons.
     let title_label = text(title)
         .size(12)
         .line_height(iced::widget::text::LineHeight::Absolute(iced::Pixels(16.0)))
@@ -345,8 +340,7 @@ pub fn title_bar(
     let drag_area: Element<'static, Msg> =
         mouse_area(drag_content).on_press(Msg::DragWin(wid)).into();
 
-    // Buttons sit flush against each other (JS uses `margin: 0`), so they live
-    // in their own zero-spacing row rather than inheriting a gap from the bar.
+    // Buttons sit flush, so they get their own zero-spacing row.
     let mut buttons = Row::new()
         .spacing(0)
         .align_y(iced::Alignment::Center)

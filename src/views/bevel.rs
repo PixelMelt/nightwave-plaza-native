@@ -1,8 +1,6 @@
-//! Custom interactive bevel widget — a button replacement that owns its 3D
-//! bevel rendering so the pressed state can flip the bevel entirely (matching
-//! plaza's Win9x button behaviour), and a menu-item style that draws the
-//! d3-window raised bevel only on hover. Bevel strips are drawn directly via
-//! `renderer.fill_quad` rather than nested containers.
+//! Interactive Win9x bevel widget: a button that owns its 3D bevel rendering
+//! (so the pressed state can flip it) plus a hover-only menu-item style. Strips
+//! are drawn directly with `renderer.fill_quad`.
 
 use iced::advanced::layout::{self, Layout};
 use iced::advanced::renderer;
@@ -17,14 +15,11 @@ use crate::theme;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum BevelStyle {
-    /// d3-object — raised button bevel that inverts to all-black + inset
-    /// dark-gray ring while held down.
+    /// Raised button bevel; inverts while held.
     Object,
-    /// Thin (1px) raised bevel — used for tight title-bar buttons where the
-    /// full 2-pixel d3-object ring looks chunky and pushes the icon down.
-    /// Pressed state swaps to a 1px black-on-DARK_GRAY look.
+    /// Thin 1px bevel for tight title-bar buttons.
     TitleButton,
-    /// menu item — no bevel normally, d3-window raised bevel on hover.
+    /// No bevel; raised on hover.
     Menu,
 }
 
@@ -62,9 +57,7 @@ where
         }
     }
 
-    /// Force the pressed/active visual regardless of pointer state. Useful
-    /// for "selected tab" buttons where the bevel should permanently look
-    /// pressed.
+    /// Force the pressed visual regardless of pointer state (e.g. selected tabs).
     pub fn active(mut self, active: bool) -> Self {
         self.active = active;
         self
@@ -136,12 +129,8 @@ where
         renderer: &Renderer,
         limits: &layout::Limits,
     ) -> layout::Node {
-        // Plaza's CSS pads each button to the value it specifies (eg `.action`
-        // = 5px 6px, `.win-button` = 4px). The 2px bevel is drawn *inside*
-        // that padding via `border + inset box-shadow`, so it does not
-        // increase the element's size. Match that here: use `self.padding`
-        // directly and let the bevel ride on top of the outer pixels of the
-        // content's padding area.
+        // The bevel is drawn inside the padding (like CSS inset box-shadow), so
+        // it doesn't grow the element — pad by self.padding directly.
         layout::padded(limits, self.width, self.height, self.padding, |limits| {
             self.content
                 .as_widget()
@@ -190,9 +179,7 @@ where
             }
         };
 
-        // Fill face background for any state that has a visible bevel. The
-        // button uses BG_GRAY so its bevel doesn't show through to whatever
-        // is behind the row.
+        // Fill the face so the bevel doesn't show what's behind the row.
         if !matches!(bevel, BevelKind::None) {
             quad(renderer, bounds, theme::BG_GRAY);
         }
@@ -230,8 +217,7 @@ where
             BevelKind::None => {}
         }
 
-        // When pressed, shift the inner content down+right by 1px to give the
-        // "pushed in" feel that real Win9x buttons have.
+        // Shift content 1px down+right when pressed for the "pushed in" feel.
         let content_layout = layout.children().next().unwrap();
         let translation = if is_pressed {
             Vector::new(1.0, 1.0)
@@ -367,7 +353,7 @@ fn draw_symmetric_bevel<R: iced::advanced::Renderer>(
 ) {
     let Rectangle { x, y, width: w, height: h } = bounds;
 
-    // Outer ring (1px) — top, left, bottom, right
+    // Outer ring.
     quad(renderer, Rectangle { x, y, width: w, height: 1.0 }, tl_outer);
     quad(renderer, Rectangle { x, y, width: 1.0, height: h }, tl_outer);
     quad(
@@ -381,7 +367,7 @@ fn draw_symmetric_bevel<R: iced::advanced::Renderer>(
         br_outer,
     );
 
-    // Inner ring (1px, inside the outer)
+    // Inner ring.
     quad(
         renderer,
         Rectangle { x: x + 1.0, y: y + 1.0, width: w - 2.0, height: 1.0 },
@@ -421,7 +407,7 @@ fn draw_pressed_bevel<R: iced::advanced::Renderer>(renderer: &mut R, bounds: Rec
         theme::BLACK,
     );
 
-    // Inset 1px dark-gray ring just inside the black.
+    // Inset dark-gray ring.
     quad(
         renderer,
         Rectangle { x: x + 1.0, y: y + 1.0, width: w - 2.0, height: 1.0 },

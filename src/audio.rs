@@ -13,10 +13,8 @@ use std::time::Duration;
 
 const STREAM_URL: &str = "https://radio.plaza.one/mp3";
 
-// PREBUFFER is how much decoded audio we queue before playback starts; it becomes
-// the sink's cushion against network jitter, which the stream then keeps topped up
-// at real time. CHUNK is how often we hand decoded PCM to the sink afterwards —
-// small enough to stay responsive, large enough to avoid churn.
+// PREBUFFER: audio queued before playback starts (jitter cushion).
+// CHUNK: how often decoded PCM is handed to the sink afterwards.
 const PREBUFFER: Duration = Duration::from_secs(5);
 const CHUNK: Duration = Duration::from_millis(250);
 
@@ -43,10 +41,8 @@ impl AudioPlayer {
         let sink = Sink::try_new(&stream_handle)?;
         sink.set_volume(DEFAULT_VOLUME);
 
-        // souvlaki's Windows backend panics without an HWND, and iced does
-        // not expose its raw window handle in a stable way. Skip media
-        // controls on Windows for now — every controls call site is already
-        // guarded by `if let Some(...)`, so the rest of the app is unaffected.
+        // souvlaki's Windows backend needs an HWND iced won't expose; skip media
+        // controls there. Every call site is guarded by `if let Some(...)`.
         #[cfg(not(target_os = "windows"))]
         let controls = media_tx.and_then(|tx| build_controls(tx).ok());
         #[cfg(target_os = "windows")]
@@ -201,10 +197,8 @@ fn stream_once(
 
     let resp = reqwest::blocking::get(&url)?;
 
-    // Decode the whole response as ONE continuous MP3 source. Decoding here on the
-    // background thread (not lazily on rodio's audio thread) keeps blocking network
-    // reads off the output path, and a single decoder means no per-fragment frame
-    // re-sync or decoder re-priming — the seams that used to stutter every refill.
+    // One continuous MP3 decoder on this background thread: keeps blocking reads
+    // off the audio thread and avoids the per-fragment re-sync seams that stutter.
     let decoder = Decoder::new_mp3(StreamReader::new(resp))?;
     let channels = decoder.channels();
     let sample_rate = decoder.sample_rate();
@@ -212,8 +206,7 @@ fn stream_once(
     let prebuffer_len = per_sec * PREBUFFER.as_millis() as usize / 1000;
     let chunk_len = (per_sec * CHUNK.as_millis() as usize / 1000).max(1);
 
-    // Accumulate decoded PCM and hand it to the sink in chunks. PCM chunk
-    // boundaries are gapless, so the sink plays a seamless stream.
+    // Feed the sink gapless PCM chunks for seamless playback.
     let mut buf: Vec<i16> = Vec::with_capacity(prebuffer_len.max(chunk_len));
     let mut prebuffered = false;
 
@@ -230,8 +223,7 @@ fn stream_once(
         }
     }
 
-    // The decoder ended (stream closed or unrecoverable decode error). Flush any
-    // tail so we don't drop it, then let the caller reconnect.
+    // Decoder ended: flush the tail, then let the caller reconnect.
     if !buf.is_empty() {
         sink.append(SamplesBuffer::new(channels, sample_rate, buf));
     }
@@ -239,12 +231,9 @@ fn stream_once(
     Ok(())
 }
 
-/// `rodio::Decoder` requires a `Read + Seek` source, but a live Icecast response
-/// is forward-only. This wraps the blocking response, tracks the byte offset, and
-/// supports the limited seeks symphonia performs while setting up a stream:
-/// reporting the current position and skipping forward. Backward seeks are
-/// rejected — symphonia's `MediaSourceStream` serves short rewinds from its own
-/// internal buffer, so they don't reach us during normal playback.
+/// Adapts a forward-only streaming response to the `Read + Seek` that
+/// `rodio::Decoder` wants: tracks the byte offset and supports position reports
+/// and forward skips. Backward seeks are rejected (symphonia buffers its own).
 struct StreamReader {
     resp: reqwest::blocking::Response,
     pos: u64,

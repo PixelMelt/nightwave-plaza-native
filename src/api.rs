@@ -142,8 +142,7 @@ pub struct FavoriteSong {
 }
 
 impl FavoriteSong {
-    /// Thumbnail URL for the list row — prefer the small artwork, fall back to
-    /// the full-size one.
+    /// Small artwork if present, else full-size.
     pub fn thumb_url(&self) -> Option<&str> {
         self.artwork_sm_src
             .as_deref()
@@ -229,8 +228,7 @@ async fn parse_response<T: serde::de::DeserializeOwned>(
     }
 }
 
-// Like `parse_response`, but for endpoints that return an empty/ignored body on
-// success (PUT/DELETE result resources). Still surfaces server validation errors.
+// For endpoints with no useful success body; still surfaces server errors.
 async fn parse_result(resp: reqwest::Response) -> Result<(), String> {
     if resp.status().is_success() {
         Ok(())
@@ -345,9 +343,7 @@ pub async fn get_me(token: &str) -> Result<User, String> {
         .send()
         .await
         .map_err(|e| e.to_string())?;
-    // /v2/users/me wraps the user in a `data` envelope (UserResource), unlike a
-    // bare User object — parsing it as `User` directly fails, which on startup
-    // routed to LogoutOk and wiped the remember-me session.
+    // /v2/users/me wraps the user in a `data` envelope; parsing as bare User fails.
     let me: MeResponse = parse_response(resp).await?;
     Ok(me.data)
 }
@@ -394,8 +390,7 @@ pub async fn add_favorite(token: &str, song_id: &str) -> Result<u64, String> {
         .send()
         .await
         .map_err(|e| e.to_string())?;
-    // The endpoint returns the created favorite ({data: {id, ...}}); the id is
-    // needed to remove it again.
+    // Returns the created favorite; its id is needed to delete it later.
     let added: FavoriteEntry = parse_response::<AddFavoriteResponse>(resp).await?.data;
     Ok(added.id)
 }

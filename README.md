@@ -14,6 +14,7 @@ Built in Rust with [iced](https://iced.rs).
 - Accounts, log in
 - Reactions & favorites,
 - Sleep timer and adjustable volume.
+- Last.fm scrobbling (configure in Settings).
 - Spacebar play/pause when the player window is focused.
 
 ## Installation
@@ -58,6 +59,13 @@ Fonts, icons, and images are embedded into the binary at compile time (from `src
 ## Configuration
 
 - Login session is stored at the platform config directory under `nightwave-plaza/session.json`
+- Last.fm connection (session key + scrobbling toggle) is stored alongside it as `nightwave-plaza/lastfm.json`
+
+### Last.fm scrobbling
+
+Scrobbling requires a Last.fm API key and shared secret, which must be compiled into the build. Register an application at [last.fm/api/account/create](https://www.last.fm/api/account/create) and paste the credentials into `API_KEY` and `API_SECRET` at the top of `src/lastfm.rs` before building. When they are empty (the default), the Settings panel reports that scrobbling is unavailable and the rest of the app works unchanged.
+
+Once built with credentials, open **Settings** (the gear button), click **Connect** to authorize the app in your browser, then **Finish** to link your account.
 
 ## Endpoints
 

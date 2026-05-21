@@ -83,8 +83,7 @@ fn render_row<'a>(
         (theme::BLACK, theme::BLACK)
     };
 
-    // 62px artwork column (matches the JS list). The space is reserved even
-    // before the thumbnail finishes loading so rows don't shift.
+    // Reserve the artwork column before load so rows don't shift.
     let thumb: Element<Msg> = match art {
         Some(handle) => image(handle.clone()).width(54).height(54).into(),
         None => Space::new(54, 54).into(),

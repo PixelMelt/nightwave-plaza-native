@@ -23,6 +23,7 @@ pub enum WinType {
     UserPassword,
     UserProfileDelete,
     PlayerTimer,
+    Settings,
 }
 
 impl WinType {
@@ -44,6 +45,7 @@ impl WinType {
             WinType::UserPassword => iced::Size::new(280.0, 232.0),
             WinType::UserProfileDelete => iced::Size::new(340.0, 296.0),
             WinType::PlayerTimer => iced::Size::new(280.0, 150.0),
+            WinType::Settings => iced::Size::new(360.0, 220.0),
         }
     }
 
@@ -65,6 +67,7 @@ impl WinType {
             WinType::UserPassword => "Change Password",
             WinType::UserProfileDelete => "Delete Account",
             WinType::PlayerTimer => "Sleep Timer",
+            WinType::Settings => "Settings",
         }
     }
 }
@@ -93,9 +96,7 @@ pub struct RatingsState {
 
 impl Default for RatingsState {
     fn default() -> Self {
-        // `range` drives both the active-filter highlight and the fetch URL, and
-        // `page` is the base for row ranks (`(page - 1) * 25`) — neither is reset
-        // when ratings first loads, so they must start valid, not zeroed.
+        // range and page must start valid (not zeroed); not reset on first load.
         Self {
             list: Vec::new(),
             page: 1,
@@ -113,8 +114,7 @@ pub struct SongInfoState {
     pub data: Option<api::SongResponse>,
     pub loading: bool,
     pub artwork: Option<image::Handle>,
-    /// Favorite id for this song if it has been favorited in this window
-    /// (`Some` = favorited, `None` = not), plus an in-flight guard.
+    /// Favorite id if favorited in this window (`Some` = favorited).
     pub favorite_id: Option<u64>,
     pub fav_sending: bool,
 }
@@ -197,6 +197,64 @@ pub struct TimerState {
     pub until: Option<Instant>,
 }
 
+/// Track watched for Last.fm. Scrobbled when the next track arrives if played
+/// long enough — playback time is accumulated, so pausing doesn't count.
+#[derive(Debug, Clone)]
+pub struct ScrobbleTrack {
+    pub song_id: String,
+    pub artist: String,
+    pub title: String,
+    pub album: String,
+    /// Length in seconds (0.0 if unknown).
+    pub duration: f64,
+    /// First-play Unix time; the scrobble timestamp. None until played.
+    pub start_unix: Option<u64>,
+    /// Seconds played in finished (paused) segments.
+    pub played_secs: f64,
+    /// Start of the live segment; None while paused.
+    pub playing_since: Option<Instant>,
+}
+
+impl ScrobbleTrack {
+    pub fn new(song: &api::StatusSong) -> Self {
+        Self {
+            song_id: song.id.clone(),
+            artist: song.artist.clone(),
+            title: song.title.clone(),
+            album: song.album.clone(),
+            duration: song.length,
+            start_unix: None,
+            played_secs: 0.0,
+            playing_since: None,
+        }
+    }
+
+    /// Total seconds played: accumulated plus the live segment.
+    pub fn total_played(&self, now: Instant) -> f64 {
+        self.played_secs
+            + self
+                .playing_since
+                .map_or(0.0, |s| now.duration_since(s).as_secs_f64())
+    }
+
+    /// Begin/resume a segment, recording the first-play time once.
+    pub fn resume(&mut self, now: Instant) {
+        if self.start_unix.is_none() {
+            self.start_unix = Some(crate::now_unix());
+        }
+        if self.playing_since.is_none() {
+            self.playing_since = Some(now);
+        }
+    }
+
+    /// Freeze the live segment into the accumulator.
+    pub fn pause(&mut self, now: Instant) {
+        if let Some(s) = self.playing_since.take() {
+            self.played_secs += now.duration_since(s).as_secs_f64();
+        }
+    }
+}
+
 impl Default for TimerState {
     fn default() -> Self {
         Self {
@@ -243,6 +301,14 @@ pub struct Plaza {
 
     pub reaction_rate: u8,
     pub reaction_song_id: String,
+
+    pub lastfm: crate::lastfm::LastfmConfig,
+    /// Pending request token during the auth flow.
+    pub lastfm_token: Option<String>,
+    pub lastfm_busy: bool,
+    /// Status/error line in the Settings panel.
+    pub lastfm_status: Option<String>,
+    pub scrobble: Option<ScrobbleTrack>,
 }
 
 #[derive(Debug, Clone)]
@@ -355,6 +421,21 @@ pub enum DeleteMsg {
 }
 
 #[derive(Debug, Clone)]
+pub enum LastfmMsg {
+    ToggleEnabled(bool),
+    /// Start the browser auth flow.
+    Connect,
+    /// Token fetched; open the authorize page.
+    TokenReady(String),
+    /// Exchange the authorized token for a session.
+    Finish,
+    /// (username, session_key)
+    SessionOk(String, String),
+    Disconnect,
+    Err(String),
+}
+
+#[derive(Debug, Clone)]
 pub enum TimerMsg {
     Input(String),
     Add(i32),
@@ -387,6 +468,7 @@ pub enum Msg {
     Password(PasswordMsg),
     DeleteAccount(DeleteMsg),
     Timer(TimerMsg),
+    Lastfm(LastfmMsg),
 
     SessionRestored(api::User, String),
 

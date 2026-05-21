@@ -197,7 +197,7 @@ fn render_controls(state: &Plaza) -> Element<'_, Msg> {
             .width(Fill)
             .shaping(iced::widget::text::Shaping::Advanced),
     )
-    .on_press(Msg::OpenWin(WinType::PlayerTimer))
+    .on_press(Msg::OpenWin(WinType::Settings))
     .width(Fill);
 
     let left_btns = row![
