@@ -1,9 +1,7 @@
 use crate::api::StatusSong;
 use futures::channel::mpsc::UnboundedSender;
 use rodio::{buffer::SamplesBuffer, Decoder, OutputStream, OutputStreamHandle, Sink, Source};
-use souvlaki::{
-    MediaControlEvent, MediaControls, MediaMetadata, MediaPlayback, MediaPosition,
-};
+use souvlaki::{MediaControlEvent, MediaControls, MediaMetadata, MediaPlayback, MediaPosition};
 use std::io::{self, Read, Seek, SeekFrom};
 use std::sync::{
     atomic::{AtomicBool, Ordering},
@@ -13,8 +11,6 @@ use std::time::Duration;
 
 const STREAM_URL: &str = "https://radio.plaza.one/mp3";
 
-// PREBUFFER: audio queued before playback starts (jitter cushion).
-// CHUNK: how often decoded PCM is handed to the sink afterwards.
 const PREBUFFER: Duration = Duration::from_secs(5);
 const CHUNK: Duration = Duration::from_millis(250);
 
@@ -41,8 +37,6 @@ impl AudioPlayer {
         let sink = Sink::try_new(&stream_handle)?;
         sink.set_volume(DEFAULT_VOLUME);
 
-        // souvlaki's Windows backend needs an HWND iced won't expose; skip media
-        // controls there. Every call site is guarded by `if let Some(...)`.
         #[cfg(not(target_os = "windows"))]
         let controls = media_tx.and_then(|tx| build_controls(tx).ok());
         #[cfg(target_os = "windows")]
@@ -94,7 +88,11 @@ impl AudioPlayer {
         if !self.muted.swap(false, Ordering::Relaxed) {
             return;
         }
-        let v = self.target_volume.lock().map(|g| *g).unwrap_or(DEFAULT_VOLUME);
+        let v = self
+            .target_volume
+            .lock()
+            .map(|g| *g)
+            .unwrap_or(DEFAULT_VOLUME);
         self.sink.set_volume(v);
         self.emit_playback();
     }
@@ -109,8 +107,8 @@ impl AudioPlayer {
 
     pub fn update_metadata(&self, song: &StatusSong) {
         let length = (song.length > 0.0).then(|| Duration::from_secs_f64(song.length));
-        let position = (song.position >= 0.0)
-            .then(|| Duration::from_secs_f64(song.position.max(0.0)));
+        let position =
+            (song.position >= 0.0).then(|| Duration::from_secs_f64(song.position.max(0.0)));
 
         if let Ok(mut g) = self.length.lock() {
             *g = length;
@@ -155,11 +153,17 @@ impl AudioPlayer {
 }
 
 fn opt_str(s: &str) -> Option<&str> {
-    if s.is_empty() { None } else { Some(s) }
+    if s.is_empty() {
+        None
+    } else {
+        Some(s)
+    }
 }
 
 #[cfg(not(target_os = "windows"))]
-fn build_controls(tx: UnboundedSender<MediaControlEvent>) -> Result<MediaControls, souvlaki::Error> {
+fn build_controls(
+    tx: UnboundedSender<MediaControlEvent>,
+) -> Result<MediaControls, souvlaki::Error> {
     let config = souvlaki::PlatformConfig {
         dbus_name: "nightwave_plaza",
         display_name: "Nightwave Plaza",
@@ -197,8 +201,6 @@ fn stream_once(
 
     let resp = reqwest::blocking::get(&url)?;
 
-    // One continuous MP3 decoder on this background thread: keeps blocking reads
-    // off the audio thread and avoids the per-fragment re-sync seams that stutter.
     let decoder = Decoder::new_mp3(StreamReader::new(resp))?;
     let channels = decoder.channels();
     let sample_rate = decoder.sample_rate();
@@ -206,13 +208,16 @@ fn stream_once(
     let prebuffer_len = per_sec * PREBUFFER.as_millis() as usize / 1000;
     let chunk_len = (per_sec * CHUNK.as_millis() as usize / 1000).max(1);
 
-    // Feed the sink gapless PCM chunks for seamless playback.
     let mut buf: Vec<i16> = Vec::with_capacity(prebuffer_len.max(chunk_len));
     let mut prebuffered = false;
 
     for sample in decoder {
         buf.push(sample);
-        let threshold = if prebuffered { chunk_len } else { prebuffer_len };
+        let threshold = if prebuffered {
+            chunk_len
+        } else {
+            prebuffer_len
+        };
         if buf.len() >= threshold {
             let chunk = std::mem::replace(&mut buf, Vec::with_capacity(chunk_len));
             sink.append(SamplesBuffer::new(channels, sample_rate, chunk));
@@ -223,7 +228,6 @@ fn stream_once(
         }
     }
 
-    // Decoder ended: flush the tail, then let the caller reconnect.
     if !buf.is_empty() {
         sink.append(SamplesBuffer::new(channels, sample_rate, buf));
     }
@@ -231,9 +235,6 @@ fn stream_once(
     Ok(())
 }
 
-/// Adapts a forward-only streaming response to the `Read + Seek` that
-/// `rodio::Decoder` wants: tracks the byte offset and supports position reports
-/// and forward skips. Backward seeks are rejected (symphonia buffers its own).
 struct StreamReader {
     resp: reqwest::blocking::Response,
     pos: u64,
@@ -274,7 +275,6 @@ impl Seek for StreamReader {
                 "cannot seek backward in a live stream",
             ));
         }
-        // Forward skip: read and discard.
         let mut remaining = target - self.pos;
         let mut scratch = [0u8; 8192];
         while remaining > 0 {

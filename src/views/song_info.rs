@@ -5,9 +5,7 @@ use crate::views::widgets::{
     self, bold_font, close_btn, d3_sunken, d3_thin_sunken, format_date, format_time, shaped,
     status_bar,
 };
-use iced::widget::{
-    column, container, horizontal_space, image, row, text, vertical_space, Space,
-};
+use iced::widget::{column, container, horizontal_space, image, row, text, vertical_space, Space};
 use iced::{Element, Fill};
 
 const FAVORITE_GOLD: iced::Color = iced::Color::from_rgb(1.0, 0.827, 0.0);
@@ -34,7 +32,11 @@ pub fn view(state: &Plaza, wid: iced::window::Id) -> Element<'_, Msg> {
                 info.data.length,
                 info.stats.likes,
                 info.stats.first_played_at,
-                state.song_info.artwork.as_ref().or(state.artwork_handle.as_ref()),
+                state
+                    .song_info
+                    .artwork
+                    .as_ref()
+                    .or(state.artwork_handle.as_ref()),
             )
         } else {
             let song = &state.status.song;
@@ -54,7 +56,8 @@ pub fn view(state: &Plaza, wid: iced::window::Id) -> Element<'_, Msg> {
     } else {
         Space::new(100, 100).into()
     };
-    let art: Element<Msg> = d3_thin_sunken(container(art_content).style(theme::sunken_inner)).into();
+    let art: Element<Msg> =
+        d3_thin_sunken(container(art_content).style(theme::sunken_inner)).into();
 
     let info = column![
         text("Artist:").size(10).font(bold),
@@ -81,7 +84,10 @@ pub fn view(state: &Plaza, wid: iced::window::Id) -> Element<'_, Msg> {
 
     let info_row = row![info, horizontal_space(), art].padding(4);
     let panel = d3_sunken(
-        container(info_row).style(theme::panel).width(Fill).padding(4),
+        container(info_row)
+            .style(theme::panel)
+            .width(Fill)
+            .padding(4),
     );
 
     let favorited = state.song_info.favorite_id.is_some();
@@ -92,7 +98,11 @@ pub fn view(state: &Plaza, wid: iced::window::Id) -> Element<'_, Msg> {
             .size(12)
             .center()
             .width(Fill)
-            .color(if favorited { FAVORITE_GOLD } else { theme::BLACK })
+            .color(if favorited {
+                FAVORITE_GOLD
+            } else {
+                theme::BLACK
+            })
             .shaping(iced::widget::text::Shaping::Advanced),
     )
     .maybe_on_press(can_favorite.then_some(Msg::SongInfo(SongInfoMsg::ToggleFavorite)))

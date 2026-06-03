@@ -28,8 +28,12 @@ pub fn view(state: &Plaza, wid: iced::window::Id) -> Element<'_, Msg> {
         .padding([4, 0]);
 
     let status = status_bar(vec![
-        text(format!("Pages: {}", state.ratings.pages)).size(10).into(),
-        text(format!("Songs: {}", state.ratings.total)).size(10).into(),
+        text(format!("Pages: {}", state.ratings.pages))
+            .size(10)
+            .into(),
+        text(format!("Songs: {}", state.ratings.total))
+            .size(10)
+            .into(),
     ]);
 
     column![
@@ -89,7 +93,9 @@ fn render_row(entry: &RatingEntry, rank: u32) -> Element<'_, Msg> {
 
     if !entry.song.id.is_empty() {
         button(entry_content)
-            .on_press(Msg::SongInfo(crate::state::SongInfoMsg::Open(entry.song.id.clone())))
+            .on_press(Msg::SongInfo(crate::state::SongInfoMsg::Open(
+                entry.song.id.clone(),
+            )))
             .style(theme::list_row_btn)
             .padding(0)
             .width(Fill)
@@ -104,10 +110,12 @@ fn render_pagination(state: &Plaza) -> Element<'_, Msg> {
         return Space::with_width(0).into();
     }
 
-    let prev_msg = (state.ratings.page > 1 && !state.ratings.loading)
-        .then_some(Msg::Ratings(crate::state::RatingsMsg::Page(state.ratings.page - 1)));
-    let next_msg = (state.ratings.page < state.ratings.pages && !state.ratings.loading)
-        .then_some(Msg::Ratings(crate::state::RatingsMsg::Page(state.ratings.page + 1)));
+    let prev_msg = (state.ratings.page > 1 && !state.ratings.loading).then_some(Msg::Ratings(
+        crate::state::RatingsMsg::Page(state.ratings.page - 1),
+    ));
+    let next_msg = (state.ratings.page < state.ratings.pages && !state.ratings.loading).then_some(
+        Msg::Ratings(crate::state::RatingsMsg::Page(state.ratings.page + 1)),
+    );
 
     pagination(
         state.ratings.page,
@@ -123,7 +131,9 @@ fn render_pagination(state: &Plaza) -> Element<'_, Msg> {
 
 fn range_btn(label: &'static str, range: &str, active: bool) -> Element<'static, Msg> {
     bevel_button(text(label).size(10).center().width(Fill))
-        .on_press(Msg::Ratings(crate::state::RatingsMsg::Range(range.to_string())))
+        .on_press(Msg::Ratings(crate::state::RatingsMsg::Range(
+            range.to_string(),
+        )))
         .active(active)
         .padding([3, 10])
         .width(Fill)

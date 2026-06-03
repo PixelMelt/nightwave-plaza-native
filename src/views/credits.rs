@@ -10,7 +10,10 @@ pub fn view(wid: iced::window::Id) -> Element<'static, Msg> {
     let para1 = rich_text![
         span("Nightwave Plaza").font(bold).size(12),
         span(" website and apps are created and maintained by ").size(12),
-        span("Alexander Morozov").color(LINK_COLOR).underline(true).size(12),
+        span("Alexander Morozov")
+            .color(LINK_COLOR)
+            .underline(true)
+            .size(12),
         span(".").size(12),
     ];
 

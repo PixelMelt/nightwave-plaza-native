@@ -1,7 +1,6 @@
 use iced::widget::{container, scrollable, slider, text_input};
 use iced::{Background, Border, Color, Gradient, Shadow, Theme};
 
-// Plaza Win9x palette: BG_GRAY #C0C0C0, DARK_GRAY #808080, LIGHT_GRAY #DFDFDF.
 pub const BG_GRAY: Color = Color::from_rgb(0.753, 0.753, 0.753);
 pub const WHITE: Color = Color::WHITE;
 pub const BLACK: Color = Color::BLACK;
@@ -28,12 +27,24 @@ pub fn base_panel() -> container::Style {
     }
 }
 
-pub fn window_box(_t: &Theme) -> container::Style { base_panel() }
-pub fn panel(_t: &Theme) -> container::Style { base_panel() }
-pub fn status_bar(_t: &Theme) -> container::Style { base_panel() }
-pub fn status_cell(_t: &Theme) -> container::Style { base_panel() }
-pub fn group_label(_t: &Theme) -> container::Style { base_panel() }
-pub fn text_field(_t: &Theme) -> container::Style { base_panel() }
+pub fn window_box(_t: &Theme) -> container::Style {
+    base_panel()
+}
+pub fn panel(_t: &Theme) -> container::Style {
+    base_panel()
+}
+pub fn status_bar(_t: &Theme) -> container::Style {
+    base_panel()
+}
+pub fn status_cell(_t: &Theme) -> container::Style {
+    base_panel()
+}
+pub fn group_label(_t: &Theme) -> container::Style {
+    base_panel()
+}
+pub fn text_field(_t: &Theme) -> container::Style {
+    base_panel()
+}
 
 pub fn title_bar_bg(_t: &Theme) -> container::Style {
     container::Style {

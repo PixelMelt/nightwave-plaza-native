@@ -17,8 +17,12 @@ pub fn view(state: &Plaza, wid: iced::window::Id) -> Element<'_, Msg> {
         .padding([4, 0]);
 
     let status = status_bar(vec![
-        text(format!("Pages: {}", state.history.pages)).size(10).into(),
-        text(format!("Songs: {}", state.history.total)).size(10).into(),
+        text(format!("Pages: {}", state.history.pages))
+            .size(10)
+            .into(),
+        text(format!("Songs: {}", state.history.total))
+            .size(10)
+            .into(),
     ]);
 
     column![
@@ -102,7 +106,9 @@ fn render_row<'a>(entry: &'a crate::api::HistoryEntry, bold: iced::Font) -> Elem
 
     if !entry.song.id.is_empty() {
         button(entry_content)
-            .on_press(Msg::SongInfo(crate::state::SongInfoMsg::Open(entry.song.id.clone())))
+            .on_press(Msg::SongInfo(crate::state::SongInfoMsg::Open(
+                entry.song.id.clone(),
+            )))
             .style(theme::list_row_btn)
             .padding(0)
             .width(Fill)

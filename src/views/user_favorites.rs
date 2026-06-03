@@ -30,8 +30,12 @@ pub fn view(state: &Plaza, wid: iced::window::Id) -> Element<'_, Msg> {
     .padding([4, 0]);
 
     let status = status_bar(vec![
-        text(format!("Pages: {}", state.favorites.pages)).size(10).into(),
-        text(format!("Songs: {}", state.favorites.total)).size(10).into(),
+        text(format!("Pages: {}", state.favorites.pages))
+            .size(10)
+            .into(),
+        text(format!("Songs: {}", state.favorites.total))
+            .size(10)
+            .into(),
     ]);
 
     column![
@@ -83,7 +87,6 @@ fn render_row<'a>(
         (theme::BLACK, theme::BLACK)
     };
 
-    // Reserve the artwork column before load so rows don't shift.
     let thumb: Element<Msg> = match art {
         Some(handle) => image(handle.clone()).width(54).height(54).into(),
         None => Space::new(54, 54).into(),
@@ -91,7 +94,10 @@ fn render_row<'a>(
     let art_cell = container(thumb).width(62).padding([2, 4]);
 
     let info = column![
-        shaped(&entry.song.artist).size(11).font(bold).color(artist_color),
+        shaped(&entry.song.artist)
+            .size(11)
+            .font(bold)
+            .color(artist_color),
         shaped(&entry.song.title).size(11).color(title_color),
         text(format_date(entry.created_at)).size(10).color(muted),
     ]
@@ -139,10 +145,9 @@ fn render_row<'a>(
 
 fn render_pagination(state: &Plaza) -> Element<'_, Msg> {
     if state.favorites.pages > 1 {
-        let prev_msg = (state.favorites.page > 1 && !state.favorites.loading)
-            .then_some(Msg::Favorites(FavoritesMsg::Page(
-                state.favorites.page.saturating_sub(1),
-            )));
+        let prev_msg = (state.favorites.page > 1 && !state.favorites.loading).then_some(
+            Msg::Favorites(FavoritesMsg::Page(state.favorites.page.saturating_sub(1))),
+        );
         let next_msg = (state.favorites.page < state.favorites.pages && !state.favorites.loading)
             .then_some(Msg::Favorites(FavoritesMsg::Page(
                 state.favorites.page.saturating_add(1),

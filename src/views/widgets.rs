@@ -52,14 +52,6 @@ pub fn bold_font() -> iced::Font {
     }
 }
 
-// Win9x 3D bevels (plaza's _mixins.scss). Each layer is a container whose bg
-// shows as a 1px strip where its padding pushes content away. The pressed
-// button bevel lives in bevel.rs.
-//
-//   d3_raised_window   window frame   TL: LIGHT_GRAY/WHITE   BR: DARK_GRAY/BLACK
-//   d3_sunken          panels/inputs  TL: DARK_GRAY/BLACK    BR: LIGHT_GRAY/WHITE
-//   d3_thin_sunken     text fields    TL: DARK_GRAY          BR: WHITE
-
 fn bevel_layer<'a>(
     content: impl Into<Element<'a, Msg>>,
     bg: Color,
@@ -284,7 +276,11 @@ pub fn pagination<'a>(
         .shaping(Shaping::Advanced)
         .width(iced::Fill);
 
-    let next_msg = if page < pages && !loading { on_next } else { None };
+    let next_msg = if page < pages && !loading {
+        on_next
+    } else {
+        None
+    };
     r = r.push(
         bevel_button(right_icon)
             .maybe_on_press(next_msg)
@@ -296,7 +292,6 @@ pub fn pagination<'a>(
 }
 
 pub fn status_bar<'a>(cells: Vec<Element<'a, Msg>>) -> Element<'a, Msg> {
-    // Plaza: statusbar margin 2px 1px, cell padding 3px 4px.
     let mut r = Row::new().spacing(2);
     for cell in cells {
         r = r.push(d3_thin_sunken(
@@ -322,7 +317,6 @@ pub fn title_bar(
         .width(16)
         .height(16);
 
-    // Pin line height to the 16px row so the title aligns with the icon/buttons.
     let title_label = text(title)
         .size(12)
         .line_height(iced::widget::text::LineHeight::Absolute(iced::Pixels(16.0)))
@@ -340,7 +334,6 @@ pub fn title_bar(
     let drag_area: Element<'static, Msg> =
         mouse_area(drag_content).on_press(Msg::DragWin(wid)).into();
 
-    // Buttons sit flush, so they get their own zero-spacing row.
     let mut buttons = Row::new()
         .spacing(0)
         .align_y(iced::Alignment::Center)
@@ -385,8 +378,6 @@ pub fn title_bar(
         .into()
 }
 
-// ---- Reusable button helpers ----
-
 pub fn raised_btn<'a>(
     label: &'a str,
     msg: Msg,
@@ -406,10 +397,13 @@ pub fn close_btn<'a>(wid: iced::window::Id) -> Element<'a, Msg> {
 }
 
 pub fn close_btn_padded<'a>(wid: iced::window::Id) -> Element<'a, Msg> {
-    raised_btn("Close", Msg::CloseWin(wid), Length::Shrink, Padding::from([4, 24]))
+    raised_btn(
+        "Close",
+        Msg::CloseWin(wid),
+        Length::Shrink,
+        Padding::from([4, 24]),
+    )
 }
-
-// ---- Reusable panel helpers ----
 
 fn fill_sunken<'a>(content: impl Into<Element<'a, Msg>>) -> Element<'a, Msg> {
     d3_sunken(
@@ -456,9 +450,13 @@ pub fn scroll_panel<'a>(content: impl Into<Element<'a, Msg>>) -> Element<'a, Msg
 }
 
 pub fn group_box<'a>(label: &'a str, body: impl Into<Element<'a, Msg>>) -> Element<'a, Msg> {
-    let chip = container(text(format!(" {} ", label.trim())).size(11).font(bold_font()))
-        .style(theme::group_label)
-        .padding([0, 4]);
+    let chip = container(
+        text(format!(" {} ", label.trim()))
+            .size(11)
+            .font(bold_font()),
+    )
+    .style(theme::group_label)
+    .padding([0, 4]);
 
     Column::new()
         .push(chip)

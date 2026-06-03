@@ -1,26 +1,55 @@
-use crate::lastfm;
-use crate::state::{LastfmMsg, Msg, Plaza, WinType};
+use crate::state::{DiscordMsg, LastfmMsg, Msg, Plaza, WinType};
 use crate::views::bevel::bevel_button;
 use crate::views::widgets::{bold_font, close_btn, group_box, LINK_COLOR, MUTED};
+use crate::{discord, lastfm};
 use iced::widget::{button, checkbox, column, row, text, Space};
 use iced::{Element, Fill, Theme};
 
 pub fn view(state: &Plaza, wid: iced::window::Id) -> Element<'_, Msg> {
     let lastfm = group_box("Last.fm Scrobbling", lastfm_body(state));
+    let discord = group_box("Discord Rich Presence", discord_body(state));
 
     let timer_btn = bevel_button(text("Sleep Timer...").size(11).center())
         .on_press(Msg::OpenWin(WinType::PlayerTimer))
         .padding([4, 12]);
 
-    let bottom = row![timer_btn, Space::with_width(Fill), close_btn(wid)]
-        .align_y(iced::Alignment::Center);
+    let bottom =
+        row![timer_btn, Space::with_width(Fill), close_btn(wid)].align_y(iced::Alignment::Center);
 
-    // Pin the bottom row so it doesn't slide as the Last.fm section changes height.
-    column![lastfm, Space::with_height(Fill), bottom]
+    column![lastfm, discord, Space::with_height(Fill), bottom]
+        .spacing(8)
         .padding(8)
         .width(Fill)
         .height(Fill)
         .into()
+}
+
+fn discord_body(state: &Plaza) -> Element<'_, Msg> {
+    if !discord::is_configured() {
+        return text(
+            "Discord Rich Presence is not configured in this build. \
+             An application client ID must be compiled in to enable it.",
+        )
+        .size(11)
+        .color(MUTED)
+        .into();
+    }
+
+    column![
+        checkbox(
+            "Show \"Listening to\" status while playing",
+            state.discord.enabled
+        )
+        .on_toggle(|b| Msg::Discord(DiscordMsg::ToggleEnabled(b)))
+        .size(13)
+        .text_size(11),
+        text("Requires the Discord desktop app to be running.")
+            .size(11)
+            .color(MUTED),
+    ]
+    .spacing(6)
+    .width(Fill)
+    .into()
 }
 
 fn lastfm_body(state: &Plaza) -> Element<'_, Msg> {
@@ -43,7 +72,6 @@ fn lastfm_body(state: &Plaza) -> Element<'_, Msg> {
         .and(state.lastfm.username.as_deref());
 
     if let Some(username) = connected_as {
-        // Connected.
         col = col.push(
             row![
                 text("Connected as ").size(11),
@@ -65,13 +93,16 @@ fn lastfm_body(state: &Plaza) -> Element<'_, Msg> {
                 .padding([4, 12]),
         );
     } else if state.lastfm_token.is_some() {
-        // Waiting for browser authorization.
         col = col.push(
             text("Authorize Nightwave Plaza in the browser window that opened, then click Finish.")
                 .size(11),
         );
 
-        let finish_label = if state.lastfm_busy { "Finishing..." } else { "Finish" };
+        let finish_label = if state.lastfm_busy {
+            "Finishing..."
+        } else {
+            "Finish"
+        };
         let finish_press = (!state.lastfm_busy).then_some(Msg::Lastfm(LastfmMsg::Finish));
         col = col.push(
             row![
@@ -84,12 +115,15 @@ fn lastfm_body(state: &Plaza) -> Element<'_, Msg> {
             .align_y(iced::Alignment::Center),
         );
     } else {
-        // Not connected.
         col = col.push(
             text("Connect your Last.fm account to scrobble the tracks you listen to.").size(11),
         );
 
-        let connect_label = if state.lastfm_busy { "Connecting..." } else { "Connect..." };
+        let connect_label = if state.lastfm_busy {
+            "Connecting..."
+        } else {
+            "Connect..."
+        };
         let connect_press = (!state.lastfm_busy).then_some(Msg::Lastfm(LastfmMsg::Connect));
         col = col.push(
             bevel_button(text(connect_label).size(11).center().width(96))
@@ -105,7 +139,6 @@ fn lastfm_body(state: &Plaza) -> Element<'_, Msg> {
     col.into()
 }
 
-/// Text link that restarts the auth flow.
 fn reauth_link<'a>(label: &'a str, state: &Plaza) -> Element<'a, Msg> {
     let press = (!state.lastfm_busy).then_some(Msg::Lastfm(LastfmMsg::Connect));
     button(text(label).size(11).color(LINK_COLOR))

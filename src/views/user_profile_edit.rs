@@ -46,22 +46,28 @@ pub fn view(state: &Plaza, wid: iced::window::Id) -> Element<'_, Msg> {
         .style(theme::page_input);
 
     let password_panel = d3_sunken(
-        container(
-            column![text("Current Password:").size(11), password_input].spacing(2),
-        )
-        .style(theme::panel)
-        .width(Fill)
-        .padding(8),
+        container(column![text("Current Password:").size(11), password_input].spacing(2))
+            .style(theme::panel)
+            .width(Fill)
+            .padding(8),
     );
 
     let error_row: Element<Msg> = if let Some(ref err) = state.profile_edit.error {
-        text(err).size(11).color(iced::Color::from_rgb(0.8, 0.0, 0.0)).into()
+        text(err)
+            .size(11)
+            .color(iced::Color::from_rgb(0.8, 0.0, 0.0))
+            .into()
     } else {
         Space::with_height(0).into()
     };
 
-    let save_label = if state.profile_edit.loading { "Saving..." } else { "Save" };
-    let save_press = (!state.profile_edit.loading).then_some(Msg::ProfileEdit(ProfileEditMsg::Submit));
+    let save_label = if state.profile_edit.loading {
+        "Saving..."
+    } else {
+        "Save"
+    };
+    let save_press =
+        (!state.profile_edit.loading).then_some(Msg::ProfileEdit(ProfileEditMsg::Submit));
     let save_btn = bevel_button(text(save_label).size(11).font(bold).center().width(Fill))
         .maybe_on_press(save_press)
         .width(Fill);

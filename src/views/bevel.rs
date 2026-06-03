@@ -1,7 +1,3 @@
-//! Interactive Win9x bevel widget: a button that owns its 3D bevel rendering
-//! (so the pressed state can flip it) plus a hover-only menu-item style. Strips
-//! are drawn directly with `renderer.fill_quad`.
-
 use iced::advanced::layout::{self, Layout};
 use iced::advanced::renderer;
 use iced::advanced::widget::{tree, Tree, Widget};
@@ -15,11 +11,8 @@ use crate::theme;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum BevelStyle {
-    /// Raised button bevel; inverts while held.
     Object,
-    /// Thin 1px bevel for tight title-bar buttons.
     TitleButton,
-    /// No bevel; raised on hover.
     Menu,
 }
 
@@ -57,7 +50,6 @@ where
         }
     }
 
-    /// Force the pressed visual regardless of pointer state (e.g. selected tabs).
     pub fn active(mut self, active: bool) -> Self {
         self.active = active;
         self
@@ -129,8 +121,6 @@ where
         renderer: &Renderer,
         limits: &layout::Limits,
     ) -> layout::Node {
-        // The bevel is drawn inside the padding (like CSS inset box-shadow), so
-        // it doesn't grow the element — pad by self.padding directly.
         layout::padded(limits, self.width, self.height, self.padding, |limits| {
             self.content
                 .as_widget()
@@ -152,8 +142,7 @@ where
         let state = tree.state.downcast_ref::<State>();
         let is_mouse_over = cursor.is_over(bounds);
         let interactive = self.on_press.is_some();
-        let is_pressed =
-            (interactive && state.is_pressed && is_mouse_over) || self.active;
+        let is_pressed = (interactive && state.is_pressed && is_mouse_over) || self.active;
 
         let bevel = match self.style {
             BevelStyle::Object => {
@@ -179,7 +168,6 @@ where
             }
         };
 
-        // Fill the face so the bevel doesn't show what's behind the row.
         if !matches!(bevel, BevelKind::None) {
             quad(renderer, bounds, theme::BG_GRAY);
         }
@@ -201,23 +189,14 @@ where
                 theme::DARK_GRAY,
                 theme::BLACK,
             ),
-            BevelKind::Thin => draw_thin_bevel(
-                renderer,
-                bounds,
-                theme::WHITE,
-                theme::BLACK,
-            ),
-            BevelKind::ThinPressed => draw_thin_bevel(
-                renderer,
-                bounds,
-                theme::BLACK,
-                theme::DARK_GRAY,
-            ),
+            BevelKind::Thin => draw_thin_bevel(renderer, bounds, theme::WHITE, theme::BLACK),
+            BevelKind::ThinPressed => {
+                draw_thin_bevel(renderer, bounds, theme::BLACK, theme::DARK_GRAY)
+            }
             BevelKind::Pressed => draw_pressed_bevel(renderer, bounds),
             BevelKind::None => {}
         }
 
-        // Shift content 1px down+right when pressed for the "pushed in" feel.
         let content_layout = layout.children().next().unwrap();
         let translation = if is_pressed {
             Vector::new(1.0, 1.0)
@@ -328,17 +307,50 @@ fn draw_thin_bevel<R: iced::advanced::Renderer>(
     tl: Color,
     br: Color,
 ) {
-    let Rectangle { x, y, width: w, height: h } = bounds;
-    quad(renderer, Rectangle { x, y, width: w, height: 1.0 }, tl);
-    quad(renderer, Rectangle { x, y, width: 1.0, height: h }, tl);
+    let Rectangle {
+        x,
+        y,
+        width: w,
+        height: h,
+    } = bounds;
     quad(
         renderer,
-        Rectangle { x, y: y + h - 1.0, width: w, height: 1.0 },
+        Rectangle {
+            x,
+            y,
+            width: w,
+            height: 1.0,
+        },
+        tl,
+    );
+    quad(
+        renderer,
+        Rectangle {
+            x,
+            y,
+            width: 1.0,
+            height: h,
+        },
+        tl,
+    );
+    quad(
+        renderer,
+        Rectangle {
+            x,
+            y: y + h - 1.0,
+            width: w,
+            height: 1.0,
+        },
         br,
     );
     quad(
         renderer,
-        Rectangle { x: x + w - 1.0, y, width: 1.0, height: h },
+        Rectangle {
+            x: x + w - 1.0,
+            y,
+            width: 1.0,
+            height: h,
+        },
         br,
     );
 }
@@ -351,81 +363,183 @@ fn draw_symmetric_bevel<R: iced::advanced::Renderer>(
     br_inner: Color,
     br_outer: Color,
 ) {
-    let Rectangle { x, y, width: w, height: h } = bounds;
+    let Rectangle {
+        x,
+        y,
+        width: w,
+        height: h,
+    } = bounds;
 
-    // Outer ring.
-    quad(renderer, Rectangle { x, y, width: w, height: 1.0 }, tl_outer);
-    quad(renderer, Rectangle { x, y, width: 1.0, height: h }, tl_outer);
     quad(
         renderer,
-        Rectangle { x, y: y + h - 1.0, width: w, height: 1.0 },
+        Rectangle {
+            x,
+            y,
+            width: w,
+            height: 1.0,
+        },
+        tl_outer,
+    );
+    quad(
+        renderer,
+        Rectangle {
+            x,
+            y,
+            width: 1.0,
+            height: h,
+        },
+        tl_outer,
+    );
+    quad(
+        renderer,
+        Rectangle {
+            x,
+            y: y + h - 1.0,
+            width: w,
+            height: 1.0,
+        },
         br_outer,
     );
     quad(
         renderer,
-        Rectangle { x: x + w - 1.0, y, width: 1.0, height: h },
+        Rectangle {
+            x: x + w - 1.0,
+            y,
+            width: 1.0,
+            height: h,
+        },
         br_outer,
     );
 
-    // Inner ring.
     quad(
         renderer,
-        Rectangle { x: x + 1.0, y: y + 1.0, width: w - 2.0, height: 1.0 },
+        Rectangle {
+            x: x + 1.0,
+            y: y + 1.0,
+            width: w - 2.0,
+            height: 1.0,
+        },
         tl_inner,
     );
     quad(
         renderer,
-        Rectangle { x: x + 1.0, y: y + 1.0, width: 1.0, height: h - 2.0 },
+        Rectangle {
+            x: x + 1.0,
+            y: y + 1.0,
+            width: 1.0,
+            height: h - 2.0,
+        },
         tl_inner,
     );
     quad(
         renderer,
-        Rectangle { x: x + 1.0, y: y + h - 2.0, width: w - 2.0, height: 1.0 },
+        Rectangle {
+            x: x + 1.0,
+            y: y + h - 2.0,
+            width: w - 2.0,
+            height: 1.0,
+        },
         br_inner,
     );
     quad(
         renderer,
-        Rectangle { x: x + w - 2.0, y: y + 1.0, width: 1.0, height: h - 2.0 },
+        Rectangle {
+            x: x + w - 2.0,
+            y: y + 1.0,
+            width: 1.0,
+            height: h - 2.0,
+        },
         br_inner,
     );
 }
 
 fn draw_pressed_bevel<R: iced::advanced::Renderer>(renderer: &mut R, bounds: Rectangle) {
-    let Rectangle { x, y, width: w, height: h } = bounds;
+    let Rectangle {
+        x,
+        y,
+        width: w,
+        height: h,
+    } = bounds;
 
-    // All-black outer ring.
-    quad(renderer, Rectangle { x, y, width: w, height: 1.0 }, theme::BLACK);
     quad(
         renderer,
-        Rectangle { x, y: y + h - 1.0, width: w, height: 1.0 },
+        Rectangle {
+            x,
+            y,
+            width: w,
+            height: 1.0,
+        },
         theme::BLACK,
     );
-    quad(renderer, Rectangle { x, y, width: 1.0, height: h }, theme::BLACK);
     quad(
         renderer,
-        Rectangle { x: x + w - 1.0, y, width: 1.0, height: h },
+        Rectangle {
+            x,
+            y: y + h - 1.0,
+            width: w,
+            height: 1.0,
+        },
+        theme::BLACK,
+    );
+    quad(
+        renderer,
+        Rectangle {
+            x,
+            y,
+            width: 1.0,
+            height: h,
+        },
+        theme::BLACK,
+    );
+    quad(
+        renderer,
+        Rectangle {
+            x: x + w - 1.0,
+            y,
+            width: 1.0,
+            height: h,
+        },
         theme::BLACK,
     );
 
-    // Inset dark-gray ring.
     quad(
         renderer,
-        Rectangle { x: x + 1.0, y: y + 1.0, width: w - 2.0, height: 1.0 },
+        Rectangle {
+            x: x + 1.0,
+            y: y + 1.0,
+            width: w - 2.0,
+            height: 1.0,
+        },
         theme::DARK_GRAY,
     );
     quad(
         renderer,
-        Rectangle { x: x + 1.0, y: y + h - 2.0, width: w - 2.0, height: 1.0 },
+        Rectangle {
+            x: x + 1.0,
+            y: y + h - 2.0,
+            width: w - 2.0,
+            height: 1.0,
+        },
         theme::DARK_GRAY,
     );
     quad(
         renderer,
-        Rectangle { x: x + 1.0, y: y + 1.0, width: 1.0, height: h - 2.0 },
+        Rectangle {
+            x: x + 1.0,
+            y: y + 1.0,
+            width: 1.0,
+            height: h - 2.0,
+        },
         theme::DARK_GRAY,
     );
     quad(
         renderer,
-        Rectangle { x: x + w - 2.0, y: y + 1.0, width: 1.0, height: h - 2.0 },
+        Rectangle {
+            x: x + w - 2.0,
+            y: y + 1.0,
+            width: 1.0,
+            height: h - 2.0,
+        },
         theme::DARK_GRAY,
     );
 }

@@ -9,6 +9,7 @@ Built in Rust with [iced](https://iced.rs).
 ## Features
 
 - Live streaming of the Nightwave Plaza radio feed.
+- Discord presense
 - Now playing, album artwork, artist, title, and track progress.
 - OS media controls, integrates with system media keys and now-playing widgets via [souvlaki](https://crates.io/crates/souvlaki).
 - Accounts, log in
@@ -60,19 +61,6 @@ Fonts, icons, and images are embedded into the binary at compile time (from `src
 
 - Login session is stored at the platform config directory under `nightwave-plaza/session.json`
 - Last.fm connection (session key + scrobbling toggle) is stored alongside it as `nightwave-plaza/lastfm.json`
-
-### Last.fm scrobbling
-
-Scrobbling requires a Last.fm API key and shared secret, which must be compiled into the build. Register an application at [last.fm/api/account/create](https://www.last.fm/api/account/create) and paste the credentials into `API_KEY` and `API_SECRET` at the top of `src/lastfm.rs` before building. When they are empty (the default), the Settings panel reports that scrobbling is unavailable and the rest of the app works unchanged.
-
-Once built with credentials, open **Settings** (the gear button), click **Connect** to authorize the app in your browser, then **Finish** to link your account.
-
-## Endpoints
-
-The client talks to the official Nightwave Plaza services:
-
-- Stream: `https://radio.plaza.one/mp3`
-- API: `https://api.plaza.one`
 
 ## Acknowledgements
 

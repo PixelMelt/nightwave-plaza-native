@@ -48,12 +48,16 @@ fn render_user_card(state: &Plaza) -> Element<'_, Msg> {
         ("...", "...")
     };
 
-    let user_card_img = image(image::Handle::from_bytes(USER_CARD_IMG)).width(32).height(32);
+    let user_card_img = image(image::Handle::from_bytes(USER_CARD_IMG))
+        .width(32)
+        .height(32);
 
     let user_info = column![
         text(username).size(14).font(bold),
         Space::with_height(4),
-        text(email).size(11).color(iced::Color::from_rgb(0.5, 0.5, 0.5)),
+        text(email)
+            .size(11)
+            .color(iced::Color::from_rgb(0.5, 0.5, 0.5)),
     ];
 
     let user_card = row![
@@ -63,14 +67,23 @@ fn render_user_card(state: &Plaza) -> Element<'_, Msg> {
     ]
     .align_y(iced::Alignment::Center);
 
-    d3_sunken(container(user_card).style(theme::panel).width(Fill).padding(8)).into()
+    d3_sunken(
+        container(user_card)
+            .style(theme::panel)
+            .width(Fill)
+            .padding(8),
+    )
+    .into()
 }
 
 fn render_stats_box(state: &Plaza) -> Element<'_, Msg> {
     let bold = bold_font();
 
     let (likes_str, favs_str) = if let Some(ref stats) = state.user_stats {
-        (format!("{}", stats.reactions), format!("{}", stats.favorites))
+        (
+            format!("{}", stats.reactions),
+            format!("{}", stats.favorites),
+        )
     } else if state.stats_loading {
         ("...".into(), "...".into())
     } else {
@@ -78,8 +91,14 @@ fn render_stats_box(state: &Plaza) -> Element<'_, Msg> {
     };
 
     let body = column![
-        row![text("Likes:").size(11).font(bold).width(75), text(likes_str).size(11)],
-        row![text("Favorites:").size(11).font(bold).width(75), text(favs_str).size(11)],
+        row![
+            text("Likes:").size(11).font(bold).width(75),
+            text(likes_str).size(11)
+        ],
+        row![
+            text("Favorites:").size(11).font(bold).width(75),
+            text(favs_str).size(11)
+        ],
     ]
     .spacing(2);
 
@@ -90,7 +109,11 @@ fn render_account_box(state: &Plaza) -> Element<'_, Msg> {
     let bold = bold_font();
 
     let created_at = state.user.as_ref().map_or(0, |u| u.created_at);
-    let registered = if created_at > 0 { format_date(created_at) } else { "...".into() };
+    let registered = if created_at > 0 {
+        format_date(created_at)
+    } else {
+        "...".into()
+    };
 
     let body = column![
         text("Registered:").size(11).font(bold),

@@ -1,5 +1,6 @@
 mod api;
 mod audio;
+mod discord;
 mod lastfm;
 mod session;
 mod state;
@@ -25,8 +26,6 @@ fn app_icon() -> Option<iced::window::Icon> {
     iced::window::icon::from_file_data(APP_ICON, Some(::image::ImageFormat::Png)).ok()
 }
 
-// NIGHTWAVE_DEV=1 makes windows resizable and logs each resize, for tuning
-// WinType::size() without recompiling.
 fn dev_mode() -> bool {
     static FLAG: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
     *FLAG.get_or_init(|| std::env::var("NIGHTWAVE_DEV").is_ok())
@@ -45,7 +44,6 @@ fn platform_specific() -> iced::window::settings::PlatformSpecific {
     iced::window::settings::PlatformSpecific::default()
 }
 
-// Open a URL in the user's default browser.
 fn open_url(url: &str) {
     #[cfg(target_os = "macos")]
     let result = std::process::Command::new("open").arg(url).spawn();
@@ -71,10 +69,12 @@ pub(crate) fn now_unix() -> u64 {
         .unwrap_or(0)
 }
 
-// "Now playing" update for the current track if scrobbling is active. Failures
-// are swallowed — a flaky ping shouldn't show as a UI error.
 fn lastfm_now_playing_task(state: &Plaza) -> Task<Msg> {
-    let Some(sk) = state.lastfm.is_active().then(|| state.lastfm.session_key.clone()).flatten()
+    let Some(sk) = state
+        .lastfm
+        .is_active()
+        .then(|| state.lastfm.session_key.clone())
+        .flatten()
     else {
         return Task::none();
     };
@@ -89,7 +89,6 @@ fn lastfm_now_playing_task(state: &Plaza) -> Task<Msg> {
     )
 }
 
-// Scrobbling became active mid-song: start timing the current track and announce it.
 fn lastfm_begin_current(state: &mut Plaza) -> Task<Msg> {
     let is_playing = state.player.as_ref().map_or(false, |p| p.is_playing());
     if !is_playing {
@@ -101,14 +100,16 @@ fn lastfm_begin_current(state: &mut Plaza) -> Task<Msg> {
     lastfm_now_playing_task(state)
 }
 
-// Scrobble `track` if played past half its length (capped 4 min) and over 30s,
-// counting actual playback only (paused time excluded).
 fn lastfm_scrobble_task(
     state: &Plaza,
     track: &crate::state::ScrobbleTrack,
     now: Instant,
 ) -> Task<Msg> {
-    let Some(sk) = state.lastfm.is_active().then(|| state.lastfm.session_key.clone()).flatten()
+    let Some(sk) = state
+        .lastfm
+        .is_active()
+        .then(|| state.lastfm.session_key.clone())
+        .flatten()
     else {
         return Task::none();
     };
@@ -130,11 +131,38 @@ fn lastfm_scrobble_task(
     if played < threshold {
         return Task::none();
     }
-    let (artist, title, album) = (track.artist.clone(), track.title.clone(), track.album.clone());
+    let (artist, title, album) = (
+        track.artist.clone(),
+        track.title.clone(),
+        track.album.clone(),
+    );
     Task::perform(
         async move { lastfm::scrobble(&sk, &artist, &title, &album, start_unix).await },
         |_| Msg::Noop,
     )
+}
+
+fn discord_update(state: &Plaza) {
+    let Some(handle) = state.discord_presence.as_ref() else {
+        return;
+    };
+    let is_playing = state.player.as_ref().map_or(false, |p| p.is_playing());
+    let song = &state.status.song;
+    if !state.discord.is_active() || !is_playing || song.title.is_empty() {
+        handle.clear();
+        return;
+    }
+    let now = now_unix() as i64;
+    let start = now - song.position.max(0.0) as i64;
+    let end = (song.length > 0.0).then(|| start + song.length as i64);
+    handle.set(crate::discord::Presence {
+        title: song.title.clone(),
+        artist: song.artist.clone(),
+        album: song.album.clone(),
+        cover_url: song.artwork_src.clone().filter(|s| !s.is_empty()),
+        start_unix: start,
+        end_unix: end,
+    });
 }
 
 fn load_cjk_font() -> Option<Vec<u8>> {
@@ -201,13 +229,29 @@ fn main() -> iced::Result {
                 volume: 50.0,
                 artwork_handle: None,
                 artwork_url: String::new(),
-                history: crate::state::HistoryState { page: 1, page_input: "1".into(), ..Default::default() },
-                ratings: crate::state::RatingsState { page: 1, page_input: "1".into(), range: "overtime".into(), ..Default::default() },
+                history: crate::state::HistoryState {
+                    page: 1,
+                    page_input: "1".into(),
+                    ..Default::default()
+                },
+                ratings: crate::state::RatingsState {
+                    page: 1,
+                    page_input: "1".into(),
+                    range: "overtime".into(),
+                    ..Default::default()
+                },
                 song_info: crate::state::SongInfoState::default(),
                 login: crate::state::LoginState::default(),
                 register: crate::state::RegisterState::default(),
-                news: crate::state::NewsState { page: 1, ..Default::default() },
-                favorites: crate::state::FavoritesState { page: 1, page_input: "1".into(), ..Default::default() },
+                news: crate::state::NewsState {
+                    page: 1,
+                    ..Default::default()
+                },
+                favorites: crate::state::FavoritesState {
+                    page: 1,
+                    page_input: "1".into(),
+                    ..Default::default()
+                },
                 export: crate::state::ExportState::default(),
                 profile_edit: crate::state::ProfileEditState::default(),
                 password: crate::state::PasswordState::default(),
@@ -232,6 +276,9 @@ fn main() -> iced::Result {
                 lastfm_busy: false,
                 lastfm_status: None,
                 scrobble: None,
+
+                discord: discord::load(),
+                discord_presence: discord::DiscordHandle::spawn(),
             };
 
             let session_task = if let Some(saved) = session::load() {
@@ -320,7 +367,6 @@ fn win_view(state: &Plaza, wid: iced::window::Id) -> Element<'_, Msg> {
     };
     let title_bar = views::widgets::title_bar(title, wid, wt, true, show_close);
 
-    // Approximates plaza's `.win-window`: 2px inner padding, 1px gaps/margins.
     let framed = iced::widget::column![title_bar, inner]
         .spacing(1)
         .padding(1)
@@ -345,8 +391,6 @@ fn subscription(_state: &Plaza) -> Subscription<Msg> {
         iced::time::every(Duration::from_secs(5)).map(|_| Msg::Refresh),
         iced::window::close_events().map(Msg::WinClosed),
         iced::window::resize_events().map(|(id, size)| Msg::WinResized(id, size)),
-        // Spacebar toggles play/pause. The `Ignored` guard lets a focused text
-        // field consume the space first, so it never fires mid-typing.
         iced::event::listen_with(|event, status, id| match event {
             iced::Event::Keyboard(iced::keyboard::Event::KeyPressed {
                 key: iced::keyboard::Key::Named(iced::keyboard::key::Named::Space),
@@ -378,7 +422,6 @@ fn update(state: &mut Plaza, msg: Msg) -> Task<Msg> {
             let new_art = status.song.artwork_src.clone().unwrap_or_default();
             let need = !new_art.is_empty() && new_art != state.artwork_url;
 
-            // Last.fm scrobble tracking (reads the old song id before overwrite).
             let is_playing = state.player.as_ref().map_or(false, |p| p.is_playing());
             let now = Instant::now();
             let new_id = status.song.id.clone();
@@ -395,8 +438,6 @@ fn update(state: &mut Plaza, msg: Msg) -> Task<Msg> {
                 }
                 state.scrobble = Some(track);
             } else if let Some(mut same) = prev {
-                // Reconcile the accumulator with playback each poll, so a stop from
-                // any source freezes the timer even without an explicit handler.
                 if is_playing {
                     same.resume(now);
                 } else {
@@ -414,6 +455,7 @@ fn update(state: &mut Plaza, msg: Msg) -> Task<Msg> {
             if song_changed && is_playing {
                 lf_tasks.push(lastfm_now_playing_task(state));
             }
+            discord_update(state);
 
             let art_task = if need {
                 state.artwork_url = new_art.clone();
@@ -482,6 +524,7 @@ fn update(state: &mut Plaza, msg: Msg) -> Task<Msg> {
                     s.pause(now);
                 }
             }
+            discord_update(state);
             if playing_now {
                 return lastfm_now_playing_task(state);
             }
@@ -517,7 +560,10 @@ fn update(state: &mut Plaza, msg: Msg) -> Task<Msg> {
                 resizable: dev_mode()
                     || matches!(
                         wt,
-                        WinType::History | WinType::Ratings | WinType::News | WinType::UserFavorites
+                        WinType::History
+                            | WinType::Ratings
+                            | WinType::News
+                            | WinType::UserFavorites
                     ),
                 decorations: dev_mode(),
                 icon: app_icon(),
@@ -529,9 +575,12 @@ fn update(state: &mut Plaza, msg: Msg) -> Task<Msg> {
                 WinType::History if state.history.list.is_empty() => {
                     state.history.loading = true;
                     tasks.push(Task::perform(api::fetch_history(1), |r| match r {
-                        Ok(h) => {
-                            Msg::History(crate::state::HistoryMsg::Ok(h.data, h.meta.last_page, h.meta.total, h.date_range))
-                        }
+                        Ok(h) => Msg::History(crate::state::HistoryMsg::Ok(
+                            h.data,
+                            h.meta.last_page,
+                            h.meta.total,
+                            h.date_range,
+                        )),
                         Err(e) => Msg::History(crate::state::HistoryMsg::Err(e.to_string())),
                     }));
                 }
@@ -541,7 +590,11 @@ fn update(state: &mut Plaza, msg: Msg) -> Task<Msg> {
                     tasks.push(Task::perform(
                         async move { api::fetch_ratings(&range, 1).await },
                         |r| match r {
-                            Ok(h) => Msg::Ratings(crate::state::RatingsMsg::Ok(h.data, h.meta.last_page, h.meta.total)),
+                            Ok(h) => Msg::Ratings(crate::state::RatingsMsg::Ok(
+                                h.data,
+                                h.meta.last_page,
+                                h.meta.total,
+                            )),
                             Err(e) => Msg::Ratings(crate::state::RatingsMsg::Err(e.to_string())),
                         },
                     ));
@@ -641,7 +694,9 @@ fn update(state: &mut Plaza, msg: Msg) -> Task<Msg> {
                             async move { api::fetch_song(&song_id).await },
                             |r| match r {
                                 Ok(s) => Msg::SongInfo(crate::state::SongInfoMsg::Ok(s)),
-                                Err(e) => Msg::SongInfo(crate::state::SongInfoMsg::Err(e.to_string())),
+                                Err(e) => {
+                                    Msg::SongInfo(crate::state::SongInfoMsg::Err(e.to_string()))
+                                }
                             },
                         ),
                     ]);
@@ -842,7 +897,8 @@ fn update(state: &mut Plaza, msg: Msg) -> Task<Msg> {
         }
         Msg::Register(crate::state::RegisterMsg::Submit) => {
             if !state
-                .register.username
+                .register
+                .username
                 .chars()
                 .all(|c| c.is_alphanumeric() || c == '-' || c == '_')
             {
@@ -1010,7 +1066,10 @@ fn update(state: &mut Plaza, msg: Msg) -> Task<Msg> {
 
         Msg::News(crate::state::NewsMsg::Ok(articles, pages)) => {
             state.news.loading = false;
-            state.news.list = articles.into_iter().map(crate::views::news::ParsedNewsArticle::from).collect();
+            state.news.list = articles
+                .into_iter()
+                .map(crate::views::news::ParsedNewsArticle::from)
+                .collect();
             state.news.pages = pages;
             Task::none()
         }
@@ -1034,6 +1093,17 @@ fn update(state: &mut Plaza, msg: Msg) -> Task<Msg> {
         Msg::Password(p_msg) => update_password(state, p_msg),
         Msg::DeleteAccount(d_msg) => update_delete(state, d_msg),
         Msg::Lastfm(l_msg) => update_lastfm(state, l_msg),
+        Msg::Discord(d_msg) => {
+            use crate::state::DiscordMsg;
+            match d_msg {
+                DiscordMsg::ToggleEnabled(b) => {
+                    state.discord.enabled = b;
+                    discord::save(&state.discord);
+                    discord_update(state);
+                }
+            }
+            Task::none()
+        }
         Msg::Timer(t_msg) => {
             use crate::state::TimerMsg;
             match t_msg {
@@ -1107,7 +1177,6 @@ fn update(state: &mut Plaza, msg: Msg) -> Task<Msg> {
         Msg::Media(event) => {
             use souvlaki::MediaControlEvent as E;
             let now = Instant::now();
-            // Scope the player borrow so we can touch other state afterwards.
             let started_playing = {
                 let Some(ref p) = state.player else {
                     return Task::none();
@@ -1147,6 +1216,7 @@ fn update(state: &mut Plaza, msg: Msg) -> Task<Msg> {
                     s.pause(now);
                 }
             }
+            discord_update(state);
             if started_playing {
                 return lastfm_now_playing_task(state);
             }
@@ -1202,10 +1272,13 @@ fn update_lastfm(state: &mut Plaza, msg: crate::state::LastfmMsg) -> Task<Msg> {
             };
             state.lastfm_busy = true;
             state.lastfm_status = None;
-            Task::perform(async move { lastfm::get_session(&token).await }, |r| match r {
-                Ok((name, key)) => Msg::Lastfm(LastfmMsg::SessionOk(name, key)),
-                Err(e) => Msg::Lastfm(LastfmMsg::Err(e)),
-            })
+            Task::perform(
+                async move { lastfm::get_session(&token).await },
+                |r| match r {
+                    Ok((name, key)) => Msg::Lastfm(LastfmMsg::SessionOk(name, key)),
+                    Err(e) => Msg::Lastfm(LastfmMsg::Err(e)),
+                },
+            )
         }
         LastfmMsg::SessionOk(username, key) => {
             state.lastfm_busy = false;
@@ -1259,7 +1332,12 @@ fn update_history(state: &mut Plaza, msg: crate::state::HistoryMsg) -> Task<Msg>
             state.history.page_input = p.to_string();
             state.history.loading = true;
             Task::perform(api::fetch_history(p), |r| match r {
-                Ok(h) => Msg::History(HistoryMsg::Ok(h.data, h.meta.last_page, h.meta.total, h.date_range)),
+                Ok(h) => Msg::History(HistoryMsg::Ok(
+                    h.data,
+                    h.meta.last_page,
+                    h.meta.total,
+                    h.date_range,
+                )),
                 Err(e) => Msg::History(HistoryMsg::Err(e.to_string())),
             })
         }
@@ -1353,7 +1431,6 @@ fn update_favorites(state: &mut Plaza, msg: crate::state::FavoritesMsg) -> Task<
             state.favorites.total = total;
             state.favorites.page_input = state.favorites.page.to_string();
 
-            // Fetch each row's thumbnail that we don't already have cached.
             let mut seen = std::collections::HashSet::new();
             let art_tasks: Vec<Task<Msg>> = list
                 .iter()
@@ -1402,7 +1479,9 @@ fn update_favorites(state: &mut Plaza, msg: crate::state::FavoritesMsg) -> Task<
             Task::perform(
                 async move { api::fetch_favorites(&token, p).await },
                 |r| match r {
-                    Ok(f) => Msg::Favorites(FavoritesMsg::Ok(f.data, f.meta.last_page, f.meta.total)),
+                    Ok(f) => {
+                        Msg::Favorites(FavoritesMsg::Ok(f.data, f.meta.last_page, f.meta.total))
+                    }
                     Err(e) => Msg::Favorites(FavoritesMsg::Err(e)),
                 },
             )
@@ -1581,7 +1660,6 @@ fn update_password(state: &mut Plaza, msg: crate::state::PasswordMsg) -> Task<Ms
         }
         PasswordMsg::Ok => {
             state.password = crate::state::PasswordState::default();
-            // A password change invalidates the session server-side; sign out locally.
             session::clear();
             state.auth_token = None;
             state.user = None;

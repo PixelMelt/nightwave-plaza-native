@@ -142,7 +142,6 @@ pub struct FavoriteSong {
 }
 
 impl FavoriteSong {
-    /// Small artwork if present, else full-size.
     pub fn thumb_url(&self) -> Option<&str> {
         self.artwork_sm_src
             .as_deref()
@@ -228,7 +227,6 @@ async fn parse_response<T: serde::de::DeserializeOwned>(
     }
 }
 
-// For endpoints with no useful success body; still surfaces server errors.
 async fn parse_result(resp: reqwest::Response) -> Result<(), String> {
     if resp.status().is_success() {
         Ok(())
@@ -249,7 +247,11 @@ async fn parse_result(resp: reqwest::Response) -> Result<(), String> {
 }
 
 pub async fn fetch_status() -> Result<Status, String> {
-    let resp = client().get(STATUS_URL).send().await.map_err(|e| e.to_string())?;
+    let resp = client()
+        .get(STATUS_URL)
+        .send()
+        .await
+        .map_err(|e| e.to_string())?;
     parse_response(resp).await
 }
 
@@ -262,7 +264,10 @@ pub async fn fetch_history(page: u32) -> Result<HistoryResponse, String> {
     parse_response(resp).await
 }
 
-pub async fn fetch_ratings(range: &str, page: u32) -> Result<PaginatedResponse<RatingEntry>, String> {
+pub async fn fetch_ratings(
+    range: &str,
+    page: u32,
+) -> Result<PaginatedResponse<RatingEntry>, String> {
     let resp = client()
         .get(format!("{}/v2/ratings/{}?page={}", API, range, page))
         .send()
@@ -290,7 +295,15 @@ pub async fn fetch_news(page: u32) -> Result<PaginatedResponse<NewsArticle>, Str
 }
 
 pub async fn fetch_artwork(url: &str) -> Result<Vec<u8>, String> {
-    client().get(url).send().await.map_err(|e| e.to_string())?.bytes().await.map(|b| b.to_vec()).map_err(|e| e.to_string())
+    client()
+        .get(url)
+        .send()
+        .await
+        .map_err(|e| e.to_string())?
+        .bytes()
+        .await
+        .map(|b| b.to_vec())
+        .map_err(|e| e.to_string())
 }
 
 pub async fn login(username: &str, password: &str) -> Result<LoginResponse, String> {
@@ -343,7 +356,6 @@ pub async fn get_me(token: &str) -> Result<User, String> {
         .send()
         .await
         .map_err(|e| e.to_string())?;
-    // /v2/users/me wraps the user in a `data` envelope; parsing as bare User fails.
     let me: MeResponse = parse_response(resp).await?;
     Ok(me.data)
 }
@@ -390,7 +402,6 @@ pub async fn add_favorite(token: &str, song_id: &str) -> Result<u64, String> {
         .send()
         .await
         .map_err(|e| e.to_string())?;
-    // Returns the created favorite; its id is needed to delete it later.
     let added: FavoriteEntry = parse_response::<AddFavoriteResponse>(resp).await?.data;
     Ok(added.id)
 }

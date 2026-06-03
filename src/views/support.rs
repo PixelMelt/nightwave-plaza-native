@@ -10,7 +10,11 @@ const BOOSTY_URL: &str = "https://boosty.to/nightwaveplaza";
 pub fn view(wid: iced::window::Id) -> Element<'static, Msg> {
     let bold = bold_font();
 
-    let title = text("Love Nightwave Plaza?").size(14).font(bold).center().width(Fill);
+    let title = text("Love Nightwave Plaza?")
+        .size(14)
+        .font(bold)
+        .center()
+        .width(Fill);
 
     let info_text = column![
         text("Support the radio station and future updates by donating via Boosty to receive special Discord rewards!")
@@ -46,7 +50,10 @@ pub fn view(wid: iced::window::Id) -> Element<'static, Msg> {
     let panel_content = row![info_text, Space::with_width(8), boosty_image].padding(8);
 
     let panel = d3_sunken(
-        container(panel_content).style(theme::panel).width(Fill).padding(4),
+        container(panel_content)
+            .style(theme::panel)
+            .width(Fill)
+            .padding(4),
     );
 
     let thanks = text(

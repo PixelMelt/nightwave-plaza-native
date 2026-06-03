@@ -71,14 +71,15 @@ pub fn view(state: &Plaza, wid: iced::window::Id) -> Element<'_, Msg> {
             articles = articles.push(article_col);
 
             if idx < state.news.list.len() - 1 {
-                articles = articles.push(container(Space::new(Fill, 1)).style(
-                    |_: &iced::Theme| container::Style {
-                        background: Some(iced::Background::Color(iced::Color::from_rgb(
-                            0.78, 0.78, 0.78,
-                        ))),
-                        ..Default::default()
-                    },
-                ));
+                articles =
+                    articles.push(container(Space::new(Fill, 1)).style(|_: &iced::Theme| {
+                        container::Style {
+                            background: Some(iced::Background::Color(iced::Color::from_rgb(
+                                0.78, 0.78, 0.78,
+                            ))),
+                            ..Default::default()
+                        }
+                    }));
             }
         }
 
@@ -147,12 +148,7 @@ fn decode_entities(s: &str) -> String {
         .replace("&apos;", "'")
 }
 
-fn collect_inline(
-    node: &Node,
-    parser: &Parser,
-    is_bold: bool,
-    segments: &mut Vec<(String, bool)>,
-) {
+fn collect_inline(node: &Node, parser: &Parser, is_bold: bool, segments: &mut Vec<(String, bool)>) {
     match node {
         Node::Raw(bytes) => {
             let text = decode_entities(&bytes.as_utf8_str());
@@ -267,9 +263,15 @@ mod tests {
             vec![
                 HtmlBlock::Paragraph(vec![("My Profile update".to_string(), true)]),
                 HtmlBlock::Paragraph(vec![
-                    ("Good news — you can now change your username in ".to_string(), false),
+                    (
+                        "Good news — you can now change your username in ".to_string(),
+                        false
+                    ),
                     ("My Profile".to_string(), true),
-                    (". You can also delete your account at any time.".to_string(), false),
+                    (
+                        ". You can also delete your account at any time.".to_string(),
+                        false
+                    ),
                 ]),
             ]
         );
@@ -302,7 +304,10 @@ mod tests {
             vec![
                 HtmlBlock::Paragraph(vec![("Submissions".to_string(), true)]),
                 HtmlBlock::Paragraph(vec![("Submissions are open again!".to_string(), false)]),
-                HtmlBlock::Paragraph(vec![("Please use the following link to submit your music for broadcast:".to_string(), false)]),
+                HtmlBlock::Paragraph(vec![(
+                    "Please use the following link to submit your music for broadcast:".to_string(),
+                    false
+                )]),
                 HtmlBlock::Paragraph(vec![("https://plaza.one/submissions".to_string(), false)]),
             ]
         );
@@ -316,14 +321,24 @@ mod tests {
             blocks,
             vec![
                 HtmlBlock::Paragraph(vec![("Hello listeners!".to_string(), false)]),
-                HtmlBlock::Paragraph(vec![("The website has been updated. New features:".to_string(), false)]),
+                HtmlBlock::Paragraph(vec![(
+                    "The website has been updated. New features:".to_string(),
+                    false
+                )]),
                 HtmlBlock::ListItem("Added the news window.".to_string()),
-                HtmlBlock::ListItem("Added themes support and custom background colors.".to_string()),
+                HtmlBlock::ListItem(
+                    "Added themes support and custom background colors.".to_string()
+                ),
                 HtmlBlock::ListItem("UI updates and more accurate windows styles.".to_string()),
-                HtmlBlock::Paragraph(vec![
-                    ("The \"Dislike\" button was removed as it no longer makes any sense.".to_string(), false)
-                ]),
-                HtmlBlock::Paragraph(vec![("We hope you will like the new update.".to_string(), false)]),
+                HtmlBlock::Paragraph(vec![(
+                    "The \"Dislike\" button was removed as it no longer makes any sense."
+                        .to_string(),
+                    false
+                )]),
+                HtmlBlock::Paragraph(vec![(
+                    "We hope you will like the new update.".to_string(),
+                    false
+                )]),
             ]
         );
     }

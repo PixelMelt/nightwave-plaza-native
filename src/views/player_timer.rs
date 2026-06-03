@@ -11,7 +11,9 @@ pub fn view(state: &Plaza, wid: iced::window::Id) -> Element<'_, Msg> {
     let active = state.timer.until.is_some();
 
     let body: Element<Msg> = if let Some(until) = state.timer.until {
-        let remaining = until.saturating_duration_since(Instant::now()).as_secs_f64();
+        let remaining = until
+            .saturating_duration_since(Instant::now())
+            .as_secs_f64();
         column![
             text("Sleep Timer").size(11).center().width(Fill),
             Space::with_height(8),

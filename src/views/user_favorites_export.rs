@@ -14,16 +14,22 @@ pub fn view(state: &Plaza, wid: iced::window::Id) -> Element<'_, Msg> {
                 .center()
                 .width(Fill),
             Space::with_height(8),
-            button(text("Download").size(11).color(LINK_COLOR).center().width(Fill))
-                .on_press(Msg::OpenUrl(link))
-                .style(|_: &Theme, _| button::Style {
-                    background: None,
-                    border: iced::Border::default(),
-                    shadow: iced::Shadow::default(),
-                    text_color: LINK_COLOR,
-                })
-                .padding(0)
-                .width(Fill),
+            button(
+                text("Download")
+                    .size(11)
+                    .color(LINK_COLOR)
+                    .center()
+                    .width(Fill)
+            )
+            .on_press(Msg::OpenUrl(link))
+            .style(|_: &Theme, _| button::Style {
+                background: None,
+                border: iced::Border::default(),
+                shadow: iced::Shadow::default(),
+                text_color: LINK_COLOR,
+            })
+            .padding(0)
+            .width(Fill),
         ]
         .width(Fill)
         .into()
@@ -61,9 +67,7 @@ pub fn view(state: &Plaza, wid: iced::window::Id) -> Element<'_, Msg> {
         );
     }
 
-    let panel = d3_sunken(
-        container(col).style(theme::panel).width(Fill).padding(12),
-    );
+    let panel = d3_sunken(container(col).style(theme::panel).width(Fill).padding(12));
 
     column![
         panel,

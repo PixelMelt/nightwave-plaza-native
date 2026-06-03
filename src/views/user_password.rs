@@ -20,7 +20,9 @@ pub fn view(state: &Plaza, wid: iced::window::Id) -> Element<'_, Msg> {
     let current = field(&state.password.current_password, |s| {
         Msg::Password(PasswordMsg::Current(s))
     });
-    let new = field(&state.password.password, |s| Msg::Password(PasswordMsg::New(s)));
+    let new = field(&state.password.password, |s| {
+        Msg::Password(PasswordMsg::New(s))
+    });
     let repeat = text_input("", &state.password.password_repeat)
         .on_input(|s| Msg::Password(PasswordMsg::Repeat(s)))
         .on_submit(Msg::Password(PasswordMsg::Submit))
@@ -41,17 +43,22 @@ pub fn view(state: &Plaza, wid: iced::window::Id) -> Element<'_, Msg> {
     ]
     .spacing(2);
 
-    let panel = d3_sunken(
-        container(form).style(theme::panel).width(Fill).padding(8),
-    );
+    let panel = d3_sunken(container(form).style(theme::panel).width(Fill).padding(8));
 
     let error_row: Element<Msg> = if let Some(ref err) = state.password.error {
-        text(err).size(11).color(iced::Color::from_rgb(0.8, 0.0, 0.0)).into()
+        text(err)
+            .size(11)
+            .color(iced::Color::from_rgb(0.8, 0.0, 0.0))
+            .into()
     } else {
         Space::with_height(0).into()
     };
 
-    let change_label = if state.password.loading { "Saving..." } else { "Change" };
+    let change_label = if state.password.loading {
+        "Saving..."
+    } else {
+        "Change"
+    };
     let change_press = (!state.password.loading).then_some(Msg::Password(PasswordMsg::Submit));
     let change_btn = bevel_button(text(change_label).size(11).font(bold).center().width(Fill))
         .maybe_on_press(change_press)

@@ -10,8 +10,12 @@ const KEY_IMG: &[u8] = include_bytes!("../assets/img/key.png");
 pub fn view(state: &Plaza, wid: iced::window::Id) -> Element<'_, Msg> {
     let bold = bold_font();
 
-    let key = container(image(image::Handle::from_bytes(KEY_IMG)).width(45).height(48))
-        .padding([2, 0]);
+    let key = container(
+        image(image::Handle::from_bytes(KEY_IMG))
+            .width(45)
+            .height(48),
+    )
+    .padding([2, 0]);
 
     let instruction =
         text("Enter your username and password to sign in to Nightwave Plaza.").size(11);
@@ -60,7 +64,10 @@ pub fn view(state: &Plaza, wid: iced::window::Id) -> Element<'_, Msg> {
         .text_size(11);
 
     let error_row: Element<Msg> = if let Some(ref err) = state.login.error {
-        text(err).size(11).color(iced::Color::from_rgb(0.8, 0.0, 0.0)).into()
+        text(err)
+            .size(11)
+            .color(iced::Color::from_rgb(0.8, 0.0, 0.0))
+            .into()
     } else {
         Space::with_height(0).into()
     };
@@ -78,9 +85,12 @@ pub fn view(state: &Plaza, wid: iced::window::Id) -> Element<'_, Msg> {
     ]
     .width(Fill);
 
-    let login_label = if state.login.loading { "Loading..." } else { "Log In" };
-    let login_press =
-        (!state.login.loading).then_some(Msg::Login(crate::state::LoginMsg::Submit));
+    let login_label = if state.login.loading {
+        "Loading..."
+    } else {
+        "Log In"
+    };
+    let login_press = (!state.login.loading).then_some(Msg::Login(crate::state::LoginMsg::Submit));
     let login_btn = bevel_button(text(login_label).size(11).font(bold).center().width(76))
         .maybe_on_press(login_press)
         .width(76);

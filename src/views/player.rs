@@ -1,9 +1,7 @@
 use crate::state::{Msg, Plaza, WinType};
 use crate::theme;
 use crate::views::bevel::bevel_button;
-use crate::views::widgets::{
-    self, bold_font, d3_thin_sunken, format_time, menu_bar, status_bar,
-};
+use crate::views::widgets::{self, bold_font, d3_thin_sunken, format_time, menu_bar, status_bar};
 use iced::widget::{button, column, container, horizontal_space, image, row, slider, text, Space};
 use iced::{Element, Fill, Theme};
 use std::time::Instant;
@@ -58,7 +56,9 @@ fn render_cover(state: &Plaza) -> Element<'_, Msg> {
 
     if state.artwork_handle.is_some() && !song.id.is_empty() {
         button(img)
-            .on_press(Msg::SongInfo(crate::state::SongInfoMsg::Open(song.id.clone())))
+            .on_press(Msg::SongInfo(crate::state::SongInfoMsg::Open(
+                song.id.clone(),
+            )))
             .style(|_: &Theme, _| button::Style {
                 background: None,
                 border: iced::Border::default(),
@@ -75,11 +75,20 @@ fn render_cover(state: &Plaza) -> Element<'_, Msg> {
 fn render_metadata(state: &Plaza) -> Element<'_, Msg> {
     let song = &state.status.song;
 
-    let artist = widgets::shaped(if song.artist.is_empty() { "..." } else { &song.artist })
-        .size(14)
-        .font(bold_font());
+    let artist = widgets::shaped(if song.artist.is_empty() {
+        "..."
+    } else {
+        &song.artist
+    })
+    .size(14)
+    .font(bold_font());
 
-    let title = widgets::shaped(if song.title.is_empty() { "" } else { &song.title }).size(14);
+    let title = widgets::shaped(if song.title.is_empty() {
+        ""
+    } else {
+        &song.title
+    })
+    .size(14);
 
     column![
         Space::with_height(2),
@@ -96,8 +105,11 @@ fn render_metadata(state: &Plaza) -> Element<'_, Msg> {
 }
 
 fn render_time_vol(state: &Plaza) -> Element<'_, Msg> {
-    let time_str = match (state.welcome_until, state.volume_text.as_ref(), state.volume_text_until)
-    {
+    let time_str = match (
+        state.welcome_until,
+        state.volume_text.as_ref(),
+        state.volume_text_until,
+    ) {
         (Some(until), _, _) if Instant::now() < until => "Welcome back!".to_string(),
         (_, Some(vol), Some(until)) if Instant::now() < until => vol.clone(),
         _ => format_time_display(state),
@@ -116,13 +128,17 @@ fn render_time_vol(state: &Plaza) -> Element<'_, Msg> {
         .step(1.0)
         .style(theme::volume_slider);
 
-    let vol_icon = image(image::Handle::from_bytes(VOLUME_IMG)).width(11).height(16);
+    let vol_icon = image(image::Handle::from_bytes(VOLUME_IMG))
+        .width(11)
+        .height(16);
     let vol_row = row![vol, Space::with_width(5), vol_icon].align_y(iced::Alignment::Center);
 
     row![
         container(time_field).width(iced::Length::FillPortion(7)),
         Space::with_width(4),
-        container(vol_row).width(iced::Length::FillPortion(5)).center_y(24),
+        container(vol_row)
+            .width(iced::Length::FillPortion(5))
+            .center_y(24),
     ]
     .align_y(iced::Alignment::Center)
     .into()
@@ -223,7 +239,11 @@ fn render_status(state: &Plaza) -> Element<'_, Msg> {
             .width(Fill)
             .into()];
     if let Some(ref u) = state.user {
-        status_cells.push(text(format!("Logged in as: {}", u.username)).size(11).into());
+        status_cells.push(
+            text(format!("Logged in as: {}", u.username))
+                .size(11)
+                .into(),
+        );
     }
     status_bar(status_cells)
 }
@@ -231,7 +251,9 @@ fn render_status(state: &Plaza) -> Element<'_, Msg> {
 fn render_error(err: &str) -> Element<'_, Msg> {
     container(
         row![
-            text(err).size(10).color(iced::Color::from_rgb(0.8, 0.0, 0.0)),
+            text(err)
+                .size(10)
+                .color(iced::Color::from_rgb(0.8, 0.0, 0.0)),
             horizontal_space(),
             bevel_button(text("x").size(10))
                 .on_press(Msg::DismissErr)

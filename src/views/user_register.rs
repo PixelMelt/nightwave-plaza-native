@@ -52,14 +52,21 @@ pub fn view(state: &Plaza, wid: iced::window::Id) -> Element<'_, Msg> {
     ];
 
     let error_row: Element<Msg> = if let Some(ref err) = state.register.error {
-        text(err).size(11).color(iced::Color::from_rgb(0.8, 0.0, 0.0)).into()
+        text(err)
+            .size(11)
+            .color(iced::Color::from_rgb(0.8, 0.0, 0.0))
+            .into()
     } else {
         Space::with_height(0).into()
     };
 
-    let register_label = if state.register.loading { "Loading..." } else { "Register" };
-    let register_press = (!state.register.loading)
-        .then_some(Msg::Register(crate::state::RegisterMsg::Submit));
+    let register_label = if state.register.loading {
+        "Loading..."
+    } else {
+        "Register"
+    };
+    let register_press =
+        (!state.register.loading).then_some(Msg::Register(crate::state::RegisterMsg::Submit));
     let register_btn = bevel_button(text(register_label).size(11).font(bold).center().width(90))
         .maybe_on_press(register_press)
         .width(90);
@@ -82,7 +89,10 @@ pub fn view(state: &Plaza, wid: iced::window::Id) -> Element<'_, Msg> {
     .padding(8);
 
     let panel = d3_sunken(
-        container(content).style(theme::panel).width(Fill).padding(4),
+        container(content)
+            .style(theme::panel)
+            .width(Fill)
+            .padding(4),
     );
 
     column![panel].padding(4).into()

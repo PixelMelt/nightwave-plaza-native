@@ -26,7 +26,10 @@ pub fn view(state: &Plaza, wid: iced::window::Id) -> Element<'_, Msg> {
     }
 
     let memo_panel = d3_sunken(
-        container(memo).style(theme::sunken_inner).width(Fill).padding(8),
+        container(memo)
+            .style(theme::sunken_inner)
+            .width(Fill)
+            .padding(8),
     );
 
     let confirm = checkbox("I understand, delete my account.", state.delete.confirm)
@@ -50,12 +53,19 @@ pub fn view(state: &Plaza, wid: iced::window::Id) -> Element<'_, Msg> {
     );
 
     let error_row: Element<Msg> = if let Some(ref err) = state.delete.error {
-        text(err).size(11).color(iced::Color::from_rgb(0.8, 0.0, 0.0)).into()
+        text(err)
+            .size(11)
+            .color(iced::Color::from_rgb(0.8, 0.0, 0.0))
+            .into()
     } else {
         Space::with_height(0).into()
     };
 
-    let delete_label = if state.delete.loading { "Deleting..." } else { "Delete Account" };
+    let delete_label = if state.delete.loading {
+        "Deleting..."
+    } else {
+        "Delete Account"
+    };
     let delete_press = (!state.delete.loading).then_some(Msg::DeleteAccount(DeleteMsg::Submit));
     let delete_btn = bevel_button(text(delete_label).size(11).font(bold).center().width(Fill))
         .maybe_on_press(delete_press)
