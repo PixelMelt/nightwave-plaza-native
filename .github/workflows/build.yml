@@ -99,10 +99,12 @@ jobs:
           docker run --rm -v "$PWD":/build archlinux:latest bash -c '
             set -euo pipefail
             pacman -Syu --noconfirm --needed base-devel rust alsa-lib dbus pkgconf
-            # makepkg refuses to run as root, so build as an unprivileged user.
+            host_uid=$(stat -c %u /build)
+            host_gid=$(stat -c %g /build)
             useradd -m builder
             chown -R builder:builder /build
             sudo -u builder bash -c "cd /build/dist && makepkg -f --noconfirm"
+            chown -R "$host_uid:$host_gid" /build
           '
 
       - name: Collect package
