@@ -4,9 +4,7 @@ use crate::views::widgets::{
 };
 use tl::{Node, Parser};
 
-use iced::widget::{
-    column, container, horizontal_space, rich_text, row, span, text, Column, Space,
-};
+use iced::widget::{column, container, rich_text, row, span, text, Column, Space};
 use iced::{Element, Fill};
 
 pub fn view(state: &Plaza, wid: iced::window::Id) -> Element<'_, Msg> {
@@ -31,7 +29,7 @@ pub fn view(state: &Plaza, wid: iced::window::Id) -> Element<'_, Msg> {
                     HtmlBlock::Heading(txt) => {
                         article_col = article_col
                             .push(text(txt.clone()).size(14).font(bold))
-                            .push(Space::with_height(8));
+                            .push(Space::new().height(8));
                     }
                     HtmlBlock::Paragraph(segments) => {
                         if segments.len() == 1 && !segments[0].1 {
@@ -40,7 +38,7 @@ pub fn view(state: &Plaza, wid: iced::window::Id) -> Element<'_, Msg> {
                             let spans: Vec<_> = segments
                                 .iter()
                                 .map(|(txt, is_bold)| {
-                                    let s = span(txt.clone()).size(11);
+                                    let s = span::<(), _>(txt.clone()).size(11);
                                     if *is_bold {
                                         s.font(bold)
                                     } else {
@@ -50,36 +48,35 @@ pub fn view(state: &Plaza, wid: iced::window::Id) -> Element<'_, Msg> {
                                 .collect();
                             article_col = article_col.push(rich_text(spans));
                         }
-                        article_col = article_col.push(Space::with_height(4));
+                        article_col = article_col.push(Space::new().height(4));
                     }
                     HtmlBlock::ListItem(txt) => {
                         let item_row = row![
-                            Space::with_width(16),
+                            Space::new().width(16),
                             text(format!("\u{2022} {txt}")).size(11)
                         ];
-                        article_col = article_col.push(item_row).push(Space::with_height(4));
+                        article_col = article_col.push(item_row).push(Space::new().height(4));
                     }
                 }
             }
 
-            article_col = article_col.push(Space::with_height(2)).push(row![
+            article_col = article_col.push(Space::new().height(2)).push(row![
                 text(article.author.clone()).size(10).color(MUTED),
-                horizontal_space(),
+                Space::new().width(iced::Fill),
                 text(format_date(article.created_at)).size(10).color(MUTED),
             ]);
 
             articles = articles.push(article_col);
 
             if idx < state.news.list.len() - 1 {
-                articles =
-                    articles.push(container(Space::new(Fill, 1)).style(|_: &iced::Theme| {
-                        container::Style {
-                            background: Some(iced::Background::Color(iced::Color::from_rgb(
-                                0.78, 0.78, 0.78,
-                            ))),
-                            ..Default::default()
-                        }
-                    }));
+                articles = articles.push(container(Space::new().width(Fill).height(1)).style(
+                    |_: &iced::Theme| container::Style {
+                        background: Some(iced::Background::Color(iced::Color::from_rgb(
+                            0.78, 0.78, 0.78,
+                        ))),
+                        ..Default::default()
+                    },
+                ));
             }
         }
 
@@ -102,14 +99,14 @@ pub fn view(state: &Plaza, wid: iced::window::Id) -> Element<'_, Msg> {
             next_msg,
         )
     } else {
-        Space::with_width(0).into()
+        Space::new().width(0).into()
     };
 
-    let bottom = row![pages_row, horizontal_space(), close_btn(wid)]
+    let bottom = row![pages_row, Space::new().width(iced::Fill), close_btn(wid)]
         .align_y(iced::Alignment::Center)
         .padding([4, 0]);
 
-    column![content_area, Space::with_height(4), bottom]
+    column![content_area, Space::new().height(4), bottom]
         .padding(8)
         .height(Fill)
         .into()

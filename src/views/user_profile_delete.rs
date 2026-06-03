@@ -19,7 +19,7 @@ pub fn view(state: &Plaza, wid: iced::window::Id) -> Element<'_, Msg> {
         text("This action will completely delete your Nightwave Plaza account.")
             .size(11)
             .font(bold),
-        Space::with_height(4),
+        Space::new().height(4),
     ];
     for w in WARNINGS {
         memo = memo.push(text(*w).size(11));
@@ -32,7 +32,8 @@ pub fn view(state: &Plaza, wid: iced::window::Id) -> Element<'_, Msg> {
             .padding(8),
     );
 
-    let confirm = checkbox("I understand, delete my account.", state.delete.confirm)
+    let confirm = checkbox(state.delete.confirm)
+        .label("I understand, delete my account.")
         .on_toggle(|b| Msg::DeleteAccount(DeleteMsg::Confirm(b)))
         .size(13)
         .text_size(11);
@@ -58,7 +59,7 @@ pub fn view(state: &Plaza, wid: iced::window::Id) -> Element<'_, Msg> {
             .color(iced::Color::from_rgb(0.8, 0.0, 0.0))
             .into()
     } else {
-        Space::with_height(0).into()
+        Space::new().height(0).into()
     };
 
     let delete_label = if state.delete.loading {
@@ -76,19 +77,19 @@ pub fn view(state: &Plaza, wid: iced::window::Id) -> Element<'_, Msg> {
 
     let buttons = row![
         container(delete_btn).width(iced::Length::FillPortion(3)),
-        Space::with_width(8),
+        Space::new().width(8),
         container(close_btn).width(iced::Length::FillPortion(2)),
     ];
 
     column![
         memo_panel,
-        Space::with_height(8),
+        Space::new().height(8),
         confirm,
-        Space::with_height(8),
+        Space::new().height(8),
         password_panel,
-        Space::with_height(8),
+        Space::new().height(8),
         error_row,
-        Space::with_height(4),
+        Space::new().height(4),
         buttons,
     ]
     .padding(8)

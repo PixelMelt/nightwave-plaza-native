@@ -34,10 +34,10 @@ pub fn view(state: &Plaza, wid: iced::window::Id) -> Element<'_, Msg> {
     let form = column![
         text("Current Password:").size(11),
         current,
-        Space::with_height(6),
+        Space::new().height(6),
         text("New Password:").size(11),
         new,
-        Space::with_height(6),
+        Space::new().height(6),
         text("Repeat Password:").size(11),
         repeat,
     ]
@@ -51,7 +51,7 @@ pub fn view(state: &Plaza, wid: iced::window::Id) -> Element<'_, Msg> {
             .color(iced::Color::from_rgb(0.8, 0.0, 0.0))
             .into()
     } else {
-        Space::with_height(0).into()
+        Space::new().height(0).into()
     };
 
     let change_label = if state.password.loading {
@@ -69,15 +69,15 @@ pub fn view(state: &Plaza, wid: iced::window::Id) -> Element<'_, Msg> {
 
     let buttons = row![
         container(change_btn).width(iced::Length::FillPortion(3)),
-        Space::with_width(8),
+        Space::new().width(8),
         container(close_btn).width(iced::Length::FillPortion(2)),
     ];
 
     column![
         panel,
-        Space::with_height(8),
+        Space::new().height(8),
         error_row,
-        Space::with_height(4),
+        Space::new().height(4),
         buttons,
     ]
     .padding(8)

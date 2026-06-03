@@ -2,7 +2,7 @@ use crate::state::{Msg, Plaza};
 use crate::theme;
 use crate::views::bevel::bevel_button;
 use crate::views::widgets::{bold_font, d3_sunken};
-use iced::widget::{column, container, horizontal_space, row, text, text_input, Space};
+use iced::widget::{column, container, row, text, text_input, Space};
 use iced::{Element, Fill};
 
 pub fn view(state: &Plaza, wid: iced::window::Id) -> Element<'_, Msg> {
@@ -10,7 +10,7 @@ pub fn view(state: &Plaza, wid: iced::window::Id) -> Element<'_, Msg> {
 
     let instruction = column![
         text("User Information:").size(11).font(bold),
-        Space::with_height(4),
+        Space::new().height(4),
         text("Please complete all fields to create your account.").size(11),
     ];
 
@@ -43,11 +43,11 @@ pub fn view(state: &Plaza, wid: iced::window::Id) -> Element<'_, Msg> {
 
     let form = column![
         form_row("Username:", username_input),
-        Space::with_height(4),
+        Space::new().height(4),
         form_row("Password:", password_input),
-        Space::with_height(4),
+        Space::new().height(4),
         form_row("Repeat Password:", repeat_input),
-        Space::with_height(4),
+        Space::new().height(4),
         form_row("Email:", email_input),
     ];
 
@@ -57,7 +57,7 @@ pub fn view(state: &Plaza, wid: iced::window::Id) -> Element<'_, Msg> {
             .color(iced::Color::from_rgb(0.8, 0.0, 0.0))
             .into()
     } else {
-        Space::with_height(0).into()
+        Space::new().height(0).into()
     };
 
     let register_label = if state.register.loading {
@@ -75,15 +75,15 @@ pub fn view(state: &Plaza, wid: iced::window::Id) -> Element<'_, Msg> {
         .on_press(Msg::CloseWin(wid))
         .width(90);
 
-    let bottom = row![register_btn, horizontal_space(), cancel_btn].padding([4, 0]);
+    let bottom = row![register_btn, Space::new().width(iced::Fill), cancel_btn].padding([4, 0]);
 
     let content = column![
         instruction,
-        Space::with_height(8),
+        Space::new().height(8),
         form,
-        Space::with_height(6),
+        Space::new().height(6),
         error_row,
-        Space::with_height(4),
+        Space::new().height(4),
         bottom,
     ]
     .padding(8);

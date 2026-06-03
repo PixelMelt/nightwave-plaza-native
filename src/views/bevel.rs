@@ -2,7 +2,7 @@ use iced::advanced::layout::{self, Layout};
 use iced::advanced::renderer;
 use iced::advanced::widget::{tree, Tree, Widget};
 use iced::advanced::{mouse, Clipboard, Shell};
-use iced::event::{self, Event};
+use iced::event::Event;
 use iced::{
     touch, Background, Border, Color, Element, Length, Padding, Rectangle, Shadow, Size, Vector,
 };
@@ -116,14 +116,14 @@ where
     }
 
     fn layout(
-        &self,
+        &mut self,
         tree: &mut Tree,
         renderer: &Renderer,
         limits: &layout::Limits,
     ) -> layout::Node {
         layout::padded(limits, self.width, self.height, self.padding, |limits| {
             self.content
-                .as_widget()
+                .as_widget_mut()
                 .layout(&mut tree.children[0], renderer, limits)
         })
     }
@@ -216,28 +216,29 @@ where
         });
     }
 
-    fn on_event(
+    fn update(
         &mut self,
         tree: &mut Tree,
-        event: Event,
+        event: &Event,
         layout: Layout<'_>,
         cursor: mouse::Cursor,
         renderer: &Renderer,
         clipboard: &mut dyn Clipboard,
         shell: &mut Shell<'_, Message>,
         viewport: &Rectangle,
-    ) -> event::Status {
-        if let event::Status::Captured = self.content.as_widget_mut().on_event(
+    ) {
+        self.content.as_widget_mut().update(
             &mut tree.children[0],
-            event.clone(),
+            event,
             layout.children().next().unwrap(),
             cursor,
             renderer,
             clipboard,
             shell,
             viewport,
-        ) {
-            return event::Status::Captured;
+        );
+        if shell.is_event_captured() {
+            return;
         }
 
         match event {
@@ -245,7 +246,7 @@ where
             | Event::Touch(touch::Event::FingerPressed { .. }) => {
                 if self.on_press.is_some() && cursor.is_over(layout.bounds()) {
                     tree.state.downcast_mut::<State>().is_pressed = true;
-                    return event::Status::Captured;
+                    shell.capture_event();
                 }
             }
             Event::Mouse(mouse::Event::ButtonReleased(mouse::Button::Left))
@@ -258,7 +259,7 @@ where
                             shell.publish(msg);
                         }
                     }
-                    return event::Status::Captured;
+                    shell.capture_event();
                 }
             }
             Event::Touch(touch::Event::FingerLost { .. }) => {
@@ -266,8 +267,6 @@ where
             }
             _ => {}
         }
-
-        event::Status::Ignored
     }
 
     fn mouse_interaction(
@@ -550,6 +549,7 @@ fn quad<R: iced::advanced::Renderer>(renderer: &mut R, bounds: Rectangle, color:
             bounds,
             border: Border::default(),
             shadow: Shadow::default(),
+            snap: false,
         },
         Background::Color(color),
     );

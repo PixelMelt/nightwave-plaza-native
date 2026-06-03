@@ -1,8 +1,8 @@
 use crate::state::{Msg, Plaza, WinType};
 use crate::theme;
 use crate::views::bevel::bevel_button;
-use crate::views::widgets::{bold_font, d3_sunken, format_date, group_box, menu_bar};
-use iced::widget::{column, container, horizontal_space, image, row, text, Space};
+use crate::views::widgets::{bold_font, d3_sunken, format_date, group_box, menu_bar, static_image};
+use iced::widget::{column, container, image, row, text, Space};
 use iced::{Element, Fill};
 
 const USER_CARD_IMG: &[u8] = include_bytes!("../assets/img/user_card.png");
@@ -18,7 +18,7 @@ pub fn view(state: &Plaza, wid: iced::window::Id) -> Element<'_, Msg> {
 
     let info_row = row![
         container(render_stats_box(state)).width(Fill),
-        Space::with_width(8),
+        Space::new().width(8),
         container(render_account_box(state)).width(Fill),
     ];
 
@@ -28,9 +28,9 @@ pub fn view(state: &Plaza, wid: iced::window::Id) -> Element<'_, Msg> {
         menu,
         container(column![
             card_panel,
-            Space::with_height(8),
+            Space::new().height(8),
             info_row,
-            Space::with_height(12),
+            Space::new().height(12),
             bottom,
         ])
         .padding(8),
@@ -48,13 +48,11 @@ fn render_user_card(state: &Plaza) -> Element<'_, Msg> {
         ("...", "...")
     };
 
-    let user_card_img = image(image::Handle::from_bytes(USER_CARD_IMG))
-        .width(32)
-        .height(32);
+    let user_card_img = image(static_image(USER_CARD_IMG)).width(32).height(32);
 
     let user_info = column![
         text(username).size(14).font(bold),
-        Space::with_height(4),
+        Space::new().height(4),
         text(email)
             .size(11)
             .color(iced::Color::from_rgb(0.5, 0.5, 0.5)),
@@ -62,7 +60,7 @@ fn render_user_card(state: &Plaza) -> Element<'_, Msg> {
 
     let user_card = row![
         container(user_card_img).center_y(Fill),
-        Space::with_width(8),
+        Space::new().width(8),
         user_info,
     ]
     .align_y(iced::Alignment::Center);
@@ -135,7 +133,7 @@ fn render_bottom_row(wid: iced::window::Id) -> Element<'static, Msg> {
 
     row![
         favorites_btn,
-        horizontal_space(),
+        Space::new().width(iced::Fill),
         container(close_btn).width(88),
     ]
     .align_y(iced::Alignment::Center)

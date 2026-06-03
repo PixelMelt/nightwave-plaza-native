@@ -5,7 +5,7 @@ use crate::views::widgets::{
     bold_font, divider, empty_panel, format_date, loading_panel, pagination, scroll_panel, shaped,
     status_bar, LINK_COLOR,
 };
-use iced::widget::{button, column, container, horizontal_space, image, row, text, Column, Space};
+use iced::widget::{button, column, container, image, row, text, Column, Space};
 use iced::{Element, Fill, Theme};
 
 pub fn view(state: &Plaza, wid: iced::window::Id) -> Element<'_, Msg> {
@@ -21,9 +21,9 @@ pub fn view(state: &Plaza, wid: iced::window::Id) -> Element<'_, Msg> {
 
     let bottom = row![
         pages_row,
-        horizontal_space(),
+        Space::new().width(iced::Fill),
         export_btn,
-        Space::with_width(6),
+        Space::new().width(6),
         close_btn,
     ]
     .align_y(iced::Alignment::Center)
@@ -40,9 +40,9 @@ pub fn view(state: &Plaza, wid: iced::window::Id) -> Element<'_, Msg> {
 
     column![
         list_area,
-        Space::with_height(4),
+        Space::new().height(4),
         bottom,
-        Space::with_height(2),
+        Space::new().height(2),
         status,
     ]
     .padding(4)
@@ -89,7 +89,7 @@ fn render_row<'a>(
 
     let thumb: Element<Msg> = match art {
         Some(handle) => image(handle.clone()).width(54).height(54).into(),
-        None => Space::new(54, 54).into(),
+        None => Space::new().width(54).height(54).into(),
     };
     let art_cell = container(thumb).width(62).padding([2, 4]);
 
@@ -126,6 +126,7 @@ fn render_row<'a>(
                 border: iced::Border::default(),
                 shadow: iced::Shadow::default(),
                 text_color: LINK_COLOR,
+                snap: false,
             })
             .padding(0)
             .into()
@@ -134,7 +135,7 @@ fn render_row<'a>(
     row![
         art_cell,
         clickable,
-        Space::with_width(8),
+        Space::new().width(8),
         container(action).width(70).center_x(70),
     ]
     .width(Fill)
@@ -164,6 +165,6 @@ fn render_pagination(state: &Plaza) -> Element<'_, Msg> {
             next_msg,
         )
     } else {
-        Space::with_width(0).into()
+        Space::new().width(0).into()
     }
 }

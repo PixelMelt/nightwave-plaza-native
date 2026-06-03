@@ -7,22 +7,51 @@ license = "GPL-3.0-or-later"
 repository = "https://github.com/PixelMelt/nightwave-plaza-native"
 
 [dependencies]
-iced = { version = "0.13", features = ["tokio", "image", "svg", "advanced"] }
-tokio = { version = "1", features = ["full"] }
-reqwest = { version = "0.12", features = ["json", "stream", "blocking"] }
+# Keep the GPU (wgpu) renderer for smooth list scrolling, plus tiny-skia as a
+# software fallback. We drop "linux-theme-detection" (the `mundy` dep — the app
+# uses a fixed Win98 palette) and swap the "tokio" executor for "smol", a much
+# lighter async runtime: dropping reqwest/rust_socketio removed every other
+# tokio user, so tokio is now entirely out of the dependency graph. smol still
+# provides the executor and the timers that `iced::time::every` needs.
+iced = { version = "0.14", default-features = false, features = [
+    "wgpu",
+    "tiny-skia",
+    "web-colors",
+    "crisp",
+    "smol",
+    "x11",
+    "wayland",
+    "image",
+    "svg",
+    "advanced",
+] }
+# ureq is a small blocking HTTP client (rustls+ring, no async runtime, no hyper
+# tower stack). The API calls are simple JSON GET/POST, and the audio stream
+# just needs a blocking reader — so reqwest's async machinery was overkill.
+ureq = { version = "2", features = ["json"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
-rodio = { version = "0.19", features = ["symphonia-all"] }
-image = "0.24"
-rust_socketio = { version = "0.6", features = ["async"] }
+# The radio feed is MP3 only (radio.plaza.one/mp3); "symphonia-all" needlessly
+# compiled flac/aac/alac/vorbis/adpcm/pcm/isomp4 decoders too.
+rodio = { version = "0.22", default-features = false, features = ["playback", "mp3"] }
+# Album art + the window icon are PNG/JPEG; drop the gif/webp/tiff decoders.
+image = { version = "0.25", default-features = false, features = ["png", "jpeg"] }
+# Channel + Sink/Stream traits for the media-control event bridge and the
+# blocking-HTTP-to-async shim in net.rs. iced pulls `futures` regardless.
 futures = "0.3"
-bytes = "1"
-chrono = "0.4"
-dirs = "5"
+chrono = { version = "0.4", default-features = false, features = ["clock", "std"] }
 tl = "0.7.8"
 souvlaki = "0.8"
-md5 = "0.7"
+md5 = "0.8"
 discord-rich-presence = "1"
+
+[profile.release]
+# Shrink the shipped binary and trim dead code without touching opt-level
+# (kept at the default 3 so audio decoding stays fast). LTO + a single codegen
+# unit let the linker drop unused paths from the trimmed dependency features.
+lto = "thin"
+codegen-units = 1
+strip = true
 
 [build-dependencies]
 winresource = "0.1"

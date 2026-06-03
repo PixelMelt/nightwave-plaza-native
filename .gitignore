@@ -1,3 +1,8 @@
 /target
 /plaza
 /docs
+
+# makepkg work dirs / output (dist/PKGBUILD)
+/dist/pkg
+/dist/src
+/dist/*.pkg.tar.zst

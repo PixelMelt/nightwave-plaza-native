@@ -201,230 +201,223 @@ pub struct PaginatedMeta {
 const API: &str = "https://api.plaza.one";
 const STATUS_URL: &str = "https://api.plaza.one/status";
 
-fn client() -> &'static reqwest::Client {
-    static CLIENT: std::sync::OnceLock<reqwest::Client> = std::sync::OnceLock::new();
-    CLIENT.get_or_init(reqwest::Client::new)
+use crate::net::{agent, blocking};
+use serde::de::DeserializeOwned;
+
+fn body_text(result: Result<ureq::Response, ureq::Error>) -> Result<String, String> {
+    match result {
+        Ok(resp) => resp.into_string().map_err(|e| e.to_string()),
+        Err(ureq::Error::Status(code, resp)) => {
+            let body = resp.into_string().unwrap_or_default();
+            if let Ok(err) = serde_json::from_str::<ApiErrorBody>(&body) {
+                Err(err
+                    .error
+                    .or(err.key)
+                    .unwrap_or_else(|| format!("HTTP {code}")))
+            } else if !body.is_empty() {
+                Err(body)
+            } else {
+                Err(format!("HTTP {code}"))
+            }
+        }
+        Err(e) => Err(e.to_string()),
+    }
 }
 
-async fn parse_response<T: serde::de::DeserializeOwned>(
-    resp: reqwest::Response,
+fn parse_json<T: DeserializeOwned>(
+    result: Result<ureq::Response, ureq::Error>,
 ) -> Result<T, String> {
-    if resp.status().is_success() {
-        resp.json::<T>().await.map_err(|e| e.to_string())
-    } else {
-        let status = resp.status();
-        let body = resp.text().await.unwrap_or_default();
-        if let Ok(err) = serde_json::from_str::<ApiErrorBody>(&body) {
-            Err(err
-                .error
-                .or(err.key)
-                .unwrap_or_else(|| format!("HTTP {}", status)))
-        } else if !body.is_empty() {
-            Err(body)
-        } else {
-            Err(format!("HTTP {}", status))
-        }
-    }
+    let body = body_text(result)?;
+    serde_json::from_str::<T>(&body).map_err(|e| e.to_string())
 }
 
-async fn parse_result(resp: reqwest::Response) -> Result<(), String> {
-    if resp.status().is_success() {
-        Ok(())
-    } else {
-        let status = resp.status();
-        let body = resp.text().await.unwrap_or_default();
-        if let Ok(err) = serde_json::from_str::<ApiErrorBody>(&body) {
-            Err(err
-                .error
-                .or(err.key)
-                .unwrap_or_else(|| format!("HTTP {}", status)))
-        } else if !body.is_empty() {
-            Err(body)
-        } else {
-            Err(format!("HTTP {}", status))
-        }
-    }
+fn parse_unit(result: Result<ureq::Response, ureq::Error>) -> Result<(), String> {
+    body_text(result).map(|_| ())
 }
 
 pub async fn fetch_status() -> Result<Status, String> {
-    let resp = client()
-        .get(STATUS_URL)
-        .send()
-        .await
-        .map_err(|e| e.to_string())?;
-    parse_response(resp).await
+    blocking(|| parse_json(agent().get(STATUS_URL).call())).await
 }
 
 pub async fn fetch_history(page: u32) -> Result<HistoryResponse, String> {
-    let resp = client()
-        .get(format!("{}/v2/history?page={}", API, page))
-        .send()
-        .await
-        .map_err(|e| e.to_string())?;
-    parse_response(resp).await
+    let url = format!("{API}/v2/history?page={page}");
+    blocking(move || parse_json(agent().get(&url).call())).await
 }
 
 pub async fn fetch_ratings(
     range: &str,
     page: u32,
 ) -> Result<PaginatedResponse<RatingEntry>, String> {
-    let resp = client()
-        .get(format!("{}/v2/ratings/{}?page={}", API, range, page))
-        .send()
-        .await
-        .map_err(|e| e.to_string())?;
-    parse_response(resp).await
+    let url = format!("{API}/v2/ratings/{range}?page={page}");
+    blocking(move || parse_json(agent().get(&url).call())).await
 }
 
 pub async fn fetch_song(id: &str) -> Result<SongResponse, String> {
-    let resp = client()
-        .get(format!("{}/v2/songs/{}", API, id))
-        .send()
-        .await
-        .map_err(|e| e.to_string())?;
-    parse_response(resp).await
+    let url = format!("{API}/v2/songs/{id}");
+    blocking(move || parse_json(agent().get(&url).call())).await
 }
 
 pub async fn fetch_news(page: u32) -> Result<PaginatedResponse<NewsArticle>, String> {
-    let resp = client()
-        .get(format!("{}/v2/news?page={}", API, page))
-        .send()
-        .await
-        .map_err(|e| e.to_string())?;
-    parse_response(resp).await
+    let url = format!("{API}/v2/news?page={page}");
+    blocking(move || parse_json(agent().get(&url).call())).await
 }
 
 pub async fn fetch_artwork(url: &str) -> Result<Vec<u8>, String> {
-    client()
-        .get(url)
-        .send()
-        .await
-        .map_err(|e| e.to_string())?
-        .bytes()
-        .await
-        .map(|b| b.to_vec())
-        .map_err(|e| e.to_string())
+    let url = url.to_string();
+    blocking(move || {
+        let resp = agent().get(&url).call().map_err(|e| e.to_string())?;
+        let mut buf = Vec::new();
+        std::io::Read::read_to_end(&mut resp.into_reader(), &mut buf).map_err(|e| e.to_string())?;
+        Ok(buf)
+    })
+    .await
 }
 
 pub async fn login(username: &str, password: &str) -> Result<LoginResponse, String> {
-    let resp = client()
-        .post(format!("{}/v2/auth/token", API))
-        .json(&serde_json::json!({
-            "username": username,
-            "password": password,
-            "remember": true,
-        }))
-        .send()
-        .await
-        .map_err(|e| e.to_string())?;
-    parse_response(resp).await
+    let (username, password) = (username.to_string(), password.to_string());
+    blocking(move || {
+        parse_json(
+            agent()
+                .post(&format!("{API}/v2/auth/token"))
+                .send_json(serde_json::json!({
+                    "username": username,
+                    "password": password,
+                    "remember": true,
+                })),
+        )
+    })
+    .await
 }
 
 pub async fn logout(token: &str) -> Result<(), String> {
-    let resp = client()
-        .post(format!("{}/v2/auth/logout", API))
-        .bearer_auth(token)
-        .send()
-        .await
-        .map_err(|e| e.to_string())?;
-    if resp.status().is_success() {
-        Ok(())
-    } else {
-        Err(format!("Logout failed: HTTP {}", resp.status()))
-    }
+    let token = token.to_string();
+    blocking(move || {
+        agent()
+            .post(&format!("{API}/v2/auth/logout"))
+            .set("Authorization", &format!("Bearer {token}"))
+            .call()
+            .map(|_| ())
+            .map_err(|e| format!("Logout failed: {e}"))
+    })
+    .await
 }
 
 pub async fn register(username: &str, email: &str, password: &str) -> Result<User, String> {
-    let resp = client()
-        .post(format!("{}/v2/users", API))
-        .json(&serde_json::json!({
-            "username": username,
-            "email": email,
-            "password": password,
-            "captcha_response": "",
-        }))
-        .send()
-        .await
-        .map_err(|e| e.to_string())?;
-    parse_response(resp).await
+    let (username, email, password) = (
+        username.to_string(),
+        email.to_string(),
+        password.to_string(),
+    );
+    blocking(move || {
+        parse_json(
+            agent()
+                .post(&format!("{API}/v2/users"))
+                .send_json(serde_json::json!({
+                    "username": username,
+                    "email": email,
+                    "password": password,
+                    "captcha_response": "",
+                })),
+        )
+    })
+    .await
 }
 
 pub async fn get_me(token: &str) -> Result<User, String> {
-    let resp = client()
-        .get(format!("{}/v2/users/me", API))
-        .bearer_auth(token)
-        .send()
-        .await
-        .map_err(|e| e.to_string())?;
-    let me: MeResponse = parse_response(resp).await?;
-    Ok(me.data)
+    let token = token.to_string();
+    blocking(move || {
+        let me: MeResponse = parse_json(
+            agent()
+                .get(&format!("{API}/v2/users/me"))
+                .set("Authorization", &format!("Bearer {token}"))
+                .call(),
+        )?;
+        Ok(me.data)
+    })
+    .await
 }
 
 pub async fn get_stats(token: &str) -> Result<UserStatsResponse, String> {
-    let resp = client()
-        .get(format!("{}/v2/users/me/stats", API))
-        .bearer_auth(token)
-        .send()
-        .await
-        .map_err(|e| e.to_string())?;
-    parse_response(resp).await
+    let token = token.to_string();
+    blocking(move || {
+        parse_json(
+            agent()
+                .get(&format!("{API}/v2/users/me/stats"))
+                .set("Authorization", &format!("Bearer {token}"))
+                .call(),
+        )
+    })
+    .await
 }
 
 pub async fn react(token: &str, reaction: u8) -> Result<ReactResponse, String> {
-    let resp = client()
-        .post(format!("{}/v2/reactions", API))
-        .bearer_auth(token)
-        .json(&serde_json::json!({ "reaction": reaction }))
-        .send()
-        .await
-        .map_err(|e| e.to_string())?;
-    parse_response(resp).await
+    let token = token.to_string();
+    blocking(move || {
+        parse_json(
+            agent()
+                .post(&format!("{API}/v2/reactions"))
+                .set("Authorization", &format!("Bearer {token}"))
+                .send_json(serde_json::json!({ "reaction": reaction })),
+        )
+    })
+    .await
 }
 
 pub async fn fetch_favorites(
     token: &str,
     page: u32,
 ) -> Result<PaginatedResponse<FavoriteEntry>, String> {
-    let resp = client()
-        .get(format!("{}/v2/users/me/favorites?page={}", API, page))
-        .bearer_auth(token)
-        .send()
-        .await
-        .map_err(|e| e.to_string())?;
-    parse_response(resp).await
+    let token = token.to_string();
+    blocking(move || {
+        parse_json(
+            agent()
+                .get(&format!("{API}/v2/users/me/favorites?page={page}"))
+                .set("Authorization", &format!("Bearer {token}"))
+                .call(),
+        )
+    })
+    .await
 }
 
 pub async fn add_favorite(token: &str, song_id: &str) -> Result<u64, String> {
-    let resp = client()
-        .post(format!("{}/v2/users/me/favorites", API))
-        .bearer_auth(token)
-        .json(&serde_json::json!({ "song_id": song_id }))
-        .send()
-        .await
-        .map_err(|e| e.to_string())?;
-    let added: FavoriteEntry = parse_response::<AddFavoriteResponse>(resp).await?.data;
-    Ok(added.id)
+    let (token, song_id) = (token.to_string(), song_id.to_string());
+    blocking(move || {
+        let added: AddFavoriteResponse = parse_json(
+            agent()
+                .post(&format!("{API}/v2/users/me/favorites"))
+                .set("Authorization", &format!("Bearer {token}"))
+                .send_json(serde_json::json!({ "song_id": song_id })),
+        )?;
+        Ok(added.data.id)
+    })
+    .await
 }
 
 pub async fn delete_favorite(token: &str, id: u64) -> Result<(), String> {
-    let resp = client()
-        .delete(format!("{}/v2/users/me/favorites/{}", API, id))
-        .bearer_auth(token)
-        .send()
-        .await
-        .map_err(|e| e.to_string())?;
-    parse_result(resp).await
+    let token = token.to_string();
+    blocking(move || {
+        parse_unit(
+            agent()
+                .delete(&format!("{API}/v2/users/me/favorites/{id}"))
+                .set("Authorization", &format!("Bearer {token}"))
+                .call(),
+        )
+    })
+    .await
 }
 
 pub async fn export_favorites(token: &str) -> Result<String, String> {
-    let resp = client()
-        .post(format!("{}/v2/users/me/favorites/export", API))
-        .bearer_auth(token)
-        .send()
-        .await
-        .map_err(|e| e.to_string())?;
-    let link: ExportLink = parse_response(resp).await?;
-    Ok(link.link)
+    let token = token.to_string();
+    blocking(move || {
+        let link: ExportLink = parse_json(
+            agent()
+                .post(&format!("{API}/v2/users/me/favorites/export"))
+                .set("Authorization", &format!("Bearer {token}"))
+                .call(),
+        )?;
+        Ok(link.link)
+    })
+    .await
 }
 
 pub async fn update_profile(
@@ -433,18 +426,25 @@ pub async fn update_profile(
     username: &str,
     email: &str,
 ) -> Result<(), String> {
-    let resp = client()
-        .put(format!("{}/v2/users/me", API))
-        .bearer_auth(token)
-        .json(&serde_json::json!({
-            "current_password": current_password,
-            "username": username,
-            "email": email,
-        }))
-        .send()
-        .await
-        .map_err(|e| e.to_string())?;
-    parse_result(resp).await
+    let (token, current_password, username, email) = (
+        token.to_string(),
+        current_password.to_string(),
+        username.to_string(),
+        email.to_string(),
+    );
+    blocking(move || {
+        parse_unit(
+            agent()
+                .put(&format!("{API}/v2/users/me"))
+                .set("Authorization", &format!("Bearer {token}"))
+                .send_json(serde_json::json!({
+                    "current_password": current_password,
+                    "username": username,
+                    "email": email,
+                })),
+        )
+    })
+    .await
 }
 
 pub async fn update_password(
@@ -452,26 +452,34 @@ pub async fn update_password(
     current_password: &str,
     password: &str,
 ) -> Result<(), String> {
-    let resp = client()
-        .put(format!("{}/v2/users/me/password", API))
-        .bearer_auth(token)
-        .json(&serde_json::json!({
-            "current_password": current_password,
-            "password": password,
-        }))
-        .send()
-        .await
-        .map_err(|e| e.to_string())?;
-    parse_result(resp).await
+    let (token, current_password, password) = (
+        token.to_string(),
+        current_password.to_string(),
+        password.to_string(),
+    );
+    blocking(move || {
+        parse_unit(
+            agent()
+                .put(&format!("{API}/v2/users/me/password"))
+                .set("Authorization", &format!("Bearer {token}"))
+                .send_json(serde_json::json!({
+                    "current_password": current_password,
+                    "password": password,
+                })),
+        )
+    })
+    .await
 }
 
 pub async fn delete_profile(token: &str, current_password: &str) -> Result<(), String> {
-    let resp = client()
-        .delete(format!("{}/v2/users/me", API))
-        .bearer_auth(token)
-        .json(&serde_json::json!({ "current_password": current_password }))
-        .send()
-        .await
-        .map_err(|e| e.to_string())?;
-    parse_result(resp).await
+    let (token, current_password) = (token.to_string(), current_password.to_string());
+    blocking(move || {
+        parse_unit(
+            agent()
+                .request("DELETE", &format!("{API}/v2/users/me"))
+                .set("Authorization", &format!("Bearer {token}"))
+                .send_json(serde_json::json!({ "current_password": current_password })),
+        )
+    })
+    .await
 }

@@ -5,7 +5,7 @@ use crate::views::widgets::{
     self, bold_font, close_btn, d3_sunken, d3_thin_sunken, format_date, format_time, shaped,
     status_bar,
 };
-use iced::widget::{column, container, horizontal_space, image, row, text, vertical_space, Space};
+use iced::widget::{column, container, image, row, text, Space};
 use iced::{Element, Fill};
 
 const FAVORITE_GOLD: iced::Color = iced::Color::from_rgb(1.0, 0.827, 0.0);
@@ -19,7 +19,7 @@ pub fn view(state: &Plaza, wid: iced::window::Id) -> Element<'_, Msg> {
             .height(Fill)
             .center_x(Fill)
             .center_y(Fill);
-        let bottom = row![horizontal_space(), close_btn(wid)].padding([4, 2]);
+        let bottom = row![Space::new().width(iced::Fill), close_btn(wid)].padding([4, 2]);
         return column![loading, bottom].spacing(2).padding(2).into();
     }
 
@@ -54,7 +54,7 @@ pub fn view(state: &Plaza, wid: iced::window::Id) -> Element<'_, Msg> {
     let art_content: Element<Msg> = if let Some(h) = art_handle {
         image(h.clone()).width(100).height(100).into()
     } else {
-        Space::new(100, 100).into()
+        Space::new().width(100).height(100).into()
     };
     let art: Element<Msg> =
         d3_thin_sunken(container(art_content).style(theme::sunken_inner)).into();
@@ -62,18 +62,18 @@ pub fn view(state: &Plaza, wid: iced::window::Id) -> Element<'_, Msg> {
     let info = column![
         text("Artist:").size(10).font(bold),
         shaped(artist).size(11),
-        vertical_space().height(2),
+        Space::new().height(iced::Fill).height(2),
         text("Album:").size(10).font(bold),
         shaped(album).size(11),
-        vertical_space().height(2),
+        Space::new().height(iced::Fill).height(2),
         text("Title:").size(10).font(bold),
         shaped(title_str).size(11),
-        vertical_space().height(4),
+        Space::new().height(iced::Fill).height(4),
         row![
             widgets::icon_clock().size(10),
-            Space::with_width(2),
+            Space::new().width(2),
             text(format_time(length)).size(10),
-            Space::with_width(8),
+            Space::new().width(8),
             widgets::icon_like().size(10),
             text(format!(" {}", likes)).size(10),
         ]
@@ -82,7 +82,7 @@ pub fn view(state: &Plaza, wid: iced::window::Id) -> Element<'_, Msg> {
     ]
     .spacing(1);
 
-    let info_row = row![info, horizontal_space(), art].padding(4);
+    let info_row = row![info, Space::new().width(iced::Fill), art].padding(4);
     let panel = d3_sunken(
         container(info_row)
             .style(theme::panel)
@@ -107,7 +107,7 @@ pub fn view(state: &Plaza, wid: iced::window::Id) -> Element<'_, Msg> {
     )
     .maybe_on_press(can_favorite.then_some(Msg::SongInfo(SongInfoMsg::ToggleFavorite)))
     .width(44);
-    let bottom = row![fav_btn, horizontal_space(), close_btn(wid)].padding([4, 2]);
+    let bottom = row![fav_btn, Space::new().width(iced::Fill), close_btn(wid)].padding([4, 2]);
 
     let status_text = first_played
         .map(|fp| format!("First Played: {}", format_date(fp)))

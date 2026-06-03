@@ -1,7 +1,9 @@
 use crate::state::Msg;
 use crate::theme;
-use crate::views::widgets::{bold_font, d3_sunken, raised_btn, status_bar, LINK_COLOR};
-use iced::widget::{column, container, horizontal_space, image, row, text, Space};
+use crate::views::widgets::{
+    bold_font, d3_sunken, raised_btn, static_image, status_bar, LINK_COLOR,
+};
+use iced::widget::{column, container, image, row, text, Space};
 use iced::{Element, Fill, Padding};
 
 const PC_IMG: &[u8] = include_bytes!("../assets/img/pc.png");
@@ -26,7 +28,7 @@ pub fn view(wid: iced::window::Id) -> Element<'static, Msg> {
             .font(bold_italic)
             .center()
             .width(Fill),
-        Space::with_height(4),
+        Space::new().height(4),
         text("Welcome to the 24/7 online vaporwave and future funk radio station.")
             .size(12)
             .font(italic)
@@ -37,7 +39,7 @@ pub fn view(wid: iced::window::Id) -> Element<'static, Msg> {
     .width(Fill)
     .align_x(iced::Alignment::Center);
 
-    let pc_image = image(image::Handle::from_bytes(PC_IMG)).width(70);
+    let pc_image = image(static_image(PC_IMG)).width(70);
 
     let top_row = row![title_col, pc_image]
         .spacing(8)
@@ -49,42 +51,42 @@ pub fn view(wid: iced::window::Id) -> Element<'static, Msg> {
             .size(12)
             .font(bold)
             .line_height(lh),
-        Space::with_height(4),
+        Space::new().height(4),
         text("Please send any inquiries you may have to mail@plaza.one.")
             .size(12)
             .line_height(lh),
-        Space::with_height(4),
+        Space::new().height(4),
         text("Join our community Discord server!")
             .size(12)
             .line_height(lh),
-        Space::with_height(8),
+        Space::new().height(8),
         text("Submissions").size(12).font(bold).line_height(lh),
-        Space::with_height(4),
+        Space::new().height(4),
         text("Want to submit music for broadcast? Please use this form.")
             .size(12)
             .line_height(lh),
-        Space::with_height(8),
+        Space::new().height(8),
         text("Mobile applications (iOS / Android)")
             .size(12)
             .font(bold)
             .line_height(lh),
         text("Show more").size(12).line_height(lh).color(LINK_COLOR),
-        Space::with_height(8),
+        Space::new().height(8),
         text("Useful links").size(12).font(bold).line_height(lh),
-        Space::with_height(4),
+        Space::new().height(4),
         text("Playlists").size(12).line_height(lh),
         row![
             text("M3U (Winamp)")
                 .size(12)
                 .line_height(lh)
                 .color(LINK_COLOR),
-            Space::with_width(12),
+            Space::new().width(12),
             text("PLS (Foobar2000)")
                 .size(12)
                 .line_height(lh)
                 .color(LINK_COLOR),
         ],
-        Space::with_height(8),
+        Space::new().height(8),
         text("Streams").size(12).line_height(lh),
         text("http://radio.plaza.one/mp3 (mp3 / 128kbps)")
             .size(12)
@@ -125,9 +127,9 @@ pub fn view(wid: iced::window::Id) -> Element<'static, Msg> {
 
     let bottom = row![
         credits_btn,
-        Space::with_width(8),
+        Space::new().width(8),
         news_btn,
-        horizontal_space(),
+        Space::new().width(iced::Fill),
         close_btn,
     ];
 
@@ -139,11 +141,11 @@ pub fn view(wid: iced::window::Id) -> Element<'static, Msg> {
 
     column![
         top_row,
-        Space::with_height(8),
+        Space::new().height(8),
         panel,
-        Space::with_height(16),
+        Space::new().height(16),
         bottom,
-        Space::with_height(2),
+        Space::new().height(2),
         status,
     ]
     .spacing(0)

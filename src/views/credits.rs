@@ -7,7 +7,7 @@ use iced::{Element, Fill};
 pub fn view(wid: iced::window::Id) -> Element<'static, Msg> {
     let bold = bold_font();
 
-    let para1 = rich_text![
+    let para1: iced::widget::text::Rich<'_, (), Msg> = rich_text![
         span("Nightwave Plaza").font(bold).size(12),
         span(" website and apps are created and maintained by ").size(12),
         span("Alexander Morozov")
@@ -17,12 +17,12 @@ pub fn view(wid: iced::window::Id) -> Element<'static, Msg> {
         span(".").size(12),
     ];
 
-    let para2 = rich_text![
+    let para2: iced::widget::text::Rich<'_, (), Msg> = rich_text![
         span("All music and backgrounds").font(bold).size(12),
         span(" belong to their respective authors. Musical content is provided by artists and labels. If you have any copyright concerns, please let us know.").size(12),
     ];
 
-    let memo_content = column![para1, Space::with_height(8), para2]
+    let memo_content = column![para1, Space::new().height(8), para2]
         .spacing(0)
         .padding(6);
 

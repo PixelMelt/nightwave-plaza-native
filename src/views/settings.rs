@@ -14,9 +14,9 @@ pub fn view(state: &Plaza, wid: iced::window::Id) -> Element<'_, Msg> {
         .padding([4, 12]);
 
     let bottom =
-        row![timer_btn, Space::with_width(Fill), close_btn(wid)].align_y(iced::Alignment::Center);
+        row![timer_btn, Space::new().width(Fill), close_btn(wid)].align_y(iced::Alignment::Center);
 
-    column![lastfm, discord, Space::with_height(Fill), bottom]
+    column![lastfm, discord, Space::new().height(Fill), bottom]
         .spacing(8)
         .padding(8)
         .width(Fill)
@@ -36,13 +36,11 @@ fn discord_body(state: &Plaza) -> Element<'_, Msg> {
     }
 
     column![
-        checkbox(
-            "Show \"Listening to\" status while playing",
-            state.discord.enabled
-        )
-        .on_toggle(|b| Msg::Discord(DiscordMsg::ToggleEnabled(b)))
-        .size(13)
-        .text_size(11),
+        checkbox(state.config.discord.enabled)
+            .label("Show \"Listening to\" status while playing")
+            .on_toggle(|b| Msg::Discord(DiscordMsg::ToggleEnabled(b)))
+            .size(13)
+            .text_size(11),
         text("Requires the Discord desktop app to be running.")
             .size(11)
             .color(MUTED),
@@ -66,10 +64,11 @@ fn lastfm_body(state: &Plaza) -> Element<'_, Msg> {
     let mut col = column![].spacing(6).width(Fill);
 
     let connected_as = state
+        .config
         .lastfm
         .session_key
         .as_ref()
-        .and(state.lastfm.username.as_deref());
+        .and(state.config.lastfm.username.as_deref());
 
     if let Some(username) = connected_as {
         col = col.push(
@@ -81,7 +80,8 @@ fn lastfm_body(state: &Plaza) -> Element<'_, Msg> {
         );
 
         col = col.push(
-            checkbox("Scrobble tracks while playing", state.lastfm.enabled)
+            checkbox(state.config.lastfm.enabled)
+                .label("Scrobble tracks while playing")
                 .on_toggle(|b| Msg::Lastfm(LastfmMsg::ToggleEnabled(b)))
                 .size(13)
                 .text_size(11),
@@ -109,7 +109,7 @@ fn lastfm_body(state: &Plaza) -> Element<'_, Msg> {
                 bevel_button(text(finish_label).size(11).center().width(80))
                     .maybe_on_press(finish_press)
                     .width(80),
-                Space::with_width(8),
+                Space::new().width(8),
                 reauth_link("Open page again", state),
             ]
             .align_y(iced::Alignment::Center),
@@ -148,6 +148,7 @@ fn reauth_link<'a>(label: &'a str, state: &Plaza) -> Element<'a, Msg> {
             border: iced::Border::default(),
             shadow: iced::Shadow::default(),
             text_color: LINK_COLOR,
+            snap: false,
         })
         .padding(0)
         .into()

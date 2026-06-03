@@ -1,8 +1,10 @@
 use crate::state::{Msg, Plaza, WinType};
 use crate::theme;
 use crate::views::bevel::bevel_button;
-use crate::views::widgets::{self, bold_font, d3_thin_sunken, format_time, menu_bar, status_bar};
-use iced::widget::{button, column, container, horizontal_space, image, row, slider, text, Space};
+use crate::views::widgets::{
+    self, bold_font, d3_thin_sunken, format_time, menu_bar, static_image, status_bar,
+};
+use iced::widget::{button, column, container, image, row, slider, text, Space};
 use iced::{Element, Fill, Theme};
 use std::time::Instant;
 
@@ -21,7 +23,7 @@ pub fn view(state: &Plaza) -> Element<'_, Msg> {
     let meta = render_metadata(state);
 
     let content = d3_thin_sunken(
-        container(row![cover, Space::with_width(6), meta].padding(2))
+        container(row![cover, Space::new().width(6), meta].padding(2))
             .style(theme::panel)
             .width(Fill)
             .padding(3),
@@ -30,7 +32,7 @@ pub fn view(state: &Plaza) -> Element<'_, Msg> {
 
     let status = render_status(state);
 
-    let mut col = column![menu, content, Space::with_height(1), status].padding(2);
+    let mut col = column![menu, content, Space::new().height(1), status].padding(2);
 
     if let Some(ref err) = state.error_msg {
         col = col.push(render_error(err));
@@ -49,7 +51,7 @@ fn render_cover(state: &Plaza) -> Element<'_, Msg> {
     let inner: Element<Msg> = if let Some(ref h) = state.artwork_handle {
         image(h.clone()).width(112).height(112).into()
     } else {
-        Space::new(112, 112).into()
+        Space::new().width(112).height(112).into()
     };
 
     let img = d3_thin_sunken(container(inner).style(cover_bg));
@@ -64,6 +66,7 @@ fn render_cover(state: &Plaza) -> Element<'_, Msg> {
                 border: iced::Border::default(),
                 shadow: iced::Shadow::default(),
                 text_color: theme::BLACK,
+                snap: false,
             })
             .padding(0)
             .into()
@@ -91,13 +94,13 @@ fn render_metadata(state: &Plaza) -> Element<'_, Msg> {
     .size(14);
 
     column![
-        Space::with_height(2),
+        Space::new().height(2),
         artist,
-        Space::with_height(8),
+        Space::new().height(8),
         title,
-        Space::with_height(6),
+        Space::new().height(6),
         render_time_vol(state),
-        Space::with_height(3),
+        Space::new().height(3),
         render_controls(state),
     ]
     .width(Fill)
@@ -128,14 +131,12 @@ fn render_time_vol(state: &Plaza) -> Element<'_, Msg> {
         .step(1.0)
         .style(theme::volume_slider);
 
-    let vol_icon = image(image::Handle::from_bytes(VOLUME_IMG))
-        .width(11)
-        .height(16);
-    let vol_row = row![vol, Space::with_width(5), vol_icon].align_y(iced::Alignment::Center);
+    let vol_icon = image(static_image(VOLUME_IMG)).width(11).height(16);
+    let vol_row = row![vol, Space::new().width(5), vol_icon].align_y(iced::Alignment::Center);
 
     row![
         container(time_field).width(iced::Length::FillPortion(7)),
-        Space::with_width(4),
+        Space::new().width(4),
         container(vol_row)
             .width(iced::Length::FillPortion(5))
             .center_y(24),
@@ -226,7 +227,7 @@ fn render_controls(state: &Plaza) -> Element<'_, Msg> {
     ];
     row![
         container(left_btns).width(iced::Length::FillPortion(7)),
-        Space::with_width(8),
+        Space::new().width(8),
         container(right_btns).width(iced::Length::FillPortion(5)),
     ]
     .into()
@@ -254,7 +255,7 @@ fn render_error(err: &str) -> Element<'_, Msg> {
             text(err)
                 .size(10)
                 .color(iced::Color::from_rgb(0.8, 0.0, 0.0)),
-            horizontal_space(),
+            Space::new().width(iced::Fill),
             bevel_button(text("x").size(10))
                 .on_press(Msg::DismissErr)
                 .padding(2),

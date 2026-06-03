@@ -1,11 +1,6 @@
 use discord_rich_presence::{activity, DiscordIpc, DiscordIpcClient};
 use serde::{Deserialize, Serialize};
-use std::fs;
-use std::path::PathBuf;
 use std::sync::mpsc::{self, Receiver, Sender};
-
-const APP_DIR: &str = "nightwave-plaza";
-const CONFIG_FILE: &str = "discord.json";
 
 pub const CLIENT_ID: &str = "1511775400425160784";
 
@@ -13,38 +8,20 @@ pub fn is_configured() -> bool {
     !CLIENT_ID.is_empty()
 }
 
-#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct DiscordConfig {
     pub enabled: bool,
+}
+
+impl Default for DiscordConfig {
+    fn default() -> Self {
+        Self { enabled: true }
+    }
 }
 
 impl DiscordConfig {
     pub fn is_active(&self) -> bool {
         self.enabled && is_configured()
-    }
-}
-
-fn config_path() -> Option<PathBuf> {
-    Some(dirs::config_dir()?.join(APP_DIR).join(CONFIG_FILE))
-}
-
-pub fn load() -> DiscordConfig {
-    let Some(path) = config_path() else {
-        return DiscordConfig::default();
-    };
-    fs::read(&path)
-        .ok()
-        .and_then(|bytes| serde_json::from_slice(&bytes).ok())
-        .unwrap_or(DiscordConfig { enabled: true })
-}
-
-pub fn save(cfg: &DiscordConfig) {
-    let Some(path) = config_path() else { return };
-    if let Some(parent) = path.parent() {
-        let _ = fs::create_dir_all(parent);
-    }
-    if let Ok(bytes) = serde_json::to_vec_pretty(cfg) {
-        let _ = fs::write(&path, bytes);
     }
 }
 

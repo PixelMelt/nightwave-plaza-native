@@ -13,6 +13,19 @@ pub const ICON_FONT: iced::Font = iced::Font {
     style: iced::font::Style::Normal,
 };
 
+pub fn static_image(bytes: &'static [u8]) -> image::Handle {
+    use std::collections::HashMap;
+    use std::sync::{Mutex, OnceLock};
+    static CACHE: OnceLock<Mutex<HashMap<usize, image::Handle>>> = OnceLock::new();
+    CACHE
+        .get_or_init(|| Mutex::new(HashMap::new()))
+        .lock()
+        .unwrap()
+        .entry(bytes.as_ptr() as usize)
+        .or_insert_with(|| image::Handle::from_bytes(bytes))
+        .clone()
+}
+
 pub const IC_CLOCK: &str = "\u{e94e}";
 pub const IC_USER: &str = "\u{e971}";
 pub const IC_COG: &str = "\u{e994}";
@@ -168,7 +181,7 @@ pub fn menu_btn_underline(label: &str, msg: Msg) -> Element<'_, Msg> {
 
     let first_col = iced::widget::column![
         text(first).size(11),
-        container(Space::new(7, 1)).style(move |_: &Theme| container::Style {
+        container(Space::new().width(7).height(1)).style(move |_: &Theme| container::Style {
             background: Some(iced::Background::Color(theme::BLACK)),
             ..Default::default()
         }),
@@ -313,9 +326,7 @@ pub fn title_bar(
     show_close: bool,
 ) -> Element<'static, Msg> {
     let icon_bytes = win_icon_bytes(wt);
-    let icon = image(image::Handle::from_bytes(icon_bytes))
-        .width(16)
-        .height(16);
+    let icon = image(static_image(icon_bytes)).width(16).height(16);
 
     let title_label = text(title)
         .size(12)
@@ -325,7 +336,7 @@ pub fn title_bar(
 
     let drag_content = Row::new()
         .push(icon)
-        .push(Space::with_width(2))
+        .push(Space::new().width(2))
         .push(title_label)
         .align_y(iced::Alignment::Center)
         .width(Fill)
@@ -422,11 +433,7 @@ fn fill_sunken<'a>(content: impl Into<Element<'a, Msg>>) -> Element<'a, Msg> {
 const LOADING_IMG: &[u8] = include_bytes!("../assets/img/loading.png");
 
 pub fn loading_panel<'a>() -> Element<'a, Msg> {
-    fill_sunken(
-        image(image::Handle::from_bytes(LOADING_IMG))
-            .width(36)
-            .height(36),
-    )
+    fill_sunken(image(static_image(LOADING_IMG)).width(36).height(36))
 }
 
 pub fn empty_panel<'a>(label: &'a str) -> Element<'a, Msg> {

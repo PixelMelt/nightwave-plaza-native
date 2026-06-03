@@ -13,7 +13,7 @@ pub fn view(state: &Plaza, wid: iced::window::Id) -> Element<'_, Msg> {
                 .size(11)
                 .center()
                 .width(Fill),
-            Space::with_height(8),
+            Space::new().height(8),
             button(
                 text("Download")
                     .size(11)
@@ -27,6 +27,7 @@ pub fn view(state: &Plaza, wid: iced::window::Id) -> Element<'_, Msg> {
                 border: iced::Border::default(),
                 shadow: iced::Shadow::default(),
                 text_color: LINK_COLOR,
+                snap: false,
             })
             .padding(0)
             .width(Fill),
@@ -43,7 +44,7 @@ pub fn view(state: &Plaza, wid: iced::window::Id) -> Element<'_, Msg> {
                 .size(11)
                 .center()
                 .width(Fill),
-            Space::with_height(10),
+            Space::new().height(10),
             container(
                 bevel_button(text("Export").size(11).center().width(90))
                     .on_press(Msg::Export(ExportMsg::Start))
@@ -57,7 +58,7 @@ pub fn view(state: &Plaza, wid: iced::window::Id) -> Element<'_, Msg> {
 
     let mut col = column![body].width(Fill);
     if let Some(ref err) = state.export.error {
-        col = col.push(Space::with_height(6));
+        col = col.push(Space::new().height(6));
         col = col.push(
             text(err)
                 .size(11)
@@ -71,7 +72,7 @@ pub fn view(state: &Plaza, wid: iced::window::Id) -> Element<'_, Msg> {
 
     column![
         panel,
-        Space::with_height(12),
+        Space::new().height(12),
         container(close_btn_padded(wid)).center_x(Fill),
     ]
     .padding(8)

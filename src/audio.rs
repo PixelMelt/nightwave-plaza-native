@@ -1,6 +1,6 @@
 use crate::api::StatusSong;
 use futures::channel::mpsc::UnboundedSender;
-use rodio::{buffer::SamplesBuffer, Decoder, OutputStream, OutputStreamHandle, Sink, Source};
+use rodio::{buffer::SamplesBuffer, Decoder, DeviceSinkBuilder, MixerDeviceSink, Player, Source};
 use souvlaki::{MediaControlEvent, MediaControls, MediaMetadata, MediaPlayback, MediaPosition};
 use std::io::{self, Read, Seek, SeekFrom};
 use std::sync::{
@@ -18,9 +18,8 @@ const DEFAULT_VOLUME: f32 = 0.5;
 const RECONNECT_DELAY: Duration = Duration::from_secs(2);
 
 pub struct AudioPlayer {
-    _stream: OutputStream,
-    _stream_handle: OutputStreamHandle,
-    sink: Arc<Sink>,
+    _stream: MixerDeviceSink,
+    player: Arc<Player>,
     muted: Arc<AtomicBool>,
     streaming: Arc<AtomicBool>,
     target_volume: Mutex<f32>,
@@ -33,9 +32,9 @@ impl AudioPlayer {
     pub fn new(
         media_tx: Option<UnboundedSender<MediaControlEvent>>,
     ) -> Result<Self, Box<dyn std::error::Error>> {
-        let (stream, stream_handle) = OutputStream::try_default()?;
-        let sink = Sink::try_new(&stream_handle)?;
-        sink.set_volume(DEFAULT_VOLUME);
+        let stream = DeviceSinkBuilder::open_default_sink()?;
+        let player = Player::connect_new(stream.mixer());
+        player.set_volume(DEFAULT_VOLUME);
 
         #[cfg(not(target_os = "windows"))]
         let controls = media_tx.and_then(|tx| build_controls(tx).ok());
@@ -45,10 +44,9 @@ impl AudioPlayer {
             None
         };
 
-        let player = Self {
+        let this = Self {
             _stream: stream,
-            _stream_handle: stream_handle,
-            sink: Arc::new(sink),
+            player: Arc::new(player),
             muted: Arc::new(AtomicBool::new(false)),
             streaming: Arc::new(AtomicBool::new(false)),
             target_volume: Mutex::new(DEFAULT_VOLUME),
@@ -57,13 +55,13 @@ impl AudioPlayer {
             length: Mutex::new(None),
         };
 
-        let sink = player.sink.clone();
-        let streaming = player.streaming.clone();
-        std::thread::spawn(move || stream_forever(sink, streaming));
+        let player = this.player.clone();
+        let streaming = this.streaming.clone();
+        std::thread::spawn(move || stream_forever(player, streaming));
 
-        player.emit_playback();
+        this.emit_playback();
 
-        Ok(player)
+        Ok(this)
     }
 
     pub fn is_playing(&self) -> bool {
@@ -80,7 +78,7 @@ impl AudioPlayer {
             *g = v;
         }
         if !self.muted.load(Ordering::Relaxed) {
-            self.sink.set_volume(v);
+            self.player.set_volume(v);
         }
     }
 
@@ -93,7 +91,7 @@ impl AudioPlayer {
             .lock()
             .map(|g| *g)
             .unwrap_or(DEFAULT_VOLUME);
-        self.sink.set_volume(v);
+        self.player.set_volume(v);
         self.emit_playback();
     }
 
@@ -101,7 +99,7 @@ impl AudioPlayer {
         if self.muted.swap(true, Ordering::Relaxed) {
             return;
         }
-        self.sink.set_volume(0.0);
+        self.player.set_volume(0.0);
         self.emit_playback();
     }
 
@@ -176,9 +174,9 @@ fn build_controls(
     Ok(controls)
 }
 
-fn stream_forever(sink: Arc<Sink>, streaming: Arc<AtomicBool>) {
+fn stream_forever(player: Arc<Player>, streaming: Arc<AtomicBool>) {
     loop {
-        if let Err(e) = stream_once(&sink, &streaming) {
+        if let Err(e) = stream_once(&player, &streaming) {
             eprintln!("Audio stream error: {e}");
         }
         streaming.store(false, Ordering::Relaxed);
@@ -187,7 +185,7 @@ fn stream_forever(sink: Arc<Sink>, streaming: Arc<AtomicBool>) {
 }
 
 fn stream_once(
-    sink: &Sink,
+    player: &Player,
     streaming: &AtomicBool,
 ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     let url = format!(
@@ -199,16 +197,17 @@ fn stream_once(
             .as_millis()
     );
 
-    let resp = reqwest::blocking::get(&url)?;
+    let resp = crate::net::agent().get(&url).call()?;
 
-    let decoder = Decoder::new_mp3(StreamReader::new(resp))?;
+    let decoder = Decoder::new_mp3(StreamReader::new(resp.into_reader()))?;
+
     let channels = decoder.channels();
     let sample_rate = decoder.sample_rate();
-    let per_sec = sample_rate as usize * channels.max(1) as usize;
+    let per_sec = sample_rate.get() as usize * channels.get() as usize;
     let prebuffer_len = per_sec * PREBUFFER.as_millis() as usize / 1000;
     let chunk_len = (per_sec * CHUNK.as_millis() as usize / 1000).max(1);
 
-    let mut buf: Vec<i16> = Vec::with_capacity(prebuffer_len.max(chunk_len));
+    let mut buf: Vec<f32> = Vec::with_capacity(prebuffer_len.max(chunk_len));
     let mut prebuffered = false;
 
     for sample in decoder {
@@ -220,7 +219,7 @@ fn stream_once(
         };
         if buf.len() >= threshold {
             let chunk = std::mem::replace(&mut buf, Vec::with_capacity(chunk_len));
-            sink.append(SamplesBuffer::new(channels, sample_rate, chunk));
+            player.append(SamplesBuffer::new(channels, sample_rate, chunk));
             if !prebuffered {
                 prebuffered = true;
                 streaming.store(true, Ordering::Relaxed);
@@ -229,26 +228,26 @@ fn stream_once(
     }
 
     if !buf.is_empty() {
-        sink.append(SamplesBuffer::new(channels, sample_rate, buf));
+        player.append(SamplesBuffer::new(channels, sample_rate, buf));
     }
 
     Ok(())
 }
 
 struct StreamReader {
-    resp: reqwest::blocking::Response,
+    inner: Box<dyn Read + Send + Sync>,
     pos: u64,
 }
 
 impl StreamReader {
-    fn new(resp: reqwest::blocking::Response) -> Self {
-        Self { resp, pos: 0 }
+    fn new(inner: Box<dyn Read + Send + Sync>) -> Self {
+        Self { inner, pos: 0 }
     }
 }
 
 impl Read for StreamReader {
     fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
-        let n = self.resp.read(buf)?;
+        let n = self.inner.read(buf)?;
         self.pos += n as u64;
         Ok(n)
     }

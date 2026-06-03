@@ -1,8 +1,15 @@
+#![cfg_attr(
+    all(target_os = "windows", not(debug_assertions)),
+    windows_subsystem = "windows"
+)]
+
 mod api;
 mod audio;
+mod config;
 mod discord;
 mod lastfm;
-mod session;
+mod net;
+mod paths;
 mod state;
 mod theme;
 mod views;
@@ -71,9 +78,10 @@ pub(crate) fn now_unix() -> u64 {
 
 fn lastfm_now_playing_task(state: &Plaza) -> Task<Msg> {
     let Some(sk) = state
+        .config
         .lastfm
         .is_active()
-        .then(|| state.lastfm.session_key.clone())
+        .then(|| state.config.lastfm.session_key.clone())
         .flatten()
     else {
         return Task::none();
@@ -106,9 +114,10 @@ fn lastfm_scrobble_task(
     now: Instant,
 ) -> Task<Msg> {
     let Some(sk) = state
+        .config
         .lastfm
         .is_active()
-        .then(|| state.lastfm.session_key.clone())
+        .then(|| state.config.lastfm.session_key.clone())
         .flatten()
     else {
         return Task::none();
@@ -148,7 +157,7 @@ fn discord_update(state: &Plaza) {
     };
     let is_playing = state.player.as_ref().map_or(false, |p| p.is_playing());
     let song = &state.status.song;
-    if !state.discord.is_active() || !is_playing || song.title.is_empty() {
+    if !state.config.discord.is_active() || !is_playing || song.title.is_empty() {
         handle.clear();
         return;
     }
@@ -165,148 +174,133 @@ fn discord_update(state: &Plaza) {
     });
 }
 
-fn load_cjk_font() -> Option<Vec<u8>> {
-    let paths = [
-        "/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc",
-        "/usr/share/fonts/noto-cjk/NotoSansCJK-Regular.ttc",
-        "/usr/share/fonts/google-noto-cjk/NotoSansCJK-Regular.ttc",
-        "/usr/share/fonts/OTF/NotoSansCJK-Regular.ttc",
-    ];
-    for path in &paths {
-        if let Ok(data) = std::fs::read(path) {
-            return Some(data);
-        }
-    }
-    eprintln!("Warning: No CJK font found, Japanese text may not render");
-    None
-}
-
 fn main() -> iced::Result {
-    let cjk = load_cjk_font();
-
-    let base = iced::daemon(win_title, update, win_view)
+    let base = iced::daemon(boot, update, win_view)
+        .title(win_title)
         .subscription(subscription)
-        .theme(|_, _| {
-            Theme::custom(
-                "Win98".to_string(),
-                iced::theme::Palette {
-                    background: theme::BG_GRAY,
-                    text: theme::BLACK,
-                    primary: theme::TITLE_BLUE,
-                    success: iced::Color::from_rgb(0.0, 0.5, 0.0),
-                    danger: iced::Color::from_rgb(0.8, 0.0, 0.0),
-                },
-            )
-        });
-
-    let font_data: Vec<u8> = cjk.unwrap_or_default();
+        .theme(win_theme);
 
     base.font(TAHOMA)
         .font(TAHOMA_BOLD)
         .font(ICONS_FONT)
-        .font(font_data)
         .default_font(Font {
             family: iced::font::Family::Name("Tahoma"),
             ..Font::DEFAULT
         })
-        .run_with(|| {
-            let (media_tx, media_rx) = futures_mpsc::unbounded::<MediaControlEvent>();
-            *MEDIA_RX.lock().unwrap() = Some(media_rx);
-            let player = AudioPlayer::new(Some(media_tx)).ok().map(Arc::new);
-            let (main_id, open_task) = iced::window::open(iced::window::Settings {
-                size: Size::new(450.0, 218.0),
-                resizable: dev_mode(),
-                decorations: dev_mode(),
-                icon: app_icon(),
-                platform_specific: platform_specific(),
-                ..Default::default()
-            });
-            let mut state = Plaza {
-                main_window: main_id,
-                child_windows: HashMap::new(),
-                status: api::Status::default(),
-                player,
-                volume: 50.0,
-                artwork_handle: None,
-                artwork_url: String::new(),
-                history: crate::state::HistoryState {
-                    page: 1,
-                    page_input: "1".into(),
-                    ..Default::default()
-                },
-                ratings: crate::state::RatingsState {
-                    page: 1,
-                    page_input: "1".into(),
-                    range: "overtime".into(),
-                    ..Default::default()
-                },
-                song_info: crate::state::SongInfoState::default(),
-                login: crate::state::LoginState::default(),
-                register: crate::state::RegisterState::default(),
-                news: crate::state::NewsState {
-                    page: 1,
-                    ..Default::default()
-                },
-                favorites: crate::state::FavoritesState {
-                    page: 1,
-                    page_input: "1".into(),
-                    ..Default::default()
-                },
-                export: crate::state::ExportState::default(),
-                profile_edit: crate::state::ProfileEditState::default(),
-                password: crate::state::PasswordState::default(),
-                delete: crate::state::DeleteState::default(),
-                timer: crate::state::TimerState::default(),
-                elapsed: 0.0,
-                last_tick: Instant::now(),
-                error_msg: None,
-                welcome_until: Some(Instant::now() + Duration::from_secs(2)),
-                volume_text: None,
-                volume_text_until: None,
+        .run()
+}
 
-                auth_token: None,
-                user: None,
-                user_stats: None,
-                stats_loading: false,
-                reaction_rate: 0,
-                reaction_song_id: String::new(),
+fn win_theme(_state: &Plaza, _window: iced::window::Id) -> Theme {
+    Theme::custom(
+        "Win98".to_string(),
+        iced::theme::Palette {
+            background: theme::BG_GRAY,
+            text: theme::BLACK,
+            primary: theme::TITLE_BLUE,
+            success: iced::Color::from_rgb(0.0, 0.5, 0.0),
+            warning: iced::Color::from_rgb(0.8, 0.5, 0.0),
+            danger: iced::Color::from_rgb(0.8, 0.0, 0.0),
+        },
+    )
+}
 
-                lastfm: lastfm::load(),
-                lastfm_token: None,
-                lastfm_busy: false,
-                lastfm_status: None,
-                scrobble: None,
+fn boot() -> (Plaza, Task<Msg>) {
+    let (media_tx, media_rx) = futures_mpsc::unbounded::<MediaControlEvent>();
+    *MEDIA_RX.lock().unwrap() = Some(media_rx);
+    let player = AudioPlayer::new(Some(media_tx)).ok().map(Arc::new);
+    let (main_id, open_task) = iced::window::open(iced::window::Settings {
+        size: Size::new(450.0, 218.0),
+        resizable: dev_mode(),
+        decorations: dev_mode(),
+        icon: app_icon(),
+        platform_specific: platform_specific(),
+        ..Default::default()
+    });
+    let mut state = Plaza {
+        main_window: main_id,
+        child_windows: HashMap::new(),
+        status: api::Status::default(),
+        player,
+        volume: 50.0,
+        artwork_handle: None,
+        artwork_url: String::new(),
+        history: crate::state::HistoryState {
+            page: 1,
+            page_input: "1".into(),
+            ..Default::default()
+        },
+        ratings: crate::state::RatingsState {
+            page: 1,
+            page_input: "1".into(),
+            range: "overtime".into(),
+            ..Default::default()
+        },
+        song_info: crate::state::SongInfoState::default(),
+        login: crate::state::LoginState::default(),
+        register: crate::state::RegisterState::default(),
+        news: crate::state::NewsState {
+            page: 1,
+            ..Default::default()
+        },
+        favorites: crate::state::FavoritesState {
+            page: 1,
+            page_input: "1".into(),
+            ..Default::default()
+        },
+        export: crate::state::ExportState::default(),
+        profile_edit: crate::state::ProfileEditState::default(),
+        password: crate::state::PasswordState::default(),
+        delete: crate::state::DeleteState::default(),
+        timer: crate::state::TimerState::default(),
+        elapsed: 0.0,
+        last_tick: Instant::now(),
+        main_focused: true,
+        error_msg: None,
+        welcome_until: Some(Instant::now() + Duration::from_secs(2)),
+        volume_text: None,
+        volume_text_until: None,
 
-                discord: discord::load(),
-                discord_presence: discord::DiscordHandle::spawn(),
-            };
+        auth_token: None,
+        user: None,
+        user_stats: None,
+        stats_loading: false,
+        reaction_rate: 0,
+        reaction_song_id: String::new(),
 
-            let session_task = if let Some(saved) = session::load() {
-                let token = saved.token.clone();
-                let token2 = saved.token.clone();
+        config: config::load(),
+        lastfm_token: None,
+        lastfm_busy: false,
+        lastfm_status: None,
+        scrobble: None,
 
-                state.auth_token = Some(saved.token);
-                state.user = Some(saved.user);
-                Task::perform(async move { api::get_me(&token).await }, move |r| match r {
-                    Ok(user) => Msg::SessionRestored(user, token2.clone()),
-                    Err(_) => Msg::LogoutOk,
-                })
-            } else {
-                Task::none()
-            };
+        discord_presence: discord::DiscordHandle::spawn(),
+    };
 
-            (
-                state,
-                Task::batch([
-                    open_task.discard(),
-                    Task::perform(api::fetch_status(), |r| match r {
-                        Ok(s) => Msg::StatusOk(s),
-                        Err(e) => Msg::StatusErr(e.to_string()),
-                    }),
-                    session_task,
-                ]),
-            )
+    let session_task = if let Some(saved) = state.config.session.clone() {
+        let token = saved.token.clone();
+        let token2 = saved.token.clone();
+
+        state.auth_token = Some(saved.token);
+        state.user = Some(saved.user);
+        Task::perform(async move { api::get_me(&token).await }, move |r| match r {
+            Ok(user) => Msg::SessionRestored(user, token2.clone()),
+            Err(_) => Msg::LogoutOk,
         })
+    } else {
+        Task::none()
+    };
+
+    (
+        state,
+        Task::batch([
+            open_task.discard(),
+            Task::perform(api::fetch_status(), |r| match r {
+                Ok(s) => Msg::StatusOk(s),
+                Err(e) => Msg::StatusErr(e.to_string()),
+            }),
+            session_task,
+        ]),
+    )
 }
 
 fn win_title(state: &Plaza, wid: iced::window::Id) -> String {
@@ -385,10 +379,30 @@ fn win_view(state: &Plaza, wid: iced::window::Id) -> Element<'_, Msg> {
         .into()
 }
 
-fn subscription(_state: &Plaza) -> Subscription<Msg> {
-    Subscription::batch([
-        iced::time::every(Duration::from_millis(500)).map(|_| Msg::Tick(Instant::now())),
-        iced::time::every(Duration::from_secs(5)).map(|_| Msg::Refresh),
+fn subscription(state: &Plaza) -> Subscription<Msg> {
+    let is_playing = state.player.as_ref().map_or(false, |p| p.is_playing());
+
+    let display_active = state.main_focused
+        && (is_playing || state.welcome_until.is_some() || state.volume_text_until.is_some());
+
+    let timer_armed = state.timer.until.is_some();
+
+    let tick_period = if display_active {
+        Some(Duration::from_millis(500))
+    } else if timer_armed {
+        Some(Duration::from_secs(1))
+    } else {
+        None
+    };
+
+    let refresh_period = if is_playing {
+        Duration::from_secs(5)
+    } else {
+        Duration::from_secs(30)
+    };
+
+    let mut subs = vec![
+        iced::time::every(refresh_period).map(|_| Msg::Refresh),
         iced::window::close_events().map(Msg::WinClosed),
         iced::window::resize_events().map(|(id, size)| Msg::WinResized(id, size)),
         iced::event::listen_with(|event, status, id| match event {
@@ -396,24 +410,35 @@ fn subscription(_state: &Plaza) -> Subscription<Msg> {
                 key: iced::keyboard::Key::Named(iced::keyboard::key::Named::Space),
                 ..
             }) if status == iced::event::Status::Ignored => Some(Msg::SpaceToggle(id)),
+            iced::Event::Window(iced::window::Event::Focused) => Some(Msg::WinFocus(id, true)),
+            iced::Event::Window(iced::window::Event::Unfocused) => Some(Msg::WinFocus(id, false)),
             _ => None,
         }),
         Subscription::run(media_event_stream),
-    ])
+    ];
+
+    if let Some(period) = tick_period {
+        subs.push(iced::time::every(period).map(|_| Msg::Tick(Instant::now())));
+    }
+
+    Subscription::batch(subs)
 }
 
 fn media_event_stream() -> impl futures::Stream<Item = Msg> {
-    iced::stream::channel(64, |mut output| async move {
-        use futures::SinkExt;
-        use futures::StreamExt;
+    iced::stream::channel(
+        64,
+        |mut output: futures::channel::mpsc::Sender<Msg>| async move {
+            use futures::SinkExt;
+            use futures::StreamExt;
 
-        let Some(mut rx) = MEDIA_RX.lock().ok().and_then(|mut g| g.take()) else {
-            return;
-        };
-        while let Some(event) = rx.next().await {
-            let _ = output.send(Msg::Media(event)).await;
-        }
-    })
+            let Some(mut rx) = MEDIA_RX.lock().ok().and_then(|mut g| g.take()) else {
+                return;
+            };
+            while let Some(event) = rx.next().await {
+                let _ = output.send(Msg::Media(event)).await;
+            }
+        },
+    )
 }
 
 fn update(state: &mut Plaza, msg: Msg) -> Task<Msg> {
@@ -482,7 +507,7 @@ fn update(state: &mut Plaza, msg: Msg) -> Task<Msg> {
             Task::none()
         }
         Msg::Tick(now) => {
-            let dt = now.duration_since(state.last_tick).as_secs_f64();
+            let dt = now.duration_since(state.last_tick).as_secs_f64().min(1.5);
             state.last_tick = now;
             state.elapsed += dt;
             if let Some(until) = state.welcome_until {
@@ -813,7 +838,11 @@ fn update(state: &mut Plaza, msg: Msg) -> Task<Msg> {
         }
 
         Msg::SessionRestored(user, token) => {
-            session::save(&token, &user);
+            state.config.session = Some(config::Session {
+                token: token.clone(),
+                user: user.clone(),
+            });
+            config::save(&state.config);
             state.auth_token = Some(token);
             state.user = Some(user);
             Task::none()
@@ -853,7 +882,11 @@ fn update(state: &mut Plaza, msg: Msg) -> Task<Msg> {
 
             if state.login.remember {
                 if let Some(ref token) = resp.token {
-                    session::save(token, &resp.data);
+                    state.config.session = Some(config::Session {
+                        token: token.clone(),
+                        user: resp.data.clone(),
+                    });
+                    config::save(&state.config);
                 }
             }
             state.auth_token = resp.token;
@@ -978,7 +1011,8 @@ fn update(state: &mut Plaza, msg: Msg) -> Task<Msg> {
             }
         }
         Msg::LogoutOk => {
-            session::clear();
+            state.config.session = None;
+            config::save(&state.config);
             state.auth_token = None;
             state.user = None;
             state.user_stats = None;
@@ -998,7 +1032,8 @@ fn update(state: &mut Plaza, msg: Msg) -> Task<Msg> {
             close_task
         }
         Msg::LogoutErr(e) => {
-            session::clear();
+            state.config.session = None;
+            config::save(&state.config);
             state.auth_token = None;
             state.user = None;
             state.error_msg = Some(e);
@@ -1097,8 +1132,8 @@ fn update(state: &mut Plaza, msg: Msg) -> Task<Msg> {
             use crate::state::DiscordMsg;
             match d_msg {
                 DiscordMsg::ToggleEnabled(b) => {
-                    state.discord.enabled = b;
-                    discord::save(&state.discord);
+                    state.config.discord.enabled = b;
+                    config::save(&state.config);
                     discord_update(state);
                 }
             }
@@ -1174,6 +1209,24 @@ fn update(state: &mut Plaza, msg: Msg) -> Task<Msg> {
             Task::none()
         }
 
+        Msg::WinFocus(id, focused) => {
+            if id != state.main_window {
+                return Task::none();
+            }
+            state.main_focused = focused;
+            if focused {
+                state.last_tick = Instant::now();
+                let playing = state.player.as_ref().map_or(false, |p| p.is_playing());
+                if playing {
+                    return Task::perform(api::fetch_status(), |r| match r {
+                        Ok(s) => Msg::StatusOk(s),
+                        Err(e) => Msg::StatusErr(e.to_string()),
+                    });
+                }
+            }
+            Task::none()
+        }
+
         Msg::Media(event) => {
             use souvlaki::MediaControlEvent as E;
             let now = Instant::now();
@@ -1240,8 +1293,8 @@ fn update_lastfm(state: &mut Plaza, msg: crate::state::LastfmMsg) -> Task<Msg> {
     use crate::state::LastfmMsg;
     match msg {
         LastfmMsg::ToggleEnabled(b) => {
-            state.lastfm.enabled = b;
-            lastfm::save(&state.lastfm);
+            state.config.lastfm.enabled = b;
+            config::save(&state.config);
             if b {
                 lastfm_begin_current(state)
             } else {
@@ -1283,20 +1336,20 @@ fn update_lastfm(state: &mut Plaza, msg: crate::state::LastfmMsg) -> Task<Msg> {
         LastfmMsg::SessionOk(username, key) => {
             state.lastfm_busy = false;
             state.lastfm_token = None;
-            state.lastfm.username = Some(username);
-            state.lastfm.session_key = Some(key);
-            state.lastfm.enabled = true;
+            state.config.lastfm.username = Some(username);
+            state.config.lastfm.session_key = Some(key);
+            state.config.lastfm.enabled = true;
             state.lastfm_status = Some("Connected. Scrobbling is on.".into());
-            lastfm::save(&state.lastfm);
+            config::save(&state.config);
             lastfm_begin_current(state)
         }
         LastfmMsg::Disconnect => {
-            state.lastfm.session_key = None;
-            state.lastfm.username = None;
-            state.lastfm.enabled = false;
+            state.config.lastfm.session_key = None;
+            state.config.lastfm.username = None;
+            state.config.lastfm.enabled = false;
             state.lastfm_token = None;
             state.lastfm_status = None;
-            lastfm::save(&state.lastfm);
+            config::save(&state.config);
             Task::none()
         }
         LastfmMsg::Err(e) => {
@@ -1600,7 +1653,11 @@ fn update_profile_edit(state: &mut Plaza, msg: crate::state::ProfileEditMsg) -> 
                 u.username = state.profile_edit.username.clone();
                 u.email = state.profile_edit.email.clone();
                 if let Some(ref token) = state.auth_token {
-                    session::save(token, u);
+                    state.config.session = Some(config::Session {
+                        token: token.clone(),
+                        user: u.clone(),
+                    });
+                    config::save(&state.config);
                 }
             }
             state.profile_edit.current_password.clear();
@@ -1660,7 +1717,8 @@ fn update_password(state: &mut Plaza, msg: crate::state::PasswordMsg) -> Task<Ms
         }
         PasswordMsg::Ok => {
             state.password = crate::state::PasswordState::default();
-            session::clear();
+            state.config.session = None;
+            config::save(&state.config);
             state.auth_token = None;
             state.user = None;
             state.user_stats = None;
@@ -1714,7 +1772,8 @@ fn update_delete(state: &mut Plaza, msg: crate::state::DeleteMsg) -> Task<Msg> {
         }
         DeleteMsg::Ok => {
             state.delete = crate::state::DeleteState::default();
-            session::clear();
+            state.config.session = None;
+            config::save(&state.config);
             state.auth_token = None;
             state.user = None;
             state.user_stats = None;

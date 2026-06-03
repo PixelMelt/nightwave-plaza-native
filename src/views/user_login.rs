@@ -1,7 +1,7 @@
 use crate::state::{Msg, Plaza, WinType};
 use crate::theme;
 use crate::views::bevel::bevel_button;
-use crate::views::widgets::{bold_font, LINK_COLOR};
+use crate::views::widgets::{bold_font, static_image, LINK_COLOR};
 use iced::widget::{button, checkbox, column, container, image, row, text, text_input, Space};
 use iced::{Element, Fill, Theme};
 
@@ -10,12 +10,7 @@ const KEY_IMG: &[u8] = include_bytes!("../assets/img/key.png");
 pub fn view(state: &Plaza, wid: iced::window::Id) -> Element<'_, Msg> {
     let bold = bold_font();
 
-    let key = container(
-        image(image::Handle::from_bytes(KEY_IMG))
-            .width(45)
-            .height(48),
-    )
-    .padding([2, 0]);
+    let key = container(image(static_image(KEY_IMG)).width(45).height(48)).padding([2, 0]);
 
     let instruction =
         text("Enter your username and password to sign in to Nightwave Plaza.").size(11);
@@ -41,6 +36,7 @@ pub fn view(state: &Plaza, wid: iced::window::Id) -> Element<'_, Msg> {
             border: iced::Border::default(),
             shadow: iced::Shadow::default(),
             text_color: LINK_COLOR,
+            snap: false,
         })
         .padding(0);
 
@@ -53,12 +49,13 @@ pub fn view(state: &Plaza, wid: iced::window::Id) -> Element<'_, Msg> {
     let password_row = row![
         container(text("Password:").size(11)).width(72),
         password_input,
-        Space::with_width(8),
+        Space::new().width(8),
         reset_link,
     ]
     .align_y(iced::Alignment::Center);
 
-    let remember = checkbox("Remember Me", state.login.remember)
+    let remember = checkbox(state.login.remember)
+        .label("Remember Me")
         .on_toggle(|b| Msg::Login(crate::state::LoginMsg::Remember(b)))
         .size(13)
         .text_size(11);
@@ -69,18 +66,18 @@ pub fn view(state: &Plaza, wid: iced::window::Id) -> Element<'_, Msg> {
             .color(iced::Color::from_rgb(0.8, 0.0, 0.0))
             .into()
     } else {
-        Space::with_height(0).into()
+        Space::new().height(0).into()
     };
 
     let center = column![
         instruction,
-        Space::with_height(10),
+        Space::new().height(10),
         username_row,
-        Space::with_height(5),
+        Space::new().height(5),
         password_row,
-        Space::with_height(5),
-        row![Space::with_width(72), remember],
-        Space::with_height(4),
+        Space::new().height(5),
+        row![Space::new().width(72), remember],
+        Space::new().height(4),
         error_row,
     ]
     .width(Fill);
@@ -103,17 +100,17 @@ pub fn view(state: &Plaza, wid: iced::window::Id) -> Element<'_, Msg> {
 
     let buttons = column![
         login_btn,
-        Space::with_height(6),
+        Space::new().height(6),
         register_btn,
-        Space::with_height(6),
+        Space::new().height(6),
         cancel_btn,
     ];
 
     row![
         key,
-        Space::with_width(12),
+        Space::new().width(12),
         center,
-        Space::with_width(12),
+        Space::new().width(12),
         buttons,
     ]
     .padding(8)

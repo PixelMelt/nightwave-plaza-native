@@ -2,14 +2,14 @@ use crate::state::{Msg, Plaza, ProfileEditMsg, WinType};
 use crate::theme;
 use crate::views::bevel::bevel_button;
 use crate::views::widgets::{bold_font, d3_sunken, group_box, menu_bar};
-use iced::widget::{column, container, horizontal_space, row, text, text_input, Space};
+use iced::widget::{column, container, row, text, text_input, Space};
 use iced::{Element, Fill};
 
 pub fn view(state: &Plaza, wid: iced::window::Id) -> Element<'_, Msg> {
     let bold = bold_font();
 
     let menu = row![
-        horizontal_space(),
+        Space::new().width(iced::Fill),
         menu_bar([("Delete Account", Msg::OpenWin(WinType::UserProfileDelete))]),
     ];
 
@@ -30,7 +30,7 @@ pub fn view(state: &Plaza, wid: iced::window::Id) -> Element<'_, Msg> {
         column![
             text("Username:").size(11),
             username_input,
-            Space::with_height(6),
+            Space::new().height(6),
             text("Email:").size(11),
             email_input,
         ]
@@ -58,7 +58,7 @@ pub fn view(state: &Plaza, wid: iced::window::Id) -> Element<'_, Msg> {
             .color(iced::Color::from_rgb(0.8, 0.0, 0.0))
             .into()
     } else {
-        Space::with_height(0).into()
+        Space::new().height(0).into()
     };
 
     let save_label = if state.profile_edit.loading {
@@ -77,7 +77,7 @@ pub fn view(state: &Plaza, wid: iced::window::Id) -> Element<'_, Msg> {
 
     let buttons = row![
         container(save_btn).width(iced::Length::FillPortion(3)),
-        Space::with_width(8),
+        Space::new().width(8),
         container(close_btn).width(iced::Length::FillPortion(2)),
     ];
 
@@ -85,11 +85,11 @@ pub fn view(state: &Plaza, wid: iced::window::Id) -> Element<'_, Msg> {
         menu,
         container(column![
             details,
-            Space::with_height(8),
+            Space::new().height(8),
             password_panel,
-            Space::with_height(8),
+            Space::new().height(8),
             error_row,
-            Space::with_height(4),
+            Space::new().height(4),
             buttons,
         ])
         .padding(8),

@@ -16,7 +16,7 @@ pub fn view(state: &Plaza, wid: iced::window::Id) -> Element<'_, Msg> {
             .as_secs_f64();
         column![
             text("Sleep Timer").size(11).center().width(Fill),
-            Space::with_height(8),
+            Space::new().height(8),
             text(format_time(remaining))
                 .size(14)
                 .font(bold)
@@ -42,13 +42,13 @@ pub fn view(state: &Plaza, wid: iced::window::Id) -> Element<'_, Msg> {
 
         let stepper = row![
             container(step("-10", -10)).width(Length::FillPortion(2)),
-            Space::with_width(4),
+            Space::new().width(4),
             container(step("-5", -5)).width(Length::FillPortion(2)),
-            Space::with_width(4),
+            Space::new().width(4),
             container(minutes_input).width(Length::FillPortion(4)),
-            Space::with_width(4),
+            Space::new().width(4),
             container(step("+5", 5)).width(Length::FillPortion(2)),
-            Space::with_width(4),
+            Space::new().width(4),
             container(step("+10", 10)).width(Length::FillPortion(2)),
         ]
         .align_y(iced::Alignment::Center);
@@ -58,7 +58,7 @@ pub fn view(state: &Plaza, wid: iced::window::Id) -> Element<'_, Msg> {
                 .size(11)
                 .center()
                 .width(Fill),
-            Space::with_height(12),
+            Space::new().height(12),
             stepper,
         ]
         .width(Fill)
@@ -79,11 +79,11 @@ pub fn view(state: &Plaza, wid: iced::window::Id) -> Element<'_, Msg> {
 
     let buttons = row![
         container(action_btn).width(Length::FillPortion(3)),
-        Space::with_width(8),
+        Space::new().width(8),
         container(close_btn).width(Length::FillPortion(2)),
     ];
 
-    column![body, Space::with_height(16), buttons]
+    column![body, Space::new().height(16), buttons]
         .padding(12)
         .width(Fill)
         .into()

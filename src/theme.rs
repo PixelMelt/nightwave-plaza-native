@@ -24,6 +24,7 @@ pub fn base_panel() -> container::Style {
         border: Border::default(),
         shadow: Shadow::default(),
         text_color: Some(BLACK),
+        snap: false,
     }
 }
 
@@ -85,6 +86,7 @@ pub fn list_row_btn(
         text_color: BLACK,
         border: Border::default(),
         shadow: Shadow::default(),
+        snap: false,
     }
 }
 
@@ -95,7 +97,7 @@ pub fn scrollbar(_t: &Theme, _s: scrollable::Status) -> scrollable::Style {
             background: Some(Background::Color(BG_GRAY)),
             border: Border::default(),
             scroller: scrollable::Scroller {
-                color: BG_GRAY,
+                background: Background::Color(BG_GRAY),
                 border: solid_border(BLACK),
             },
         },
@@ -103,11 +105,18 @@ pub fn scrollbar(_t: &Theme, _s: scrollable::Status) -> scrollable::Style {
             background: Some(Background::Color(BG_GRAY)),
             border: Border::default(),
             scroller: scrollable::Scroller {
-                color: BG_GRAY,
+                background: Background::Color(BG_GRAY),
                 border: solid_border(BLACK),
             },
         },
         gap: None,
+
+        auto_scroll: scrollable::AutoScroll {
+            background: Background::Color(BG_GRAY),
+            border: Border::default(),
+            shadow: Shadow::default(),
+            icon: BLACK,
+        },
     }
 }
 

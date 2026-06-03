@@ -4,7 +4,7 @@ use crate::views::widgets::{
     bold_font, close_btn, divider, empty_panel, format_timestamp_day, format_timestamp_time,
     loading_panel, pagination, scroll_panel, shaped, status_bar, LINK_COLOR,
 };
-use iced::widget::{button, column, horizontal_space, row, text, Column, Space};
+use iced::widget::{button, column, row, text, Column, Space};
 use iced::{Element, Fill, Theme};
 
 pub fn view(state: &Plaza, wid: iced::window::Id) -> Element<'_, Msg> {
@@ -12,7 +12,7 @@ pub fn view(state: &Plaza, wid: iced::window::Id) -> Element<'_, Msg> {
     let list_area = render_list_area(state);
     let pages_row = render_pagination(state);
 
-    let bottom = row![pages_row, horizontal_space(), close_btn(wid)]
+    let bottom = row![pages_row, Space::new().width(iced::Fill), close_btn(wid)]
         .align_y(iced::Alignment::Center)
         .padding([4, 0]);
 
@@ -28,9 +28,9 @@ pub fn view(state: &Plaza, wid: iced::window::Id) -> Element<'_, Msg> {
     column![
         header,
         list_area,
-        Space::with_height(4),
+        Space::new().height(4),
         bottom,
-        Space::with_height(2),
+        Space::new().height(2),
         status,
     ]
     .padding(4)
@@ -46,7 +46,7 @@ fn render_header(state: &Plaza) -> Element<'_, Msg> {
                 state.history.date_from, state.history.date_to
             ))
             .size(10),
-            horizontal_space(),
+            Space::new().width(iced::Fill),
             button(text("Last.fm").size(10).color(LINK_COLOR))
                 .on_press(Msg::OpenUrl("https://plaza.one/lastfm".into()))
                 .style(|_: &Theme, _| button::Style {
@@ -54,6 +54,7 @@ fn render_header(state: &Plaza) -> Element<'_, Msg> {
                     border: iced::Border::default(),
                     shadow: iced::Shadow::default(),
                     text_color: LINK_COLOR,
+                    snap: false,
                 })
                 .padding(0),
         ]
@@ -61,7 +62,7 @@ fn render_header(state: &Plaza) -> Element<'_, Msg> {
         .padding([2, 4])
         .into()
     } else {
-        Space::with_height(0).into()
+        Space::new().height(0).into()
     }
 }
 
@@ -99,7 +100,7 @@ fn render_row<'a>(entry: &'a crate::api::HistoryEntry, bold: iced::Font) -> Elem
             .spacing(0)
             .width(78)
             .align_x(iced::Alignment::End),
-        Space::with_width(16),
+        Space::new().width(16),
     ]
     .spacing(4)
     .padding([3, 4]);
@@ -139,6 +140,6 @@ fn render_pagination(state: &Plaza) -> Element<'_, Msg> {
             next_msg,
         )
     } else {
-        Space::with_width(0).into()
+        Space::new().width(0).into()
     }
 }

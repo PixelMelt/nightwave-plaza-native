@@ -6,16 +6,16 @@ use crate::views::widgets::{
     self, bold_font, close_btn, divider, empty_panel, loading_panel, pagination, scroll_panel,
     shaped, status_bar,
 };
-use iced::widget::{button, column, horizontal_space, row, text, Column, Space};
+use iced::widget::{button, column, row, text, Column, Space};
 use iced::{Element, Fill};
 
 pub fn view(state: &Plaza, wid: iced::window::Id) -> Element<'_, Msg> {
     let r = &state.ratings.range;
     let range_row = row![
         range_btn("All Time", "overtime", r == "overtime"),
-        Space::with_width(4),
+        Space::new().width(4),
         range_btn("Monthly", "monthly", r == "monthly"),
-        Space::with_width(4),
+        Space::new().width(4),
         range_btn("Weekly", "weekly", r == "weekly"),
     ]
     .width(Fill);
@@ -23,7 +23,7 @@ pub fn view(state: &Plaza, wid: iced::window::Id) -> Element<'_, Msg> {
     let list_area = render_list(state);
     let pages_row = render_pagination(state);
 
-    let bottom = row![pages_row, horizontal_space(), close_btn(wid)]
+    let bottom = row![pages_row, Space::new().width(iced::Fill), close_btn(wid)]
         .align_y(iced::Alignment::Center)
         .padding([4, 0]);
 
@@ -38,11 +38,11 @@ pub fn view(state: &Plaza, wid: iced::window::Id) -> Element<'_, Msg> {
 
     column![
         range_row,
-        Space::with_height(2),
+        Space::new().height(2),
         list_area,
-        Space::with_height(4),
+        Space::new().height(4),
         bottom,
-        Space::with_height(2),
+        Space::new().height(2),
         status,
     ]
     .padding(4)
@@ -86,7 +86,7 @@ fn render_row(entry: &RatingEntry, rank: u32) -> Element<'_, Msg> {
             widgets::icon_like().size(11),
         ]
         .spacing(2),
-        Space::with_width(16),
+        Space::new().width(16),
     ]
     .spacing(4)
     .padding([3, 4]);
@@ -107,7 +107,7 @@ fn render_row(entry: &RatingEntry, rank: u32) -> Element<'_, Msg> {
 
 fn render_pagination(state: &Plaza) -> Element<'_, Msg> {
     if state.ratings.pages <= 1 {
-        return Space::with_width(0).into();
+        return Space::new().width(0).into();
     }
 
     let prev_msg = (state.ratings.page > 1 && !state.ratings.loading).then_some(Msg::Ratings(

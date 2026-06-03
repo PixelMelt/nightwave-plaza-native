@@ -276,6 +276,8 @@ pub struct Plaza {
 
     pub elapsed: f64,
     pub last_tick: Instant,
+
+    pub main_focused: bool,
     pub error_msg: Option<String>,
 
     pub welcome_until: Option<Instant>,
@@ -290,13 +292,12 @@ pub struct Plaza {
     pub reaction_rate: u8,
     pub reaction_song_id: String,
 
-    pub lastfm: crate::lastfm::LastfmConfig,
+    pub config: crate::config::Config,
     pub lastfm_token: Option<String>,
     pub lastfm_busy: bool,
     pub lastfm_status: Option<String>,
     pub scrobble: Option<ScrobbleTrack>,
 
-    pub discord: crate::discord::DiscordConfig,
     pub discord_presence: Option<crate::discord::DiscordHandle>,
 }
 
@@ -486,4 +487,5 @@ pub enum Msg {
     Media(souvlaki::MediaControlEvent),
 
     WinResized(iced::window::Id, iced::Size),
+    WinFocus(iced::window::Id, bool),
 }
