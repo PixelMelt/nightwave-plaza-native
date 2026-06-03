@@ -56,29 +56,103 @@ jobs:
           path: target/${{ matrix.target }}/release/${{ matrix.artifact }}
           if-no-files-found: error
 
+  package-deb:
+    name: Package (Debian .deb)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Linux dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libasound2-dev libdbus-1-dev pkg-config
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache cargo
+        uses: Swatinem/rust-cache@v2
+        with:
+          key: deb
+
+      - name: Install cargo-deb
+        run: cargo install cargo-deb --locked
+
+      - name: Build .deb
+        run: cargo deb --output target/debian/nightwave-plaza.deb
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: nightwave-plaza-deb
+          path: target/debian/nightwave-plaza.deb
+          if-no-files-found: error
+
+  package-arch:
+    name: Package (Arch .pkg.tar.zst)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build Arch package
+        run: |
+          docker run --rm -v "$PWD":/build archlinux:latest bash -c '
+            set -euo pipefail
+            pacman -Syu --noconfirm --needed base-devel rust alsa-lib dbus pkgconf
+            # makepkg refuses to run as root, so build as an unprivileged user.
+            useradd -m builder
+            chown -R builder:builder /build
+            sudo -u builder bash -c "cd /build/dist && makepkg -f --noconfirm"
+          '
+
+      - name: Collect package
+        run: |
+          mkdir -p out
+          cp dist/*.pkg.tar.zst out/
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: nightwave-plaza-arch
+          path: out/*.pkg.tar.zst
+          if-no-files-found: error
+
   release:
     name: Publish Release
-    needs: build
+    needs: [build, package-deb, package-arch]
     if: startsWith(github.ref, 'refs/tags/v')
     runs-on: ubuntu-latest
     permissions:
       contents: write
     steps:
+      - uses: actions/checkout@v4
+
+      - name: Verify tag matches Cargo.toml version
+        run: |
+          cargo_ver=$(sed -n 's/^version *= *"\([^"]*\)".*/\1/p' Cargo.toml | head -n1)
+          tag_ver=${GITHUB_REF_NAME#v}
+          echo "Cargo.toml: $cargo_ver | tag: $tag_ver"
+          if [ "$cargo_ver" != "$tag_ver" ]; then
+            echo "::error::Tag v$tag_ver does not match Cargo.toml version $cargo_ver — bump Cargo.toml and re-tag."
+            exit 1
+          fi
+
       - name: Download artifacts
         uses: actions/download-artifact@v4
         with:
           path: artifacts
 
-      - name: Rename binaries for release
+      - name: Assemble release files
         run: |
           mkdir release
           cp artifacts/nightwave-plaza-windows/nightwave-plaza.exe release/nightwave-plaza.exe
-          cp artifacts/nightwave-plaza-linux/nightwave-plaza release/nightwave-plaza-linux
+          cp artifacts/nightwave-plaza-linux/nightwave-plaza      release/nightwave-plaza-linux
+          cp artifacts/nightwave-plaza-deb/*.deb                  release/
+          cp artifacts/nightwave-plaza-arch/*.pkg.tar.zst         release/
+          ls -la release
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
-          files: |
-            release/nightwave-plaza.exe
-            release/nightwave-plaza-linux
+          files: release/*
           generate_release_notes: true

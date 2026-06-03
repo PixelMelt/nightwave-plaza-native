@@ -1,8 +1,10 @@
 [package]
 name = "nightwave-plaza"
-version = "0.1.0"
+version = "0.3.0"
 edition = "2021"
 description = "Native Nightwave Plaza client with Win98 aesthetic"
+license = "GPL-3.0-or-later"
+repository = "https://github.com/PixelMelt/nightwave-plaza-native"
 
 [dependencies]
 iced = { version = "0.13", features = ["tokio", "image", "svg", "advanced"] }
@@ -24,4 +26,17 @@ discord-rich-presence = "1"
 
 [build-dependencies]
 winresource = "0.1"
+
+[package.metadata.deb]
+section = "sound"
+priority = "optional"
+# $auto resolves shared-library runtime deps (libasound2, libdbus-1-3, ...)
+# from the linked binary via dpkg-shlibdeps.
+depends = "$auto"
+extended-description = "Native Nightwave Plaza client with a Windows 98 aesthetic. Streams the plaza.one vaporwave radio feed with now-playing info, album art, OS media controls, Discord presence, and Last.fm scrobbling."
+assets = [
+    ["target/release/nightwave-plaza", "usr/bin/", "755"],
+    ["dist/nightwave-plaza.desktop", "usr/share/applications/", "644"],
+    ["src/assets/icons/nightwave-plaza.png", "usr/share/icons/hicolor/256x256/apps/nightwave-plaza.png", "644"],
+]
 
