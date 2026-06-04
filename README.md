@@ -4,7 +4,7 @@ A native desktop client for [Nightwave Plaza](https://plaza.one), the internet v
 
 Built in Rust with [iced](https://iced.rs).
 
-![Nightwave Plaza client](images/plaza.png)
+![Nightwave Plaza client](images/plazanew.png)
 
 ## Features
 
