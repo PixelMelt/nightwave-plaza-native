@@ -160,7 +160,6 @@ fn discord_update(state: &Plaza) {
     });
 }
 
-#[hotpath::main]
 fn main() -> iced::Result {
     let base = iced::daemon(boot, update, win_view)
         .title(win_title)
