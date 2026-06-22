@@ -1,29 +1,22 @@
 use crate::state::{Msg, Plaza, ProfileEditMsg, WinType};
-use crate::theme;
-use crate::views::bevel::bevel_button;
-use crate::views::widgets::{bold_font, d3_sunken, group_box, menu_bar};
-use iced::widget::{column, container, row, text, text_input, Space};
+use crate::views::{
+    action_close_row, form_error, form_input, group_box, labeled_panel, menu_bar, submit_button,
+};
+use iced::widget::{column, container, row, text, Space};
 use iced::{Element, Fill};
 
 pub fn view(state: &Plaza, wid: iced::window::Id) -> Element<'_, Msg> {
-    let bold = bold_font();
-
     let menu = row![
         Space::new().width(iced::Fill),
         menu_bar([("Delete Account", Msg::OpenWin(WinType::UserProfileDelete))]),
     ];
 
-    let username_input = text_input("", &state.profile_edit.username)
-        .on_input(|s| Msg::ProfileEdit(ProfileEditMsg::Username(s)))
-        .size(11)
-        .padding([3, 4])
-        .style(theme::page_input);
-
-    let email_input = text_input("", &state.profile_edit.email)
-        .on_input(|s| Msg::ProfileEdit(ProfileEditMsg::Email(s)))
-        .size(11)
-        .padding([3, 4])
-        .style(theme::page_input);
+    let username_input = form_input(&state.profile_edit.username, |s| {
+        Msg::ProfileEdit(ProfileEditMsg::Username(s))
+    });
+    let email_input = form_input(&state.profile_edit.email, |s| {
+        Msg::ProfileEdit(ProfileEditMsg::Email(s))
+    });
 
     let details = group_box(
         "User Details",
@@ -37,49 +30,23 @@ pub fn view(state: &Plaza, wid: iced::window::Id) -> Element<'_, Msg> {
         .spacing(2),
     );
 
-    let password_input = text_input("", &state.profile_edit.current_password)
-        .on_input(|s| Msg::ProfileEdit(ProfileEditMsg::CurrentPassword(s)))
-        .on_submit(Msg::ProfileEdit(ProfileEditMsg::Submit))
-        .secure(true)
-        .size(11)
-        .padding([3, 4])
-        .style(theme::page_input);
+    let password_input = form_input(&state.profile_edit.current_password, |s| {
+        Msg::ProfileEdit(ProfileEditMsg::CurrentPassword(s))
+    })
+    .on_submit(Msg::ProfileEdit(ProfileEditMsg::Submit))
+    .secure(true);
 
-    let password_panel = d3_sunken(
-        container(column![text("Current Password:").size(11), password_input].spacing(2))
-            .style(theme::panel)
-            .width(Fill)
-            .padding(8),
+    let password_panel = labeled_panel("Current Password:", password_input);
+
+    let error_row = form_error(&state.profile_edit.error);
+
+    let save_btn = submit_button(
+        state.profile_edit.loading,
+        "Saving...",
+        "Save",
+        Msg::ProfileEdit(ProfileEditMsg::Submit),
+        Fill,
     );
-
-    let error_row: Element<Msg> = if let Some(ref err) = state.profile_edit.error {
-        text(err)
-            .size(11)
-            .color(iced::Color::from_rgb(0.8, 0.0, 0.0))
-            .into()
-    } else {
-        Space::new().height(0).into()
-    };
-
-    let save_label = if state.profile_edit.loading {
-        "Saving..."
-    } else {
-        "Save"
-    };
-    let save_press =
-        (!state.profile_edit.loading).then_some(Msg::ProfileEdit(ProfileEditMsg::Submit));
-    let save_btn = bevel_button(text(save_label).size(11).font(bold).center().width(Fill))
-        .maybe_on_press(save_press)
-        .width(Fill);
-    let close_btn = bevel_button(text("Close").size(11).center().width(Fill))
-        .on_press(Msg::CloseWin(wid))
-        .width(Fill);
-
-    let buttons = row![
-        container(save_btn).width(iced::Length::FillPortion(3)),
-        Space::new().width(8),
-        container(close_btn).width(iced::Length::FillPortion(2)),
-    ];
 
     column![
         menu,
@@ -90,7 +57,7 @@ pub fn view(state: &Plaza, wid: iced::window::Id) -> Element<'_, Msg> {
             Space::new().height(8),
             error_row,
             Space::new().height(4),
-            buttons,
+            action_close_row(save_btn, wid),
         ])
         .padding(8),
     ]

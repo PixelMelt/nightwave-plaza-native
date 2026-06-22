@@ -1,7 +1,7 @@
 use crate::state::{Msg, Plaza, TimerMsg};
 use crate::theme;
-use crate::views::bevel::bevel_button;
-use crate::views::widgets::{bold_font, format_time};
+use crate::views::bevel_button;
+use crate::views::{action_close_row, bold_font, format_time};
 use iced::widget::{column, container, row, text, text_input, Space};
 use iced::{Element, Fill, Length};
 use std::time::Instant;
@@ -73,18 +73,13 @@ pub fn view(state: &Plaza, wid: iced::window::Id) -> Element<'_, Msg> {
     let action_btn = bevel_button(text(action_label).size(11).font(bold).center().width(Fill))
         .on_press(action_msg)
         .width(Fill);
-    let close_btn = bevel_button(text("Close").size(11).center().width(Fill))
-        .on_press(Msg::CloseWin(wid))
-        .width(Fill);
 
-    let buttons = row![
-        container(action_btn).width(Length::FillPortion(3)),
-        Space::new().width(8),
-        container(close_btn).width(Length::FillPortion(2)),
-    ];
-
-    column![body, Space::new().height(16), buttons]
-        .padding(12)
-        .width(Fill)
-        .into()
+    column![
+        body,
+        Space::new().height(16),
+        action_close_row(action_btn, wid)
+    ]
+    .padding(12)
+    .width(Fill)
+    .into()
 }

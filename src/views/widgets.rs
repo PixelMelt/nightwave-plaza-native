@@ -1,9 +1,11 @@
-use crate::state::{Msg, WinType};
+use crate::state::{Msg, SongInfoMsg, WinType};
 use crate::theme;
 use crate::views::bevel::{bevel_button, menu_item, title_button};
 use chrono::{Local, TimeZone};
 use iced::widget::text::Shaping;
-use iced::widget::{container, image, mouse_area, svg, text, text_input, Column, Row, Space};
+use iced::widget::{
+    button, container, image, mouse_area, svg, text, text_input, Column, Row, Space,
+};
 use iced::{Color, Element, Fill, Length, Padding, Theme};
 
 pub const ICON_FONT: iced::Font = iced::Font {
@@ -26,17 +28,30 @@ pub fn static_image(bytes: &'static [u8]) -> image::Handle {
         .clone()
 }
 
-pub const IC_CLOCK: &str = "\u{e94e}";
+const IC_CLOCK: &str = "\u{e94e}";
 pub const IC_USER: &str = "\u{e971}";
 pub const IC_COG: &str = "\u{e994}";
 pub const IC_FAVORITE: &str = "\u{e9d9}";
 pub const IC_LIKE: &str = "\u{e9da}";
-pub const IC_RIGHT_HAND: &str = "\u{ea42}";
-pub const IC_LEFT_HAND: &str = "\u{ea44}";
+const IC_RIGHT_HAND: &str = "\u{ea42}";
+const IC_LEFT_HAND: &str = "\u{ea44}";
 
 const CLOSE_SVG: &[u8] = b"<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 9 9'><line stroke='#000' stroke-width='1.5' x1='1.5' y1='1.5' x2='7.5' y2='7.5'/><line stroke='#000' stroke-width='1.5' x1='7.5' y1='1.5' x2='1.5' y2='7.5'/></svg>";
 const MINIMIZE_SVG: &[u8] = b"<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 9 9'><rect x='1' y='7' width='6' height='2' fill='#000'/></svg>";
 const DIVIDER_SVG: &[u8] = b"<svg width='100%' height='1' xmlns='http://www.w3.org/2000/svg'><line x1='0' y1='0' x2='100%' y2='0' stroke='#c8c8c8' stroke-width='1' stroke-dasharray='2,3'/></svg>";
+
+fn cached_svg_handle(bytes: &'static [u8]) -> svg::Handle {
+    use std::collections::HashMap;
+    use std::sync::{Mutex, OnceLock};
+    static CACHE: OnceLock<Mutex<HashMap<usize, svg::Handle>>> = OnceLock::new();
+    CACHE
+        .get_or_init(|| Mutex::new(HashMap::new()))
+        .lock()
+        .unwrap()
+        .entry(bytes.as_ptr() as usize)
+        .or_insert_with(|| svg::Handle::from_memory(bytes))
+        .clone()
+}
 
 const WIN_BALL: &[u8] = include_bytes!("../assets/icons/ball.png");
 const WIN_HELP: &[u8] = include_bytes!("../assets/icons/help_question_mark.png");
@@ -55,8 +70,76 @@ const WIN_GEAR: &[u8] = include_bytes!("../assets/icons/settings_gear.png");
 const FAVICON: &[u8] = include_bytes!("../assets/icons/favicon-32x32.png");
 
 pub const HEART_RED: Color = Color::from_rgb(0.757, 0.153, 0.153);
+pub const FAVORITE_GOLD: Color = Color::from_rgb(1.0, 0.827, 0.0);
 pub const LINK_COLOR: Color = Color::from_rgb(0.024, 0.271, 0.678);
 pub const MUTED: Color = Color::from_rgb(0.4, 0.4, 0.4);
+pub use crate::theme::ERROR_RED;
+
+pub fn flat_button_style(text_color: Color) -> iced::widget::button::Style {
+    iced::widget::button::Style {
+        background: None,
+        border: iced::Border::default(),
+        shadow: iced::Shadow::default(),
+        text_color,
+        snap: false,
+    }
+}
+
+pub fn link_button<'a>(
+    label: &'a str,
+    size: impl Into<iced::Pixels>,
+) -> iced::widget::Button<'a, Msg> {
+    button(text(label).size(size).color(LINK_COLOR))
+        .style(|_, _| flat_button_style(LINK_COLOR))
+        .padding(0)
+}
+
+pub fn form_error(error: &Option<String>) -> Element<'_, Msg> {
+    match error {
+        Some(err) => text(err).size(11).color(ERROR_RED).into(),
+        None => Space::new().height(0).into(),
+    }
+}
+
+pub fn form_input<'a>(
+    value: &'a str,
+    on_input: impl Fn(String) -> Msg + 'a,
+) -> iced::widget::TextInput<'a, Msg> {
+    text_input("", value)
+        .on_input(on_input)
+        .size(11)
+        .padding([3, 4])
+        .style(theme::page_input)
+}
+
+pub fn submit_button<'a>(
+    loading: bool,
+    busy_label: &'a str,
+    idle_label: &'a str,
+    msg: Msg,
+    width: impl Into<Length>,
+) -> Element<'a, Msg> {
+    let w = width.into();
+    let label = if loading { busy_label } else { idle_label };
+    bevel_button(text(label).size(11).font(bold_font()).center().width(w))
+        .maybe_on_press((!loading).then_some(msg))
+        .width(w)
+        .into()
+}
+
+pub fn action_close_row<'a>(
+    action: impl Into<Element<'a, Msg>>,
+    wid: iced::window::Id,
+) -> Element<'a, Msg> {
+    let close = bevel_button(text("Close").size(11).center().width(Fill))
+        .on_press(Msg::CloseWin(wid))
+        .width(Fill);
+    Row::new()
+        .push(container(action).width(Length::FillPortion(3)))
+        .push(Space::new().width(8))
+        .push(container(close).width(Length::FillPortion(2)))
+        .into()
+}
 
 pub fn bold_font() -> iced::Font {
     iced::Font {
@@ -171,13 +254,10 @@ pub fn shaped<'a>(s: impl ToString) -> iced::widget::Text<'a, Theme> {
     text(s.to_string()).shaping(Shaping::Advanced)
 }
 
-pub fn menu_btn_underline(label: &str, msg: Msg) -> Element<'_, Msg> {
-    let first: String = label.chars().next().unwrap_or(' ').to_string();
-    let rest: String = if label.len() > first.len() {
-        label[first.len()..].to_string()
-    } else {
-        String::new()
-    };
+fn menu_btn_underline(label: &str, msg: Msg) -> Element<'_, Msg> {
+    let mut chars = label.chars();
+    let first = chars.next().unwrap().to_string();
+    let rest = chars.as_str().to_string();
 
     let first_col = iced::widget::column![
         text(first).size(11),
@@ -205,7 +285,7 @@ where
 }
 
 pub fn divider<'a>() -> Element<'a, Msg> {
-    let svg_widget = svg(svg::Handle::from_memory(DIVIDER_SVG))
+    let svg_widget = svg(cached_svg_handle(DIVIDER_SVG))
         .width(iced::Fill)
         .height(1);
     container(svg_widget)
@@ -221,32 +301,27 @@ pub fn format_time(secs: f64) -> String {
     format!("{:02}:{:02}", m, s)
 }
 
-pub fn format_timestamp_day(ts: u64) -> String {
+fn fmt_ts(ts: u64, fmt: &str, fallback: &str) -> String {
     match Local.timestamp_opt(ts as i64, 0) {
-        chrono::LocalResult::Single(dt) => dt.format("%b %d").to_string(),
-        _ => "???".to_string(),
+        chrono::LocalResult::Single(dt) => dt.format(fmt).to_string(),
+        _ => fallback.to_string(),
     }
+}
+
+pub fn format_timestamp_day(ts: u64) -> String {
+    fmt_ts(ts, "%b %d", "???")
 }
 
 pub fn format_timestamp_time(ts: u64) -> String {
-    match Local.timestamp_opt(ts as i64, 0) {
-        chrono::LocalResult::Single(dt) => dt.format("%H:%M").to_string(),
-        _ => "??:??".to_string(),
-    }
+    fmt_ts(ts, "%H:%M", "??:??")
 }
 
 pub fn format_date(ts: u64) -> String {
-    match Local.timestamp_opt(ts as i64, 0) {
-        chrono::LocalResult::Single(dt) => dt.format("%b %d, %Y").to_string(),
-        _ => "???".to_string(),
-    }
+    fmt_ts(ts, "%b %d, %Y", "???")
 }
 
 pub fn pagination<'a>(
-    page: u32,
-    pages: u32,
     page_input: &str,
-    loading: bool,
     on_input: impl Fn(String) -> Msg + 'a,
     on_submit: Msg,
     on_prev: Option<Msg>,
@@ -264,10 +339,9 @@ pub fn pagination<'a>(
         .shaping(Shaping::Advanced)
         .width(iced::Fill);
 
-    let prev_msg = if page > 1 && !loading { on_prev } else { None };
     r = r.push(
         bevel_button(left_icon)
-            .maybe_on_press(prev_msg)
+            .maybe_on_press(on_prev)
             .width(33)
             .padding([1, 0]),
     );
@@ -289,14 +363,9 @@ pub fn pagination<'a>(
         .shaping(Shaping::Advanced)
         .width(iced::Fill);
 
-    let next_msg = if page < pages && !loading {
-        on_next
-    } else {
-        None
-    };
     r = r.push(
         bevel_button(right_icon)
-            .maybe_on_press(next_msg)
+            .maybe_on_press(on_next)
             .width(33)
             .padding([1, 0]),
     );
@@ -308,11 +377,11 @@ pub fn status_bar<'a>(cells: Vec<Element<'a, Msg>>) -> Element<'a, Msg> {
     let mut r = Row::new().spacing(2);
     for cell in cells {
         r = r.push(d3_thin_sunken(
-            container(cell).style(theme::status_cell).padding([3, 4]),
+            container(cell).style(theme::panel).padding([3, 4]),
         ));
     }
     container(r)
-        .style(theme::status_bar)
+        .style(theme::panel)
         .width(iced::Fill)
         .padding([2, 1])
         .into()
@@ -322,8 +391,6 @@ pub fn title_bar(
     title: String,
     wid: iced::window::Id,
     wt: Option<&WinType>,
-    show_minimize: bool,
-    show_close: bool,
 ) -> Element<'static, Msg> {
     let icon_bytes = win_icon_bytes(wt);
     let icon = image(static_image(icon_bytes)).width(16).height(16);
@@ -350,31 +417,23 @@ pub fn title_bar(
         .align_y(iced::Alignment::Center)
         .height(16);
 
-    if show_minimize {
-        let min_svg = svg(svg::Handle::from_memory(MINIMIZE_SVG))
-            .width(9)
-            .height(9);
-        let min_content = container(min_svg).center_x(Fill).center_y(Fill);
+    let min_svg = svg(cached_svg_handle(MINIMIZE_SVG)).width(9).height(9);
+    let min_content = container(min_svg).center_x(Fill).center_y(Fill);
+    buttons = buttons.push(
+        title_button(min_content)
+            .on_press(Msg::MinimizeWin(wid))
+            .width(16)
+            .height(16),
+    );
 
-        buttons = buttons.push(
-            title_button(min_content)
-                .on_press(Msg::MinimizeWin(wid))
-                .width(16)
-                .height(16),
-        );
-    }
-
-    if show_close {
-        let close_svg = svg(svg::Handle::from_memory(CLOSE_SVG)).width(9).height(9);
-        let close_content = container(close_svg).center_x(Fill).center_y(Fill);
-
-        buttons = buttons.push(
-            title_button(close_content)
-                .on_press(Msg::CloseWin(wid))
-                .width(16)
-                .height(16),
-        );
-    }
+    let close_svg = svg(cached_svg_handle(CLOSE_SVG)).width(9).height(9);
+    let close_content = container(close_svg).center_x(Fill).center_y(Fill);
+    buttons = buttons.push(
+        title_button(close_content)
+            .on_press(Msg::CloseWin(wid))
+            .width(16)
+            .height(16),
+    );
 
     let bar = Row::new()
         .push(drag_area)
@@ -462,7 +521,7 @@ pub fn group_box<'a>(label: &'a str, body: impl Into<Element<'a, Msg>>) -> Eleme
             .size(11)
             .font(bold_font()),
     )
-    .style(theme::group_label)
+    .style(theme::panel)
     .padding([0, 4]);
 
     Column::new()
@@ -471,5 +530,101 @@ pub fn group_box<'a>(label: &'a str, body: impl Into<Element<'a, Msg>>) -> Eleme
             container(body).style(theme::panel).width(Fill).padding(8),
         ))
         .spacing(0)
+        .into()
+}
+
+pub fn clickable_row<'a>(content: impl Into<Element<'a, Msg>>, song_id: &str) -> Element<'a, Msg> {
+    let content = content.into();
+    if song_id.is_empty() {
+        content
+    } else {
+        button(content)
+            .on_press(Msg::SongInfo(SongInfoMsg::Open(song_id.to_string())))
+            .style(theme::list_row_btn)
+            .padding(0)
+            .width(Fill)
+            .into()
+    }
+}
+
+pub fn song_list<'a, T>(
+    items: &'a [T],
+    mut render: impl FnMut(usize, &'a T) -> Element<'a, Msg>,
+) -> Element<'a, Msg> {
+    let mut list = Column::new().spacing(0).width(Fill);
+    let len = items.len();
+    for (i, item) in items.iter().enumerate() {
+        list = list.push(render(i, item));
+        if i < len - 1 {
+            list = list.push(divider());
+        }
+    }
+    scroll_panel(list)
+}
+
+pub fn paginate<'a>(
+    page: u32,
+    pages: u32,
+    loading: bool,
+    page_input: &'a str,
+    page_msg: impl Fn(u32) -> Msg,
+    input_msg: impl Fn(String) -> Msg + 'a,
+    submit_msg: Msg,
+) -> Element<'a, Msg> {
+    if pages <= 1 {
+        return Space::new().width(0).into();
+    }
+    let prev = (page > 1 && !loading).then(|| page_msg(page - 1));
+    let next = (page < pages && !loading).then(|| page_msg(page + 1));
+    pagination(page_input, input_msg, submit_msg, prev, next)
+}
+
+pub fn paged_footer<'a>(
+    pages_row: Element<'a, Msg>,
+    wid: iced::window::Id,
+    pages: u32,
+    total: u32,
+) -> Element<'a, Msg> {
+    let bottom = Row::new()
+        .push(pages_row)
+        .push(Space::new().width(Fill))
+        .push(close_btn(wid))
+        .align_y(iced::Alignment::Center)
+        .padding([4, 0]);
+    let status = status_bar(vec![
+        text(format!("Pages: {pages}")).size(10).into(),
+        text(format!("Songs: {total}")).size(10).into(),
+    ]);
+    Column::new()
+        .push(bottom)
+        .push(Space::new().height(2))
+        .push(status)
+        .into()
+}
+
+pub fn labeled_panel<'a>(label: &'a str, field: impl Into<Element<'a, Msg>>) -> Element<'a, Msg> {
+    d3_sunken(
+        container(
+            Column::new()
+                .push(text(label).size(11))
+                .push(field.into())
+                .spacing(2),
+        )
+        .style(theme::panel)
+        .width(Fill)
+        .padding(8),
+    )
+    .into()
+}
+
+pub fn form_field_row<'a>(
+    label: &'a str,
+    label_width: impl Into<Length>,
+    field: impl Into<Element<'a, Msg>>,
+) -> Element<'a, Msg> {
+    Row::new()
+        .push(container(text(label).size(11)).width(label_width))
+        .push(field.into())
+        .align_y(iced::Alignment::Center)
         .into()
 }

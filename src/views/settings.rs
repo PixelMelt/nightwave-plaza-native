@@ -1,9 +1,8 @@
 use crate::state::{DiscordMsg, LastfmMsg, Msg, Plaza, WinType};
-use crate::views::bevel::bevel_button;
-use crate::views::widgets::{bold_font, close_btn, group_box, LINK_COLOR, MUTED};
-use crate::{discord, lastfm};
-use iced::widget::{button, checkbox, column, row, text, Space};
-use iced::{Element, Fill, Theme};
+use crate::views::bevel_button;
+use crate::views::{bold_font, close_btn, group_box, link_button, MUTED};
+use iced::widget::{checkbox, column, row, text, Space};
+use iced::{Element, Fill};
 
 pub fn view(state: &Plaza, wid: iced::window::Id) -> Element<'_, Msg> {
     let lastfm = group_box("Last.fm Scrobbling", lastfm_body(state));
@@ -25,16 +24,6 @@ pub fn view(state: &Plaza, wid: iced::window::Id) -> Element<'_, Msg> {
 }
 
 fn discord_body(state: &Plaza) -> Element<'_, Msg> {
-    if !discord::is_configured() {
-        return text(
-            "Discord Rich Presence is not configured in this build. \
-             An application client ID must be compiled in to enable it.",
-        )
-        .size(11)
-        .color(MUTED)
-        .into();
-    }
-
     column![
         checkbox(state.config.discord.enabled)
             .label("Show \"Listening to\" status while playing")
@@ -51,16 +40,6 @@ fn discord_body(state: &Plaza) -> Element<'_, Msg> {
 }
 
 fn lastfm_body(state: &Plaza) -> Element<'_, Msg> {
-    if !lastfm::is_configured() {
-        return text(
-            "Last.fm support is not configured in this build. \
-             An API key must be compiled in to enable scrobbling.",
-        )
-        .size(11)
-        .color(MUTED)
-        .into();
-    }
-
     let mut col = column![].spacing(6).width(Fill);
 
     let connected_as = state
@@ -141,15 +120,5 @@ fn lastfm_body(state: &Plaza) -> Element<'_, Msg> {
 
 fn reauth_link<'a>(label: &'a str, state: &Plaza) -> Element<'a, Msg> {
     let press = (!state.lastfm_busy).then_some(Msg::Lastfm(LastfmMsg::Connect));
-    button(text(label).size(11).color(LINK_COLOR))
-        .on_press_maybe(press)
-        .style(|_: &Theme, _| button::Style {
-            background: None,
-            border: iced::Border::default(),
-            shadow: iced::Shadow::default(),
-            text_color: LINK_COLOR,
-            snap: false,
-        })
-        .padding(0)
-        .into()
+    link_button(label, 11).on_press_maybe(press).into()
 }

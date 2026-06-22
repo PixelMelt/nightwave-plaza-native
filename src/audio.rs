@@ -25,7 +25,6 @@ pub struct AudioPlayer {
     target_volume: Mutex<f32>,
     controls: Mutex<Option<MediaControls>>,
     progress: Mutex<Option<Duration>>,
-    length: Mutex<Option<Duration>>,
 }
 
 impl AudioPlayer {
@@ -52,7 +51,6 @@ impl AudioPlayer {
             target_volume: Mutex::new(DEFAULT_VOLUME),
             controls: Mutex::new(controls),
             progress: Mutex::new(None),
-            length: Mutex::new(None),
         };
 
         let player = this.player.clone();
@@ -74,9 +72,7 @@ impl AudioPlayer {
 
     pub fn set_volume(&self, vol: f32) {
         let v = vol.clamp(0.0, 1.0);
-        if let Ok(mut g) = self.target_volume.lock() {
-            *g = v;
-        }
+        *self.target_volume.lock().unwrap() = v;
         if !self.muted.load(Ordering::Relaxed) {
             self.player.set_volume(v);
         }
@@ -86,11 +82,7 @@ impl AudioPlayer {
         if !self.muted.swap(false, Ordering::Relaxed) {
             return;
         }
-        let v = self
-            .target_volume
-            .lock()
-            .map(|g| *g)
-            .unwrap_or(DEFAULT_VOLUME);
+        let v = *self.target_volume.lock().unwrap();
         self.player.set_volume(v);
         self.emit_playback();
     }
@@ -105,47 +97,32 @@ impl AudioPlayer {
 
     pub fn update_metadata(&self, song: &StatusSong) {
         let length = (song.length > 0.0).then(|| Duration::from_secs_f64(song.length));
-        let position =
-            (song.position >= 0.0).then(|| Duration::from_secs_f64(song.position.max(0.0)));
+        let position = Some(Duration::from_secs_f64(song.position));
 
-        if let Ok(mut g) = self.length.lock() {
-            *g = length;
-        }
-        if let Ok(mut g) = self.progress.lock() {
-            *g = position;
-        }
+        *self.progress.lock().unwrap() = position;
 
-        if let Ok(mut guard) = self.controls.lock() {
-            if let Some(controls) = guard.as_mut() {
-                let _ = controls.set_metadata(MediaMetadata {
-                    title: opt_str(&song.title),
-                    album: opt_str(&song.album),
-                    artist: opt_str(&song.artist),
-                    cover_url: song.artwork_src.as_deref(),
-                    duration: length,
-                });
-            }
+        if let Some(controls) = self.controls.lock().unwrap().as_mut() {
+            let _ = controls.set_metadata(MediaMetadata {
+                title: opt_str(&song.title),
+                album: opt_str(&song.album),
+                artist: opt_str(&song.artist),
+                cover_url: song.artwork_src.as_deref(),
+                duration: length,
+            });
         }
 
         self.emit_playback();
     }
 
     fn emit_playback(&self) {
-        let progress = self
-            .progress
-            .lock()
-            .ok()
-            .and_then(|g| *g)
-            .map(MediaPosition);
+        let progress = (*self.progress.lock().unwrap()).map(MediaPosition);
         let playback = if self.muted.load(Ordering::Relaxed) {
             MediaPlayback::Paused { progress }
         } else {
             MediaPlayback::Playing { progress }
         };
-        if let Ok(mut guard) = self.controls.lock() {
-            if let Some(controls) = guard.as_mut() {
-                let _ = controls.set_playback(playback);
-            }
+        if let Some(controls) = self.controls.lock().unwrap().as_mut() {
+            let _ = controls.set_playback(playback);
         }
     }
 }

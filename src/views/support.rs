@@ -1,6 +1,6 @@
 use crate::state::Msg;
 use crate::theme;
-use crate::views::widgets::{bold_font, close_btn, d3_sunken, static_image, LINK_COLOR};
+use crate::views::{bold_font, close_btn, d3_sunken, flat_button_style, static_image, LINK_COLOR};
 use iced::widget::{button, column, container, image, row, text, Space};
 use iced::{Element, Fill};
 
@@ -22,13 +22,7 @@ pub fn view(wid: iced::window::Id) -> Element<'static, Msg> {
         Space::new().height(4),
         button(text("Support on Boosty").size(11).color(LINK_COLOR).center().width(Fill))
             .on_press(Msg::OpenUrl(BOOSTY_URL.into()))
-            .style(move |_: &iced::Theme, _| iced::widget::button::Style {
-                background: None,
-                border: iced::Border::default(),
-                shadow: iced::Shadow::default(),
-                text_color: LINK_COLOR,
-                snap: false,
-            })
+            .style(|_, _| flat_button_style(LINK_COLOR))
             .padding(0)
             .width(Fill),
     ]
@@ -40,13 +34,7 @@ pub fn view(wid: iced::window::Id) -> Element<'static, Msg> {
         container(image(static_image(BOOSTY_IMG)).width(122)).center_x(Fill)
     ])
     .on_press(Msg::OpenUrl(BOOSTY_URL.into()))
-    .style(|_: &iced::Theme, _| iced::widget::button::Style {
-        background: None,
-        border: iced::Border::default(),
-        shadow: iced::Shadow::default(),
-        text_color: theme::BLACK,
-        snap: false,
-    })
+    .style(|_, _| flat_button_style(theme::BLACK))
     .padding(0);
 
     let panel_content = row![info_text, Space::new().width(8), boosty_image].padding(8);

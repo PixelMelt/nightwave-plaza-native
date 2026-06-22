@@ -18,3 +18,6 @@ pub mod user_profile_delete;
 pub mod user_profile_edit;
 pub mod user_register;
 pub mod widgets;
+
+pub use bevel::bevel_button;
+pub use widgets::*;

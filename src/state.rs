@@ -138,10 +138,25 @@ pub struct RegisterState {
 
 #[derive(Default)]
 pub struct NewsState {
-    pub list: Vec<crate::views::news::ParsedNewsArticle>,
+    pub list: Vec<ParsedNewsArticle>,
     pub page: u32,
     pub pages: u32,
+    pub page_input: String,
     pub loading: bool,
+}
+
+#[derive(Debug, Clone)]
+pub struct ParsedNewsArticle {
+    pub author: String,
+    pub created_at: u64,
+    pub blocks: Vec<HtmlBlock>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum HtmlBlock {
+    Heading(String),
+    Paragraph(Vec<(String, bool)>),
+    ListItem(String),
 }
 
 #[derive(Default)]
@@ -298,7 +313,17 @@ pub struct Plaza {
     pub lastfm_status: Option<String>,
     pub scrobble: Option<ScrobbleTrack>,
 
-    pub discord_presence: Option<crate::discord::DiscordHandle>,
+    pub discord_presence: crate::discord::DiscordHandle,
+}
+
+impl Plaza {
+    pub fn is_playing(&self) -> bool {
+        self.player.as_ref().is_some_and(|p| p.is_playing())
+    }
+
+    pub fn is_streaming(&self) -> bool {
+        self.player.as_ref().is_some_and(|p| p.is_streaming())
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -359,6 +384,8 @@ pub enum NewsMsg {
     Ok(Vec<api::NewsArticle>, u32),
     Err(String),
     Page(u32),
+    PageInput(String),
+    PageSubmit,
 }
 
 #[derive(Debug, Clone)]

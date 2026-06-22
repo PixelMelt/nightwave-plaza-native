@@ -9,6 +9,7 @@ pub const LIGHT_GRAY: Color = Color::from_rgb(0.875, 0.875, 0.875);
 pub const TITLE_BLUE: Color = Color::from_rgb(0.0, 0.0, 0.50);
 pub const COVER_BG: Color = Color::from_rgb(0.937, 0.902, 0.922);
 pub const TITLE_BLUE_END: Color = Color::from_rgb(0.063, 0.518, 0.816);
+pub const ERROR_RED: Color = Color::from_rgb(0.8, 0.0, 0.0);
 
 pub fn solid_border(color: Color) -> Border {
     Border {
@@ -28,22 +29,7 @@ pub fn base_panel() -> container::Style {
     }
 }
 
-pub fn window_box(_t: &Theme) -> container::Style {
-    base_panel()
-}
 pub fn panel(_t: &Theme) -> container::Style {
-    base_panel()
-}
-pub fn status_bar(_t: &Theme) -> container::Style {
-    base_panel()
-}
-pub fn status_cell(_t: &Theme) -> container::Style {
-    base_panel()
-}
-pub fn group_label(_t: &Theme) -> container::Style {
-    base_panel()
-}
-pub fn text_field(_t: &Theme) -> container::Style {
     base_panel()
 }
 

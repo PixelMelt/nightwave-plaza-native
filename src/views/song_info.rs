@@ -1,26 +1,22 @@
 use crate::state::{Msg, Plaza, SongInfoMsg};
 use crate::theme;
-use crate::views::bevel::bevel_button;
-use crate::views::widgets::{
-    self, bold_font, close_btn, d3_sunken, d3_thin_sunken, format_date, format_time, shaped,
-    status_bar,
+use crate::views::bevel_button;
+use crate::views::{
+    bold_font, close_btn, d3_sunken, d3_thin_sunken, format_date, format_time, icon_clock,
+    icon_like, loading_panel, shaped, status_bar, FAVORITE_GOLD, ICON_FONT, IC_FAVORITE,
 };
 use iced::widget::{column, container, image, row, text, Space};
 use iced::{Element, Fill};
-
-const FAVORITE_GOLD: iced::Color = iced::Color::from_rgb(1.0, 0.827, 0.0);
 
 pub fn view(state: &Plaza, wid: iced::window::Id) -> Element<'_, Msg> {
     let bold = bold_font();
 
     if state.song_info.loading {
-        let loading = container(text("Loading...").size(11))
-            .width(Fill)
-            .height(Fill)
-            .center_x(Fill)
-            .center_y(Fill);
         let bottom = row![Space::new().width(iced::Fill), close_btn(wid)].padding([4, 2]);
-        return column![loading, bottom].spacing(2).padding(2).into();
+        return column![loading_panel(), bottom]
+            .spacing(2)
+            .padding(2)
+            .into();
     }
 
     let (artist, album, title_str, length, likes, first_played, art_handle) =
@@ -70,11 +66,11 @@ pub fn view(state: &Plaza, wid: iced::window::Id) -> Element<'_, Msg> {
         shaped(title_str).size(11),
         Space::new().height(iced::Fill).height(4),
         row![
-            widgets::icon_clock().size(10),
+            icon_clock().size(10),
             Space::new().width(2),
             text(format_time(length)).size(10),
             Space::new().width(8),
-            widgets::icon_like().size(10),
+            icon_like().size(10),
             text(format!(" {}", likes)).size(10),
         ]
         .spacing(2)
@@ -93,8 +89,8 @@ pub fn view(state: &Plaza, wid: iced::window::Id) -> Element<'_, Msg> {
     let favorited = state.song_info.favorite_id.is_some();
     let can_favorite = state.song_info.data.is_some() && !state.song_info.fav_sending;
     let fav_btn = bevel_button(
-        text(widgets::IC_FAVORITE)
-            .font(widgets::ICON_FONT)
+        text(IC_FAVORITE)
+            .font(ICON_FONT)
             .size(12)
             .center()
             .width(Fill)

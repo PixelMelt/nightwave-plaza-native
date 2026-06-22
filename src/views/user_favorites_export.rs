@@ -1,13 +1,12 @@
 use crate::state::{ExportMsg, Msg, Plaza};
 use crate::theme;
-use crate::views::bevel::bevel_button;
-use crate::views::widgets::{close_btn_padded, d3_sunken, LINK_COLOR};
+use crate::views::bevel_button;
+use crate::views::{close_btn_padded, d3_sunken, flat_button_style, ERROR_RED, LINK_COLOR};
 use iced::widget::{button, column, container, text, Space};
-use iced::{Element, Fill, Theme};
+use iced::{Element, Fill};
 
 pub fn view(state: &Plaza, wid: iced::window::Id) -> Element<'_, Msg> {
     let body: Element<Msg> = if let Some(ref link) = state.export.link {
-        let link = link.clone();
         column![
             text("Export successful! Your file is ready to download.")
                 .size(11)
@@ -21,14 +20,8 @@ pub fn view(state: &Plaza, wid: iced::window::Id) -> Element<'_, Msg> {
                     .center()
                     .width(Fill)
             )
-            .on_press(Msg::OpenUrl(link))
-            .style(|_: &Theme, _| button::Style {
-                background: None,
-                border: iced::Border::default(),
-                shadow: iced::Shadow::default(),
-                text_color: LINK_COLOR,
-                snap: false,
-            })
+            .on_press(Msg::OpenUrl(link.clone()))
+            .style(|_, _| flat_button_style(LINK_COLOR))
             .padding(0)
             .width(Fill),
         ]
@@ -59,13 +52,7 @@ pub fn view(state: &Plaza, wid: iced::window::Id) -> Element<'_, Msg> {
     let mut col = column![body].width(Fill);
     if let Some(ref err) = state.export.error {
         col = col.push(Space::new().height(6));
-        col = col.push(
-            text(err)
-                .size(11)
-                .color(iced::Color::from_rgb(0.8, 0.0, 0.0))
-                .center()
-                .width(Fill),
-        );
+        col = col.push(text(err).size(11).color(ERROR_RED).center().width(Fill));
     }
 
     let panel = d3_sunken(container(col).style(theme::panel).width(Fill).padding(12));

@@ -1,12 +1,24 @@
 use crate::state::Msg;
 use crate::theme;
-use crate::views::widgets::{
-    bold_font, d3_sunken, raised_btn, static_image, status_bar, LINK_COLOR,
+use crate::views::{
+    bold_font, d3_sunken, flat_button_style, raised_btn, static_image, status_bar, LINK_COLOR,
 };
-use iced::widget::{column, container, image, row, text, Space};
+use iced::widget::{button, column, container, image, row, text, Space};
 use iced::{Element, Fill, Padding};
 
 const PC_IMG: &[u8] = include_bytes!("../assets/img/pc.png");
+
+fn about_link(label: &'static str, url: &'static str) -> iced::widget::Button<'static, Msg> {
+    button(
+        text(label)
+            .size(12)
+            .line_height(iced::widget::text::LineHeight::Relative(1.5))
+            .color(LINK_COLOR),
+    )
+    .on_press(Msg::OpenUrl(url.into()))
+    .style(|_, _| flat_button_style(LINK_COLOR))
+    .padding(0)
+}
 
 pub fn view(wid: iced::window::Id) -> Element<'static, Msg> {
     let bold = bold_font();
@@ -70,36 +82,30 @@ pub fn view(wid: iced::window::Id) -> Element<'static, Msg> {
             .size(12)
             .font(bold)
             .line_height(lh),
-        text("Show more").size(12).line_height(lh).color(LINK_COLOR),
+        about_link("Show more", "https://plaza.one"),
         Space::new().height(8),
         text("Useful links").size(12).font(bold).line_height(lh),
         Space::new().height(4),
         text("Playlists").size(12).line_height(lh),
         row![
-            text("M3U (Winamp)")
-                .size(12)
-                .line_height(lh)
-                .color(LINK_COLOR),
+            about_link("M3U (Winamp)", "https://radio.plaza.one/mp3.m3u"),
             Space::new().width(12),
-            text("PLS (Foobar2000)")
-                .size(12)
-                .line_height(lh)
-                .color(LINK_COLOR),
+            about_link("PLS (Foobar2000)", "https://plaza.one/plaza.pls"),
         ],
         Space::new().height(8),
         text("Streams").size(12).line_height(lh),
-        text("http://radio.plaza.one/mp3 (mp3 / 128kbps)")
-            .size(12)
-            .line_height(lh)
-            .color(LINK_COLOR),
-        text("http://radio.plaza.one/ogg (opus / 96kbps)")
-            .size(12)
-            .line_height(lh)
-            .color(LINK_COLOR),
-        text("http://radio.plaza.one/hls (hls / aac)")
-            .size(12)
-            .line_height(lh)
-            .color(LINK_COLOR),
+        about_link(
+            "http://radio.plaza.one/mp3 (mp3 / 128kbps)",
+            "http://radio.plaza.one/mp3",
+        ),
+        about_link(
+            "http://radio.plaza.one/ogg (opus / 96kbps)",
+            "http://radio.plaza.one/ogg",
+        ),
+        about_link(
+            "http://radio.plaza.one/hls (hls / aac)",
+            "http://radio.plaza.one/hls",
+        ),
     ]
     .spacing(0);
 

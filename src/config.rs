@@ -31,10 +31,16 @@ pub fn load() -> Config {
     let Some(path) = config_path() else {
         return Config::default();
     };
-    fs::read(&path)
-        .ok()
-        .and_then(|bytes| serde_json::from_slice(&bytes).ok())
-        .unwrap_or_default()
+    let Ok(bytes) = fs::read(&path) else {
+        return Config::default();
+    };
+    match serde_json::from_slice(&bytes) {
+        Ok(cfg) => cfg,
+        Err(e) => {
+            eprintln!("Failed to parse {}: {e}; using defaults", path.display());
+            Config::default()
+        }
+    }
 }
 
 pub fn save(cfg: &Config) {
@@ -42,7 +48,14 @@ pub fn save(cfg: &Config) {
     if let Some(parent) = path.parent() {
         let _ = fs::create_dir_all(parent);
     }
-    if let Ok(bytes) = serde_json::to_vec_pretty(cfg) {
-        let _ = fs::write(&path, bytes);
+    let bytes = match serde_json::to_vec_pretty(cfg) {
+        Ok(bytes) => bytes,
+        Err(e) => {
+            eprintln!("Failed to serialize config: {e}");
+            return;
+        }
+    };
+    if let Err(e) = fs::write(&path, &bytes) {
+        eprintln!("Failed to write {}: {e}", path.display());
     }
 }

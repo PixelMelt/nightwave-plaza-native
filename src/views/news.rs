@@ -1,6 +1,6 @@
-use crate::state::{Msg, Plaza};
-use crate::views::widgets::{
-    bold_font, close_btn, empty_panel, format_date, loading_panel, pagination, scroll_panel, MUTED,
+use crate::state::{HtmlBlock, Msg, NewsMsg, ParsedNewsArticle, Plaza};
+use crate::views::{
+    bold_font, close_btn, empty_panel, format_date, loading_panel, paginate, scroll_panel, MUTED,
 };
 use tl::{Node, Parser};
 
@@ -83,24 +83,15 @@ pub fn view(state: &Plaza, wid: iced::window::Id) -> Element<'_, Msg> {
         scroll_panel(articles)
     };
 
-    let pages_row = if state.news.pages > 1 {
-        let prev_msg = (state.news.page > 1 && !state.news.loading)
-            .then_some(Msg::News(crate::state::NewsMsg::Page(state.news.page - 1)));
-        let next_msg = (state.news.page < state.news.pages && !state.news.loading)
-            .then_some(Msg::News(crate::state::NewsMsg::Page(state.news.page + 1)));
-        pagination(
-            state.news.page,
-            state.news.pages,
-            &state.news.page.to_string(),
-            state.news.loading,
-            |_| Msg::Refresh,
-            Msg::Refresh,
-            prev_msg,
-            next_msg,
-        )
-    } else {
-        Space::new().width(0).into()
-    };
+    let pages_row = paginate(
+        state.news.page,
+        state.news.pages,
+        state.news.loading,
+        &state.news.page_input,
+        |p| Msg::News(NewsMsg::Page(p)),
+        |s| Msg::News(NewsMsg::PageInput(s)),
+        Msg::News(NewsMsg::PageSubmit),
+    );
 
     let bottom = row![pages_row, Space::new().width(iced::Fill), close_btn(wid)]
         .align_y(iced::Alignment::Center)
@@ -112,13 +103,6 @@ pub fn view(state: &Plaza, wid: iced::window::Id) -> Element<'_, Msg> {
         .into()
 }
 
-#[derive(Debug, Clone)]
-pub struct ParsedNewsArticle {
-    pub author: String,
-    pub created_at: u64,
-    pub blocks: Vec<HtmlBlock>,
-}
-
 impl From<crate::api::NewsArticle> for ParsedNewsArticle {
     fn from(article: crate::api::NewsArticle) -> Self {
         Self {
@@ -127,13 +111,6 @@ impl From<crate::api::NewsArticle> for ParsedNewsArticle {
             blocks: parse_html_blocks(&article.text),
         }
     }
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum HtmlBlock {
-    Heading(String),
-    Paragraph(Vec<(String, bool)>),
-    ListItem(String),
 }
 
 fn decode_entities(s: &str) -> String {

@@ -1,14 +1,15 @@
 use crate::state::{Msg, Plaza, WinType};
 use crate::theme;
-use crate::views::bevel::bevel_button;
-use crate::views::widgets::{
-    self, bold_font, d3_thin_sunken, format_time, menu_bar, static_image, status_bar,
+use crate::views::bevel_button;
+use crate::views::{
+    bold_font, d3_thin_sunken, flat_button_style, format_time, menu_bar, shaped, static_image,
+    status_bar, ERROR_RED, FAVORITE_GOLD, HEART_RED, ICON_FONT, IC_COG, IC_FAVORITE, IC_LIKE,
+    IC_USER,
 };
 use iced::widget::{button, column, container, image, row, slider, text, Space};
 use iced::{Element, Fill, Theme};
 use std::time::Instant;
 
-const FAVORITE_GOLD: iced::Color = iced::Color::from_rgb(1.0, 0.827, 0.0);
 const VOLUME_IMG: &[u8] = include_bytes!("../assets/img/volume.png");
 
 pub fn view(state: &Plaza) -> Element<'_, Msg> {
@@ -61,13 +62,7 @@ fn render_cover(state: &Plaza) -> Element<'_, Msg> {
             .on_press(Msg::SongInfo(crate::state::SongInfoMsg::Open(
                 song.id.clone(),
             )))
-            .style(|_: &Theme, _| button::Style {
-                background: None,
-                border: iced::Border::default(),
-                shadow: iced::Shadow::default(),
-                text_color: theme::BLACK,
-                snap: false,
-            })
+            .style(|_, _| flat_button_style(theme::BLACK))
             .padding(0)
             .into()
     } else {
@@ -78,7 +73,7 @@ fn render_cover(state: &Plaza) -> Element<'_, Msg> {
 fn render_metadata(state: &Plaza) -> Element<'_, Msg> {
     let song = &state.status.song;
 
-    let artist = widgets::shaped(if song.artist.is_empty() {
+    let artist = shaped(if song.artist.is_empty() {
         "..."
     } else {
         &song.artist
@@ -86,12 +81,7 @@ fn render_metadata(state: &Plaza) -> Element<'_, Msg> {
     .size(14)
     .font(bold_font());
 
-    let title = widgets::shaped(if song.title.is_empty() {
-        ""
-    } else {
-        &song.title
-    })
-    .size(14);
+    let title = shaped(&song.title).size(14);
 
     column![
         Space::new().height(2),
@@ -123,7 +113,7 @@ fn render_time_vol(state: &Plaza) -> Element<'_, Msg> {
             .width(Fill)
             .height(24)
             .center_y(24)
-            .style(theme::text_field),
+            .style(theme::panel),
     );
 
     let vol = slider(0.0..=100.0, state.volume, Msg::Volume)
@@ -147,8 +137,8 @@ fn render_time_vol(state: &Plaza) -> Element<'_, Msg> {
 
 fn render_controls(state: &Plaza) -> Element<'_, Msg> {
     let song = &state.status.song;
-    let is_playing = state.player.as_ref().map_or(false, |p| p.is_playing());
-    let is_streaming = state.player.as_ref().map_or(false, |p| p.is_streaming());
+    let is_playing = state.is_playing();
+    let is_streaming = state.is_streaming();
 
     let play_txt = if is_playing && !is_streaming {
         "Loading..."
@@ -162,21 +152,17 @@ fn render_controls(state: &Plaza) -> Element<'_, Msg> {
         .width(Fill);
 
     let is_current_song = state.reaction_song_id == song.id && !song.id.is_empty();
-    let (react_icon_char, react_color) = if is_current_song {
-        match state.reaction_rate {
-            2 => (widgets::IC_FAVORITE, FAVORITE_GOLD),
-            1 => (widgets::IC_LIKE, widgets::HEART_RED),
-            _ => (widgets::IC_LIKE, theme::BLACK),
-        }
-    } else {
-        (widgets::IC_LIKE, theme::BLACK)
+    let (react_icon_char, react_color) = match (is_current_song, state.reaction_rate) {
+        (true, 2) => (IC_FAVORITE, FAVORITE_GOLD),
+        (true, 1) => (IC_LIKE, HEART_RED),
+        _ => (IC_LIKE, theme::BLACK),
     };
 
     let react_btn = bevel_button(
         container(
             row![
                 text(react_icon_char)
-                    .font(widgets::ICON_FONT)
+                    .font(ICON_FONT)
                     .size(11)
                     .color(react_color)
                     .shaping(iced::widget::text::Shaping::Advanced),
@@ -196,8 +182,8 @@ fn render_controls(state: &Plaza) -> Element<'_, Msg> {
         Msg::OpenWin(WinType::UserLogin)
     };
     let user_btn = bevel_button(
-        text(widgets::IC_USER)
-            .font(widgets::ICON_FONT)
+        text(IC_USER)
+            .font(ICON_FONT)
             .size(11)
             .center()
             .width(Fill)
@@ -207,8 +193,8 @@ fn render_controls(state: &Plaza) -> Element<'_, Msg> {
     .width(Fill);
 
     let settings_btn = bevel_button(
-        text(widgets::IC_COG)
-            .font(widgets::ICON_FONT)
+        text(IC_COG)
+            .font(ICON_FONT)
             .size(11)
             .center()
             .width(Fill)
@@ -252,9 +238,7 @@ fn render_status(state: &Plaza) -> Element<'_, Msg> {
 fn render_error(err: &str) -> Element<'_, Msg> {
     container(
         row![
-            text(err)
-                .size(10)
-                .color(iced::Color::from_rgb(0.8, 0.0, 0.0)),
+            text(err).size(10).color(ERROR_RED),
             Space::new().width(iced::Fill),
             bevel_button(text("x").size(10))
                 .on_press(Msg::DismissErr)
@@ -263,7 +247,7 @@ fn render_error(err: &str) -> Element<'_, Msg> {
         .align_y(iced::Alignment::Center)
         .padding([2, 4]),
     )
-    .style(theme::status_bar)
+    .style(theme::panel)
     .width(Fill)
     .into()
 }

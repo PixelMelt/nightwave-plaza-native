@@ -6,6 +6,18 @@ pub fn agent() -> ureq::Agent {
     A.get_or_init(|| ureq::AgentBuilder::new().build()).clone()
 }
 
+pub fn read_body(
+    result: Result<ureq::Response, ureq::Error>,
+) -> Result<(Option<u16>, String), String> {
+    match result {
+        Ok(resp) => Ok((None, resp.into_string().map_err(|e| e.to_string())?)),
+        Err(ureq::Error::Status(code, resp)) => {
+            Ok((Some(code), resp.into_string().map_err(|e| e.to_string())?))
+        }
+        Err(e) => Err(e.to_string()),
+    }
+}
+
 pub async fn blocking<T, F>(f: F) -> Result<T, String>
 where
     T: Send + 'static,

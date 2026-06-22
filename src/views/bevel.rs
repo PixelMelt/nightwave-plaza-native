@@ -9,8 +9,8 @@ use iced::{
 
 use crate::theme;
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum BevelStyle {
+#[derive(Clone, Copy)]
+enum BevelStyle {
     Object,
     TitleButton,
     Menu,
@@ -38,7 +38,7 @@ impl<'a, Message, Theme, Renderer> Bevel<'a, Message, Theme, Renderer>
 where
     Renderer: iced::advanced::Renderer,
 {
-    pub fn new(content: impl Into<Element<'a, Message, Theme, Renderer>>) -> Self {
+    fn new(content: impl Into<Element<'a, Message, Theme, Renderer>>) -> Self {
         Self {
             content: content.into(),
             on_press: None,
@@ -65,7 +65,7 @@ where
         self
     }
 
-    pub fn style(mut self, style: BevelStyle) -> Self {
+    fn style(mut self, style: BevelStyle) -> Self {
         self.style = style;
         self
     }
@@ -193,7 +193,14 @@ where
             BevelKind::ThinPressed => {
                 draw_thin_bevel(renderer, bounds, theme::BLACK, theme::DARK_GRAY)
             }
-            BevelKind::Pressed => draw_pressed_bevel(renderer, bounds),
+            BevelKind::Pressed => draw_symmetric_bevel(
+                renderer,
+                bounds,
+                theme::BLACK,
+                theme::DARK_GRAY,
+                theme::DARK_GRAY,
+                theme::BLACK,
+            ),
             BevelKind::None => {}
         }
 
@@ -243,11 +250,11 @@ where
 
         match event {
             Event::Mouse(mouse::Event::ButtonPressed(mouse::Button::Left))
-            | Event::Touch(touch::Event::FingerPressed { .. }) => {
-                if self.on_press.is_some() && cursor.is_over(layout.bounds()) {
-                    tree.state.downcast_mut::<State>().is_pressed = true;
-                    shell.capture_event();
-                }
+            | Event::Touch(touch::Event::FingerPressed { .. })
+                if self.on_press.is_some() && cursor.is_over(layout.bounds()) =>
+            {
+                tree.state.downcast_mut::<State>().is_pressed = true;
+                shell.capture_event();
             }
             Event::Mouse(mouse::Event::ButtonReleased(mouse::Button::Left))
             | Event::Touch(touch::Event::FingerLifted { .. }) => {
@@ -290,7 +297,7 @@ where
     }
 }
 
-#[derive(Clone, Copy, PartialEq)]
+#[derive(Clone, Copy)]
 enum BevelKind {
     None,
     Object,
@@ -449,97 +456,6 @@ fn draw_symmetric_bevel<R: iced::advanced::Renderer>(
             height: h - 2.0,
         },
         br_inner,
-    );
-}
-
-fn draw_pressed_bevel<R: iced::advanced::Renderer>(renderer: &mut R, bounds: Rectangle) {
-    let Rectangle {
-        x,
-        y,
-        width: w,
-        height: h,
-    } = bounds;
-
-    quad(
-        renderer,
-        Rectangle {
-            x,
-            y,
-            width: w,
-            height: 1.0,
-        },
-        theme::BLACK,
-    );
-    quad(
-        renderer,
-        Rectangle {
-            x,
-            y: y + h - 1.0,
-            width: w,
-            height: 1.0,
-        },
-        theme::BLACK,
-    );
-    quad(
-        renderer,
-        Rectangle {
-            x,
-            y,
-            width: 1.0,
-            height: h,
-        },
-        theme::BLACK,
-    );
-    quad(
-        renderer,
-        Rectangle {
-            x: x + w - 1.0,
-            y,
-            width: 1.0,
-            height: h,
-        },
-        theme::BLACK,
-    );
-
-    quad(
-        renderer,
-        Rectangle {
-            x: x + 1.0,
-            y: y + 1.0,
-            width: w - 2.0,
-            height: 1.0,
-        },
-        theme::DARK_GRAY,
-    );
-    quad(
-        renderer,
-        Rectangle {
-            x: x + 1.0,
-            y: y + h - 2.0,
-            width: w - 2.0,
-            height: 1.0,
-        },
-        theme::DARK_GRAY,
-    );
-    quad(
-        renderer,
-        Rectangle {
-            x: x + 1.0,
-            y: y + 1.0,
-            width: 1.0,
-            height: h - 2.0,
-        },
-        theme::DARK_GRAY,
-    );
-    quad(
-        renderer,
-        Rectangle {
-            x: x + w - 2.0,
-            y: y + 1.0,
-            width: 1.0,
-            height: h - 2.0,
-        },
-        theme::DARK_GRAY,
     );
 }
 

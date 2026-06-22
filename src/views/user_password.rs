@@ -1,35 +1,23 @@
 use crate::state::{Msg, PasswordMsg, Plaza};
 use crate::theme;
-use crate::views::bevel::bevel_button;
-use crate::views::widgets::{bold_font, d3_sunken};
-use iced::widget::{column, container, row, text, text_input, Space};
+use crate::views::{action_close_row, d3_sunken, form_error, form_input, submit_button};
+use iced::widget::{column, container, text, Space};
 use iced::{Element, Fill};
 
 pub fn view(state: &Plaza, wid: iced::window::Id) -> Element<'_, Msg> {
-    let bold = bold_font();
-
-    let field = |value: &str, on_input: fn(String) -> Msg| {
-        text_input("", value)
-            .on_input(on_input)
-            .secure(true)
-            .size(11)
-            .padding([3, 4])
-            .style(theme::page_input)
-    };
-
-    let current = field(&state.password.current_password, |s| {
+    let current = form_input(&state.password.current_password, |s| {
         Msg::Password(PasswordMsg::Current(s))
-    });
-    let new = field(&state.password.password, |s| {
+    })
+    .secure(true);
+    let new = form_input(&state.password.password, |s| {
         Msg::Password(PasswordMsg::New(s))
-    });
-    let repeat = text_input("", &state.password.password_repeat)
-        .on_input(|s| Msg::Password(PasswordMsg::Repeat(s)))
-        .on_submit(Msg::Password(PasswordMsg::Submit))
-        .secure(true)
-        .size(11)
-        .padding([3, 4])
-        .style(theme::page_input);
+    })
+    .secure(true);
+    let repeat = form_input(&state.password.password_repeat, |s| {
+        Msg::Password(PasswordMsg::Repeat(s))
+    })
+    .on_submit(Msg::Password(PasswordMsg::Submit))
+    .secure(true);
 
     let form = column![
         text("Current Password:").size(11),
@@ -45,40 +33,22 @@ pub fn view(state: &Plaza, wid: iced::window::Id) -> Element<'_, Msg> {
 
     let panel = d3_sunken(container(form).style(theme::panel).width(Fill).padding(8));
 
-    let error_row: Element<Msg> = if let Some(ref err) = state.password.error {
-        text(err)
-            .size(11)
-            .color(iced::Color::from_rgb(0.8, 0.0, 0.0))
-            .into()
-    } else {
-        Space::new().height(0).into()
-    };
+    let error_row = form_error(&state.password.error);
 
-    let change_label = if state.password.loading {
-        "Saving..."
-    } else {
-        "Change"
-    };
-    let change_press = (!state.password.loading).then_some(Msg::Password(PasswordMsg::Submit));
-    let change_btn = bevel_button(text(change_label).size(11).font(bold).center().width(Fill))
-        .maybe_on_press(change_press)
-        .width(Fill);
-    let close_btn = bevel_button(text("Close").size(11).center().width(Fill))
-        .on_press(Msg::CloseWin(wid))
-        .width(Fill);
-
-    let buttons = row![
-        container(change_btn).width(iced::Length::FillPortion(3)),
-        Space::new().width(8),
-        container(close_btn).width(iced::Length::FillPortion(2)),
-    ];
+    let change_btn = submit_button(
+        state.password.loading,
+        "Saving...",
+        "Change",
+        Msg::Password(PasswordMsg::Submit),
+        Fill,
+    );
 
     column![
         panel,
         Space::new().height(8),
         error_row,
         Space::new().height(4),
-        buttons,
+        action_close_row(change_btn, wid),
     ]
     .padding(8)
     .into()

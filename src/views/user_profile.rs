@@ -1,7 +1,7 @@
 use crate::state::{Msg, Plaza, WinType};
 use crate::theme;
-use crate::views::bevel::bevel_button;
-use crate::views::widgets::{bold_font, d3_sunken, format_date, group_box, menu_bar, static_image};
+use crate::views::bevel_button;
+use crate::views::{bold_font, d3_sunken, format_date, group_box, menu_bar, static_image};
 use iced::widget::{column, container, image, row, text, Space};
 use iced::{Element, Fill};
 

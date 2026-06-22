@@ -1,75 +1,52 @@
 use crate::state::{Msg, Plaza};
 use crate::theme;
-use crate::views::bevel::bevel_button;
-use crate::views::widgets::{bold_font, d3_sunken};
-use iced::widget::{column, container, row, text, text_input, Space};
+use crate::views::bevel_button;
+use crate::views::{bold_font, d3_sunken, form_error, form_field_row, form_input, submit_button};
+use iced::widget::{column, container, row, text, Space};
 use iced::{Element, Fill};
 
 pub fn view(state: &Plaza, wid: iced::window::Id) -> Element<'_, Msg> {
-    let bold = bold_font();
-
     let instruction = column![
-        text("User Information:").size(11).font(bold),
+        text("User Information:").size(11).font(bold_font()),
         Space::new().height(4),
         text("Please complete all fields to create your account.").size(11),
     ];
 
-    let username_input = text_input("", &state.register.username)
-        .on_input(|s| Msg::Register(crate::state::RegisterMsg::Username(s)))
-        .size(11)
-        .padding([3, 4])
-        .style(theme::page_input);
-
-    let password_input = text_input("", &state.register.password)
-        .on_input(|s| Msg::Register(crate::state::RegisterMsg::Password(s)))
-        .size(11)
-        .padding([3, 4])
-        .secure(true)
-        .style(theme::page_input);
-
-    let repeat_input = text_input("", &state.register.password_repeat)
-        .on_input(|s| Msg::Register(crate::state::RegisterMsg::PasswordRepeat(s)))
-        .size(11)
-        .padding([3, 4])
-        .secure(true)
-        .style(theme::page_input);
-
-    let email_input = text_input("", &state.register.email)
-        .on_input(|s| Msg::Register(crate::state::RegisterMsg::Email(s)))
-        .on_submit(Msg::Register(crate::state::RegisterMsg::Submit))
-        .size(11)
-        .padding([3, 4])
-        .style(theme::page_input);
+    let username_input = form_input(&state.register.username, |s| {
+        Msg::Register(crate::state::RegisterMsg::Username(s))
+    });
+    let password_input = form_input(&state.register.password, |s| {
+        Msg::Register(crate::state::RegisterMsg::Password(s))
+    })
+    .secure(true);
+    let repeat_input = form_input(&state.register.password_repeat, |s| {
+        Msg::Register(crate::state::RegisterMsg::PasswordRepeat(s))
+    })
+    .secure(true);
+    let email_input = form_input(&state.register.email, |s| {
+        Msg::Register(crate::state::RegisterMsg::Email(s))
+    })
+    .on_submit(Msg::Register(crate::state::RegisterMsg::Submit));
 
     let form = column![
-        form_row("Username:", username_input),
+        form_field_row("Username:", 120, username_input),
         Space::new().height(4),
-        form_row("Password:", password_input),
+        form_field_row("Password:", 120, password_input),
         Space::new().height(4),
-        form_row("Repeat Password:", repeat_input),
+        form_field_row("Repeat Password:", 120, repeat_input),
         Space::new().height(4),
-        form_row("Email:", email_input),
+        form_field_row("Email:", 120, email_input),
     ];
 
-    let error_row: Element<Msg> = if let Some(ref err) = state.register.error {
-        text(err)
-            .size(11)
-            .color(iced::Color::from_rgb(0.8, 0.0, 0.0))
-            .into()
-    } else {
-        Space::new().height(0).into()
-    };
+    let error_row = form_error(&state.register.error);
 
-    let register_label = if state.register.loading {
-        "Loading..."
-    } else {
-        "Register"
-    };
-    let register_press =
-        (!state.register.loading).then_some(Msg::Register(crate::state::RegisterMsg::Submit));
-    let register_btn = bevel_button(text(register_label).size(11).font(bold).center().width(90))
-        .maybe_on_press(register_press)
-        .width(90);
+    let register_btn = submit_button(
+        state.register.loading,
+        "Loading...",
+        "Register",
+        Msg::Register(crate::state::RegisterMsg::Submit),
+        90,
+    );
 
     let cancel_btn = bevel_button(text("Cancel").size(11).center().width(90))
         .on_press(Msg::CloseWin(wid))
@@ -96,13 +73,4 @@ pub fn view(state: &Plaza, wid: iced::window::Id) -> Element<'_, Msg> {
     );
 
     column![panel].padding(4).into()
-}
-
-fn form_row<'a>(label_text: &'a str, input: impl Into<Element<'a, Msg>>) -> Element<'a, Msg> {
-    row![
-        container(text(label_text).size(11)).width(120),
-        input.into(),
-    ]
-    .align_y(iced::Alignment::Center)
-    .into()
 }

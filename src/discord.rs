@@ -4,10 +4,6 @@ use std::sync::mpsc::{self, Receiver, Sender};
 
 pub const CLIENT_ID: &str = "1511775400425160784";
 
-pub fn is_configured() -> bool {
-    !CLIENT_ID.is_empty()
-}
-
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct DiscordConfig {
     pub enabled: bool,
@@ -16,12 +12,6 @@ pub struct DiscordConfig {
 impl Default for DiscordConfig {
     fn default() -> Self {
         Self { enabled: true }
-    }
-}
-
-impl DiscordConfig {
-    pub fn is_active(&self) -> bool {
-        self.enabled && is_configured()
     }
 }
 
@@ -45,13 +35,10 @@ pub struct DiscordHandle {
 }
 
 impl DiscordHandle {
-    pub fn spawn() -> Option<Self> {
-        if !is_configured() {
-            return None;
-        }
+    pub fn spawn() -> Self {
         let (tx, rx) = mpsc::channel();
         std::thread::spawn(move || worker(rx));
-        Some(Self { tx })
+        Self { tx }
     }
 
     pub fn set(&self, presence: Presence) {
@@ -66,17 +53,15 @@ impl DiscordHandle {
 fn worker(rx: Receiver<Cmd>) {
     let mut client = DiscordIpcClient::new(CLIENT_ID);
     let mut connected = false;
-    let mut current: Option<Presence>;
-
     while let Ok(cmd) = rx.recv() {
         let mut cmd = cmd;
         while let Ok(next) = rx.try_recv() {
             cmd = next;
         }
-        match cmd {
-            Cmd::Set(p) => current = Some(p),
-            Cmd::Clear => current = None,
-        }
+        let current = match cmd {
+            Cmd::Set(p) => Some(p),
+            Cmd::Clear => None,
+        };
 
         if !connected {
             if client.connect().is_err() {
