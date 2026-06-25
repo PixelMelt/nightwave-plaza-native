@@ -250,26 +250,26 @@ where
 
         match event {
             Event::Mouse(mouse::Event::ButtonPressed(mouse::Button::Left))
-            | Event::Touch(touch::Event::FingerPressed { .. })
-                if self.on_press.is_some() && cursor.is_over(layout.bounds()) =>
-            {
-                tree.state.downcast_mut::<State>().is_pressed = true;
-                shell.capture_event();
+            | Event::Touch(touch::Event::FingerPressed { .. }) => {
+                if self.on_press.is_some() && cursor.is_over(layout.bounds()) {
+                    let state = tree.state.downcast_mut::<State>();
+                    state.is_pressed = true;
+                    if let Some(msg) = self.on_press.clone() {
+                        shell.publish(msg);
+                    }
+                    shell.capture_event();
+                }
             }
             Event::Mouse(mouse::Event::ButtonReleased(mouse::Button::Left))
             | Event::Touch(touch::Event::FingerLifted { .. }) => {
                 let state = tree.state.downcast_mut::<State>();
                 if state.is_pressed {
                     state.is_pressed = false;
-                    if let Some(msg) = self.on_press.clone() {
-                        if cursor.is_over(layout.bounds()) {
-                            shell.publish(msg);
-                        }
-                    }
                     shell.capture_event();
                 }
             }
-            Event::Touch(touch::Event::FingerLost { .. }) => {
+            Event::Touch(touch::Event::FingerLost { .. })
+            | Event::Mouse(mouse::Event::CursorLeft) => {
                 tree.state.downcast_mut::<State>().is_pressed = false;
             }
             _ => {}

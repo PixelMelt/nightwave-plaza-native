@@ -2,11 +2,11 @@ use crate::state::{Msg, Plaza, WinType};
 use crate::theme;
 use crate::views::bevel_button;
 use crate::views::{
-    bold_font, d3_thin_sunken, flat_button_style, format_time, menu_bar, shaped, static_image,
+    bold_font, d3_thin_sunken, format_time, menu_bar, shaped, static_image,
     status_bar, ERROR_RED, FAVORITE_GOLD, HEART_RED, ICON_FONT, IC_COG, IC_FAVORITE, IC_LIKE,
     IC_USER,
 };
-use iced::widget::{button, column, container, image, row, slider, text, Space};
+use iced::widget::{column, container, image, mouse_area, row, slider, text, Space};
 use iced::{Element, Fill, Theme};
 use std::time::Instant;
 
@@ -58,12 +58,11 @@ fn render_cover(state: &Plaza) -> Element<'_, Msg> {
     let img = d3_thin_sunken(container(inner).style(cover_bg));
 
     if state.artwork_handle.is_some() && !song.id.is_empty() {
-        button(img)
+        mouse_area(img)
+            .interaction(iced::mouse::Interaction::Pointer)
             .on_press(Msg::SongInfo(crate::state::SongInfoMsg::Open(
                 song.id.clone(),
             )))
-            .style(|_, _| flat_button_style(theme::BLACK))
-            .padding(0)
             .into()
     } else {
         img.into()

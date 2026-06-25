@@ -1,7 +1,7 @@
 use crate::state::Msg;
 use crate::theme;
-use crate::views::{bold_font, close_btn, d3_sunken, flat_button_style, static_image, LINK_COLOR};
-use iced::widget::{button, column, container, image, row, text, Space};
+use crate::views::{bold_font, close_btn, d3_sunken, link_button, static_image};
+use iced::widget::{column, container, image, mouse_area, row, text, Space};
 use iced::{Element, Fill};
 
 const BOOSTY_IMG: &[u8] = include_bytes!("../assets/img/boosty.png");
@@ -20,22 +20,19 @@ pub fn view(wid: iced::window::Id) -> Element<'static, Msg> {
         text("Support the radio station and future updates by donating via Boosty to receive special Discord rewards!")
             .size(11).center().width(Fill),
         Space::new().height(4),
-        button(text("Support on Boosty").size(11).color(LINK_COLOR).center().width(Fill))
-            .on_press(Msg::OpenUrl(BOOSTY_URL.into()))
-            .style(|_, _| flat_button_style(LINK_COLOR))
-            .padding(0)
-            .width(Fill),
+        link_button("Support on Boosty", 11, Some(Msg::OpenUrl(BOOSTY_URL.into()))),
     ]
     .spacing(1)
     .width(Fill);
 
-    let boosty_image = button(column![
-        Space::new().height(8),
-        container(image(static_image(BOOSTY_IMG)).width(122)).center_x(Fill)
-    ])
-    .on_press(Msg::OpenUrl(BOOSTY_URL.into()))
-    .style(|_, _| flat_button_style(theme::BLACK))
-    .padding(0);
+    let boosty_image = mouse_area(
+        column![
+            Space::new().height(8),
+            container(image(static_image(BOOSTY_IMG)).width(122)).center_x(Fill),
+        ],
+    )
+    .interaction(iced::mouse::Interaction::Pointer)
+    .on_press(Msg::OpenUrl(BOOSTY_URL.into()));
 
     let panel_content = row![info_text, Space::new().width(8), boosty_image].padding(8);
 

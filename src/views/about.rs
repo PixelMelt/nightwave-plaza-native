@@ -1,23 +1,15 @@
 use crate::state::Msg;
 use crate::theme;
 use crate::views::{
-    bold_font, d3_sunken, flat_button_style, raised_btn, static_image, status_bar, LINK_COLOR,
+    bold_font, d3_sunken, link_button, raised_btn, static_image, status_bar,
 };
-use iced::widget::{button, column, container, image, row, text, Space};
+use iced::widget::{column, container, image, row, text, Space};
 use iced::{Element, Fill, Padding};
 
 const PC_IMG: &[u8] = include_bytes!("../assets/img/pc.png");
 
-fn about_link(label: &'static str, url: &'static str) -> iced::widget::Button<'static, Msg> {
-    button(
-        text(label)
-            .size(12)
-            .line_height(iced::widget::text::LineHeight::Relative(1.5))
-            .color(LINK_COLOR),
-    )
-    .on_press(Msg::OpenUrl(url.into()))
-    .style(|_, _| flat_button_style(LINK_COLOR))
-    .padding(0)
+fn about_link(label: &'static str, url: &'static str) -> Element<'static, Msg> {
+    link_button(label, 12, Some(Msg::OpenUrl(url.into())))
 }
 
 pub fn view(wid: iced::window::Id) -> Element<'static, Msg> {

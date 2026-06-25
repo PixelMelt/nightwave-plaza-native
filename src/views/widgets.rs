@@ -88,10 +88,24 @@ pub fn flat_button_style(text_color: Color) -> iced::widget::button::Style {
 pub fn link_button<'a>(
     label: &'a str,
     size: impl Into<iced::Pixels>,
-) -> iced::widget::Button<'a, Msg> {
-    button(text(label).size(size).color(LINK_COLOR))
-        .style(|_, _| flat_button_style(LINK_COLOR))
-        .padding(0)
+    msg: Option<Msg>,
+) -> Element<'a, Msg> {
+    let btn = button(
+        text(label)
+            .size(size)
+            .color(LINK_COLOR)
+            .line_height(iced::widget::text::LineHeight::Relative(1.5)),
+    )
+    .style(|_, _| flat_button_style(LINK_COLOR))
+    .padding(0)
+    .width(Fill);
+    match msg {
+        Some(msg) => mouse_area(btn)
+            .interaction(iced::mouse::Interaction::Pointer)
+            .on_press(msg)
+            .into(),
+        None => btn.into(),
+    }
 }
 
 pub fn form_error(error: &Option<String>) -> Element<'_, Msg> {

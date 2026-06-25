@@ -120,5 +120,5 @@ fn lastfm_body(state: &Plaza) -> Element<'_, Msg> {
 
 fn reauth_link<'a>(label: &'a str, state: &Plaza) -> Element<'a, Msg> {
     let press = (!state.lastfm_busy).then_some(Msg::Lastfm(LastfmMsg::Connect));
-    link_button(label, 11).on_press_maybe(press).into()
+    link_button(label, 11, press)
 }

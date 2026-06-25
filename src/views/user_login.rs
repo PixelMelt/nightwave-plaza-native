@@ -24,7 +24,7 @@ pub fn view(state: &Plaza, wid: iced::window::Id) -> Element<'_, Msg> {
     .on_submit(Msg::Login(crate::state::LoginMsg::Submit))
     .secure(true);
 
-    let reset_link = link_button("Reset", 11).on_press(Msg::OpenUrl("https://plaza.one".into()));
+    let reset_link = link_button("Reset", 11, Some(Msg::OpenUrl("https://plaza.one".into())));
 
     let username_row = form_field_row("Username:", 72, username_input);
 

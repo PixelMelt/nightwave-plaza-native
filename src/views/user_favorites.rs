@@ -103,9 +103,7 @@ fn render_row<'a>(
     let action: Element<Msg> = if deleted {
         text("Removed").size(10).color(muted).into()
     } else {
-        link_button("Remove", 10)
-            .on_press(Msg::Favorites(FavoritesMsg::Delete(entry.id)))
-            .into()
+        link_button("Remove", 10, Some(Msg::Favorites(FavoritesMsg::Delete(entry.id))))
     };
 
     row![

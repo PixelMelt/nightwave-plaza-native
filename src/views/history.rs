@@ -33,7 +33,7 @@ fn render_header(state: &Plaza) -> Element<'_, Msg> {
         ))
         .size(10),
         Space::new().width(iced::Fill),
-        link_button("Last.fm", 10).on_press(Msg::OpenUrl("https://plaza.one/lastfm".into())),
+        link_button("Last.fm", 10, Some(Msg::OpenUrl("https://plaza.one/lastfm".into()))),
     ]
     .align_y(iced::Alignment::Center)
     .padding([2, 4])

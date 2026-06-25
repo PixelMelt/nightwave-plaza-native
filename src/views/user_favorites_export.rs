@@ -1,8 +1,8 @@
 use crate::state::{ExportMsg, Msg, Plaza};
 use crate::theme;
 use crate::views::bevel_button;
-use crate::views::{close_btn_padded, d3_sunken, flat_button_style, ERROR_RED, LINK_COLOR};
-use iced::widget::{button, column, container, text, Space};
+use crate::views::{close_btn_padded, d3_sunken, link_button, ERROR_RED};
+use iced::widget::{column, container, text, Space};
 use iced::{Element, Fill};
 
 pub fn view(state: &Plaza, wid: iced::window::Id) -> Element<'_, Msg> {
@@ -13,17 +13,7 @@ pub fn view(state: &Plaza, wid: iced::window::Id) -> Element<'_, Msg> {
                 .center()
                 .width(Fill),
             Space::new().height(8),
-            button(
-                text("Download")
-                    .size(11)
-                    .color(LINK_COLOR)
-                    .center()
-                    .width(Fill)
-            )
-            .on_press(Msg::OpenUrl(link.clone()))
-            .style(|_, _| flat_button_style(LINK_COLOR))
-            .padding(0)
-            .width(Fill),
+            link_button("Download", 11, Some(Msg::OpenUrl(link.clone()))),
         ]
         .width(Fill)
         .into()
