@@ -1,13 +1,12 @@
 use crate::state::{Msg, Plaza, WinType};
-use crate::theme;
+use crate::theme::{self, ERROR_RED, FAVORITE_GOLD, HEART_RED};
 use crate::views::bevel_button;
 use crate::views::{
-    bold_font, d3_thin_sunken, format_time, menu_bar, shaped, static_image,
-    status_bar, ERROR_RED, FAVORITE_GOLD, HEART_RED, ICON_FONT, IC_COG, IC_FAVORITE, IC_LIKE,
-    IC_USER,
+    bold_font, d3_thin_sunken, format_time, menu_bar, shaped, static_image, status_bar, ICON_FONT,
+    IC_COG, IC_FAVORITE, IC_LIKE, IC_USER,
 };
 use iced::widget::{column, container, image, mouse_area, row, slider, text, Space};
-use iced::{Element, Fill, Theme};
+use iced::{Element, Fill};
 use std::time::Instant;
 
 const VOLUME_IMG: &[u8] = include_bytes!("../assets/img/volume.png");
@@ -44,10 +43,6 @@ pub fn view(state: &Plaza) -> Element<'_, Msg> {
 
 fn render_cover(state: &Plaza) -> Element<'_, Msg> {
     let song = &state.status.song;
-    let cover_bg = |_: &Theme| container::Style {
-        background: Some(iced::Background::Color(theme::COVER_BG)),
-        ..Default::default()
-    };
 
     let inner: Element<Msg> = if let Some(ref h) = state.artwork_handle {
         image(h.clone()).width(112).height(112).into()
@@ -55,7 +50,7 @@ fn render_cover(state: &Plaza) -> Element<'_, Msg> {
         Space::new().width(112).height(112).into()
     };
 
-    let img = d3_thin_sunken(container(inner).style(cover_bg));
+    let img = d3_thin_sunken(container(inner).style(theme::cover));
 
     if state.artwork_handle.is_some() && !song.id.is_empty() {
         mouse_area(img)
@@ -117,7 +112,7 @@ fn render_time_vol(state: &Plaza) -> Element<'_, Msg> {
 
     let vol = slider(0.0..=100.0, state.volume, Msg::Volume)
         .width(Fill)
-        .step(1.0)
+        .step(1.0_f32)
         .style(theme::volume_slider);
 
     let vol_icon = image(static_image(VOLUME_IMG)).width(11).height(16);

@@ -15,7 +15,7 @@ pub fn view(state: &Plaza, wid: iced::window::Id) -> Element<'_, Msg> {
         header,
         list_area,
         Space::new().height(4),
-        paged_footer(pages_row, wid, state.history.pages, state.history.total),
+        paged_footer(pages_row, wid, &state.history.pager),
     ]
     .padding(4)
     .height(Fill)
@@ -33,7 +33,11 @@ fn render_header(state: &Plaza) -> Element<'_, Msg> {
         ))
         .size(10),
         Space::new().width(iced::Fill),
-        link_button("Last.fm", 10, Some(Msg::OpenUrl("https://plaza.one/lastfm".into()))),
+        link_button(
+            "Last.fm",
+            10,
+            Some(Msg::OpenUrl("https://plaza.one/lastfm".into()))
+        ),
     ]
     .align_y(iced::Alignment::Center)
     .padding([2, 4])
@@ -41,7 +45,7 @@ fn render_header(state: &Plaza) -> Element<'_, Msg> {
 }
 
 fn render_list_area(state: &Plaza) -> Element<'_, Msg> {
-    if state.history.loading {
+    if state.history.pager.loading {
         return loading_panel();
     }
     if state.history.list.is_empty() {
@@ -76,10 +80,7 @@ fn render_row(entry: &crate::api::HistoryEntry, bold: iced::Font) -> Element<'_,
 
 fn render_pagination(state: &Plaza) -> Element<'_, Msg> {
     paginate(
-        state.history.page,
-        state.history.pages,
-        state.history.loading,
-        &state.history.page_input,
+        &state.history.pager,
         |p| Msg::History(HistoryMsg::Page(p)),
         |s| Msg::History(HistoryMsg::PageInput(s)),
         Msg::History(HistoryMsg::PageSubmit),

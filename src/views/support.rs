@@ -25,12 +25,10 @@ pub fn view(wid: iced::window::Id) -> Element<'static, Msg> {
     .spacing(1)
     .width(Fill);
 
-    let boosty_image = mouse_area(
-        column![
-            Space::new().height(8),
-            container(image(static_image(BOOSTY_IMG)).width(122)).center_x(Fill),
-        ],
-    )
+    let boosty_image = mouse_area(column![
+        Space::new().height(8),
+        container(image(static_image(BOOSTY_IMG)).width(122)).center_x(Fill),
+    ])
     .interaction(iced::mouse::Interaction::Pointer)
     .on_press(Msg::OpenUrl(BOOSTY_URL.into()));
 

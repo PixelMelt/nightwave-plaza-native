@@ -1,7 +1,8 @@
 use crate::state::{ExportMsg, Msg, Plaza};
 use crate::theme;
+use crate::theme::ERROR_RED;
 use crate::views::bevel_button;
-use crate::views::{close_btn_padded, d3_sunken, link_button, ERROR_RED};
+use crate::views::{close_btn_padded, d3_sunken, link_button};
 use iced::widget::{column, container, text, Space};
 use iced::{Element, Fill};
 

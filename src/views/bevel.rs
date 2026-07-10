@@ -32,6 +32,7 @@ where
     height: Length,
     padding: Padding,
     active: bool,
+    status: Option<(BevelKind, bool)>,
 }
 
 impl<'a, Message, Theme, Renderer> Bevel<'a, Message, Theme, Renderer>
@@ -47,7 +48,40 @@ where
             height: Length::Shrink,
             padding: Padding::new(4.0),
             active: false,
+            status: None,
         }
+    }
+
+    fn kind(&self, is_pressed: bool, is_mouse_over: bool) -> BevelKind {
+        match self.style {
+            BevelStyle::Object => {
+                if is_pressed {
+                    BevelKind::Pressed
+                } else {
+                    BevelKind::Object
+                }
+            }
+            BevelStyle::TitleButton => {
+                if is_pressed {
+                    BevelKind::ThinPressed
+                } else {
+                    BevelKind::Thin
+                }
+            }
+            BevelStyle::Menu => {
+                if self.on_press.is_some() && is_mouse_over {
+                    BevelKind::Window
+                } else {
+                    BevelKind::None
+                }
+            }
+        }
+    }
+
+    fn visual(&self, state: &State, is_mouse_over: bool) -> (BevelKind, bool) {
+        let is_pressed =
+            (self.on_press.is_some() && state.is_pressed && is_mouse_over) || self.active;
+        (self.kind(is_pressed, is_mouse_over), is_pressed)
     }
 
     pub fn active(mut self, active: bool) -> Self {
@@ -140,67 +174,18 @@ where
     ) {
         let bounds = layout.bounds();
         let state = tree.state.downcast_ref::<State>();
-        let is_mouse_over = cursor.is_over(bounds);
-        let interactive = self.on_press.is_some();
-        let is_pressed = (interactive && state.is_pressed && is_mouse_over) || self.active;
-
-        let bevel = match self.style {
-            BevelStyle::Object => {
-                if is_pressed {
-                    BevelKind::Pressed
-                } else {
-                    BevelKind::Object
-                }
-            }
-            BevelStyle::TitleButton => {
-                if is_pressed {
-                    BevelKind::ThinPressed
-                } else {
-                    BevelKind::Thin
-                }
-            }
-            BevelStyle::Menu => {
-                if interactive && is_mouse_over {
-                    BevelKind::Window
-                } else {
-                    BevelKind::None
-                }
-            }
-        };
+        let (bevel, is_pressed) = self.visual(state, cursor.is_over(bounds));
 
         if !matches!(bevel, BevelKind::None) {
             quad(renderer, bounds, theme::BG_GRAY);
         }
 
         match bevel {
-            BevelKind::Object => draw_symmetric_bevel(
-                renderer,
-                bounds,
-                theme::WHITE,
-                theme::LIGHT_GRAY,
-                theme::DARK_GRAY,
-                theme::BLACK,
-            ),
-            BevelKind::Window => draw_symmetric_bevel(
-                renderer,
-                bounds,
-                theme::LIGHT_GRAY,
-                theme::WHITE,
-                theme::DARK_GRAY,
-                theme::BLACK,
-            ),
-            BevelKind::Thin => draw_thin_bevel(renderer, bounds, theme::WHITE, theme::BLACK),
-            BevelKind::ThinPressed => {
-                draw_thin_bevel(renderer, bounds, theme::BLACK, theme::DARK_GRAY)
-            }
-            BevelKind::Pressed => draw_symmetric_bevel(
-                renderer,
-                bounds,
-                theme::BLACK,
-                theme::DARK_GRAY,
-                theme::DARK_GRAY,
-                theme::BLACK,
-            ),
+            BevelKind::Object => draw_symmetric_bevel(renderer, bounds, theme::BEVEL_RAISED),
+            BevelKind::Window => draw_symmetric_bevel(renderer, bounds, theme::BEVEL_WINDOW),
+            BevelKind::Thin => draw_thin_bevel(renderer, bounds, theme::THIN_RAISED),
+            BevelKind::ThinPressed => draw_thin_bevel(renderer, bounds, theme::THIN_PRESSED),
+            BevelKind::Pressed => draw_symmetric_bevel(renderer, bounds, theme::BEVEL_PRESSED),
             BevelKind::None => {}
         }
 
@@ -244,35 +229,42 @@ where
             shell,
             viewport,
         );
-        if shell.is_event_captured() {
-            return;
+
+        if !shell.is_event_captured() {
+            match event {
+                Event::Mouse(mouse::Event::ButtonPressed(mouse::Button::Left))
+                | Event::Touch(touch::Event::FingerPressed { .. }) => {
+                    if self.on_press.is_some() && cursor.is_over(layout.bounds()) {
+                        let state = tree.state.downcast_mut::<State>();
+                        state.is_pressed = true;
+                        if let Some(msg) = self.on_press.clone() {
+                            shell.publish(msg);
+                        }
+                        shell.capture_event();
+                    }
+                }
+                Event::Mouse(mouse::Event::ButtonReleased(mouse::Button::Left))
+                | Event::Touch(touch::Event::FingerLifted { .. }) => {
+                    let state = tree.state.downcast_mut::<State>();
+                    if state.is_pressed {
+                        state.is_pressed = false;
+                        shell.capture_event();
+                    }
+                }
+                Event::Touch(touch::Event::FingerLost { .. })
+                | Event::Mouse(mouse::Event::CursorLeft) => {
+                    tree.state.downcast_mut::<State>().is_pressed = false;
+                }
+                _ => {}
+            }
         }
 
-        match event {
-            Event::Mouse(mouse::Event::ButtonPressed(mouse::Button::Left))
-            | Event::Touch(touch::Event::FingerPressed { .. }) => {
-                if self.on_press.is_some() && cursor.is_over(layout.bounds()) {
-                    let state = tree.state.downcast_mut::<State>();
-                    state.is_pressed = true;
-                    if let Some(msg) = self.on_press.clone() {
-                        shell.publish(msg);
-                    }
-                    shell.capture_event();
-                }
-            }
-            Event::Mouse(mouse::Event::ButtonReleased(mouse::Button::Left))
-            | Event::Touch(touch::Event::FingerLifted { .. }) => {
-                let state = tree.state.downcast_mut::<State>();
-                if state.is_pressed {
-                    state.is_pressed = false;
-                    shell.capture_event();
-                }
-            }
-            Event::Touch(touch::Event::FingerLost { .. })
-            | Event::Mouse(mouse::Event::CursorLeft) => {
-                tree.state.downcast_mut::<State>().is_pressed = false;
-            }
-            _ => {}
+        let state = tree.state.downcast_ref::<State>();
+        let current = self.visual(state, cursor.is_over(layout.bounds()));
+        if let Event::Window(iced::window::Event::RedrawRequested(_)) = event {
+            self.status = Some(current);
+        } else if self.status.is_some_and(|status| status != current) {
+            shell.request_redraw();
         }
     }
 
@@ -297,7 +289,7 @@ where
     }
 }
 
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, PartialEq, Eq)]
 enum BevelKind {
     None,
     Object,
@@ -309,154 +301,34 @@ enum BevelKind {
 
 fn draw_thin_bevel<R: iced::advanced::Renderer>(
     renderer: &mut R,
-    bounds: Rectangle,
-    tl: Color,
-    br: Color,
+    b: Rectangle,
+    (tl, br): (Color, Color),
 ) {
-    let Rectangle {
+    let edge = |x, y, width, height| Rectangle {
         x,
         y,
-        width: w,
-        height: h,
-    } = bounds;
-    quad(
-        renderer,
-        Rectangle {
-            x,
-            y,
-            width: w,
-            height: 1.0,
-        },
-        tl,
-    );
-    quad(
-        renderer,
-        Rectangle {
-            x,
-            y,
-            width: 1.0,
-            height: h,
-        },
-        tl,
-    );
-    quad(
-        renderer,
-        Rectangle {
-            x,
-            y: y + h - 1.0,
-            width: w,
-            height: 1.0,
-        },
-        br,
-    );
-    quad(
-        renderer,
-        Rectangle {
-            x: x + w - 1.0,
-            y,
-            width: 1.0,
-            height: h,
-        },
-        br,
-    );
+        width,
+        height,
+    };
+    quad(renderer, edge(b.x, b.y, b.width, 1.0), tl);
+    quad(renderer, edge(b.x, b.y, 1.0, b.height), tl);
+    quad(renderer, edge(b.x, b.y + b.height - 1.0, b.width, 1.0), br);
+    quad(renderer, edge(b.x + b.width - 1.0, b.y, 1.0, b.height), br);
 }
 
 fn draw_symmetric_bevel<R: iced::advanced::Renderer>(
     renderer: &mut R,
     bounds: Rectangle,
-    tl_outer: Color,
-    tl_inner: Color,
-    br_inner: Color,
-    br_outer: Color,
+    c: theme::BevelColors,
 ) {
-    let Rectangle {
-        x,
-        y,
-        width: w,
-        height: h,
-    } = bounds;
-
-    quad(
-        renderer,
-        Rectangle {
-            x,
-            y,
-            width: w,
-            height: 1.0,
-        },
-        tl_outer,
-    );
-    quad(
-        renderer,
-        Rectangle {
-            x,
-            y,
-            width: 1.0,
-            height: h,
-        },
-        tl_outer,
-    );
-    quad(
-        renderer,
-        Rectangle {
-            x,
-            y: y + h - 1.0,
-            width: w,
-            height: 1.0,
-        },
-        br_outer,
-    );
-    quad(
-        renderer,
-        Rectangle {
-            x: x + w - 1.0,
-            y,
-            width: 1.0,
-            height: h,
-        },
-        br_outer,
-    );
-
-    quad(
-        renderer,
-        Rectangle {
-            x: x + 1.0,
-            y: y + 1.0,
-            width: w - 2.0,
-            height: 1.0,
-        },
-        tl_inner,
-    );
-    quad(
-        renderer,
-        Rectangle {
-            x: x + 1.0,
-            y: y + 1.0,
-            width: 1.0,
-            height: h - 2.0,
-        },
-        tl_inner,
-    );
-    quad(
-        renderer,
-        Rectangle {
-            x: x + 1.0,
-            y: y + h - 2.0,
-            width: w - 2.0,
-            height: 1.0,
-        },
-        br_inner,
-    );
-    quad(
-        renderer,
-        Rectangle {
-            x: x + w - 2.0,
-            y: y + 1.0,
-            width: 1.0,
-            height: h - 2.0,
-        },
-        br_inner,
-    );
+    draw_thin_bevel(renderer, bounds, (c.tl_outer, c.br_outer));
+    let inner = Rectangle {
+        x: bounds.x + 1.0,
+        y: bounds.y + 1.0,
+        width: bounds.width - 2.0,
+        height: bounds.height - 2.0,
+    };
+    draw_thin_bevel(renderer, inner, (c.tl_inner, c.br_inner));
 }
 
 fn quad<R: iced::advanced::Renderer>(renderer: &mut R, bounds: Rectangle, color: Color) {

@@ -27,7 +27,7 @@ pub fn view(state: &Plaza, wid: iced::window::Id) -> Element<'_, Msg> {
         Space::new().height(2),
         list_area,
         Space::new().height(4),
-        paged_footer(pages_row, wid, state.ratings.pages, state.ratings.total),
+        paged_footer(pages_row, wid, &state.ratings.pager),
     ]
     .padding(4)
     .height(Fill)
@@ -35,13 +35,13 @@ pub fn view(state: &Plaza, wid: iced::window::Id) -> Element<'_, Msg> {
 }
 
 fn render_list(state: &Plaza) -> Element<'_, Msg> {
-    if state.ratings.loading {
+    if state.ratings.pager.loading {
         return loading_panel();
     }
     if state.ratings.list.is_empty() {
         return empty_panel("No data");
     }
-    let page = state.ratings.page;
+    let page = state.ratings.pager.page;
     song_list(&state.ratings.list, move |i, entry| {
         let rank = (page - 1) * 25 + (i as u32) + 1;
         render_row(entry, rank)
@@ -70,10 +70,7 @@ fn render_row(entry: &RatingEntry, rank: u32) -> Element<'_, Msg> {
 
 fn render_pagination(state: &Plaza) -> Element<'_, Msg> {
     paginate(
-        state.ratings.page,
-        state.ratings.pages,
-        state.ratings.loading,
-        &state.ratings.page_input,
+        &state.ratings.pager,
         |p| Msg::Ratings(RatingsMsg::Page(p)),
         |s| Msg::Ratings(RatingsMsg::PageInput(s)),
         Msg::Ratings(RatingsMsg::PageSubmit),

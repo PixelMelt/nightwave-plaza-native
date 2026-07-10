@@ -8,7 +8,6 @@ repository = "https://github.com/PixelMelt/nightwave-plaza-native"
 
 [dependencies]
 iced = { version = "0.14", default-features = false, features = [
-    "wgpu",
     "tiny-skia",
     "web-colors",
     "crisp",
@@ -16,7 +15,6 @@ iced = { version = "0.14", default-features = false, features = [
     "x11",
     "wayland",
     "image",
-    "svg",
     "advanced",
 ] }
 ureq = { version = "2", features = ["json"] }
@@ -32,9 +30,40 @@ md5 = "0.8"
 discord-rich-presence = "1"
 
 [profile.release]
-lto = "thin"
+lto = "fat"
+opt-level = 3
 codegen-units = 1
 strip = true
+panic = "abort"
+
+[profile.release.package.winit]
+opt-level = "z"
+[profile.release.package.x11rb]
+opt-level = "z"
+[profile.release.package.calloop]
+opt-level = "z"
+[profile.release.package.ureq]
+opt-level = "z"
+[profile.release.package.tl]
+opt-level = "z"
+[profile.release.package.chrono]
+opt-level = "z"
+[profile.release.package.serde_json]
+opt-level = "z"
+[profile.release.package.image]
+opt-level = "z"
+[profile.release.package.png]
+opt-level = "z"
+[profile.release.package.zune-jpeg]
+opt-level = "z"
+[profile.release.package.fontdb]
+opt-level = "z"
+[profile.release.package.ttf-parser]
+opt-level = "z"
+[profile.release.package.souvlaki]
+opt-level = "z"
+[profile.release.package.discord-rich-presence]
+opt-level = "z"
 
 [build-dependencies]
 winresource = "0.1"

@@ -38,6 +38,11 @@ fn dev_mode() -> bool {
     *FLAG.get_or_init(|| std::env::var("NIGHTWAVE_DEV").is_ok())
 }
 
+fn bench_mode() -> bool {
+    static FLAG: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+    *FLAG.get_or_init(|| std::env::var("NIGHTWAVE_BENCH").is_ok())
+}
+
 #[cfg(target_os = "linux")]
 fn platform_specific() -> iced::window::settings::PlatformSpecific {
     iced::window::settings::PlatformSpecific {
@@ -65,7 +70,6 @@ fn open_url(url: &str) {
         eprintln!("Failed to open URL {url}: {e}");
     }
 }
-use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
@@ -177,17 +181,7 @@ fn main() -> iced::Result {
 }
 
 fn win_theme(_state: &Plaza, _window: iced::window::Id) -> Theme {
-    Theme::custom(
-        "Win98".to_string(),
-        iced::theme::Palette {
-            background: theme::BG_GRAY,
-            text: theme::BLACK,
-            primary: theme::TITLE_BLUE,
-            success: iced::Color::from_rgb(0.0, 0.5, 0.0),
-            warning: iced::Color::from_rgb(0.8, 0.5, 0.0),
-            danger: theme::ERROR_RED,
-        },
-    )
+    theme::app_theme()
 }
 
 fn boot() -> (Plaza, Task<Msg>) {
@@ -202,60 +196,7 @@ fn boot() -> (Plaza, Task<Msg>) {
         platform_specific: platform_specific(),
         ..Default::default()
     });
-    let mut state = Plaza {
-        main_window: main_id,
-        child_windows: HashMap::new(),
-        status: api::Status::default(),
-        player,
-        volume: 50.0,
-        artwork_handle: None,
-        artwork_url: String::new(),
-        history: crate::state::HistoryState {
-            page: 1,
-            page_input: "1".into(),
-            ..Default::default()
-        },
-        ratings: crate::state::RatingsState::default(),
-        song_info: crate::state::SongInfoState::default(),
-        login: crate::state::LoginState::default(),
-        register: crate::state::RegisterState::default(),
-        news: crate::state::NewsState {
-            page: 1,
-            ..Default::default()
-        },
-        favorites: crate::state::FavoritesState {
-            page: 1,
-            page_input: "1".into(),
-            ..Default::default()
-        },
-        export: crate::state::ExportState::default(),
-        profile_edit: crate::state::ProfileEditState::default(),
-        password: crate::state::PasswordState::default(),
-        delete: crate::state::DeleteState::default(),
-        timer: crate::state::TimerState::default(),
-        elapsed: 0.0,
-        last_tick: Instant::now(),
-        main_focused: true,
-        error_msg: None,
-        welcome_until: Some(Instant::now() + Duration::from_secs(2)),
-        volume_text: None,
-        volume_text_until: None,
-
-        auth_token: None,
-        user: None,
-        user_stats: None,
-        stats_loading: false,
-        reaction_rate: 0,
-        reaction_song_id: String::new(),
-
-        config: config::load(),
-        lastfm_token: None,
-        lastfm_busy: false,
-        lastfm_status: None,
-        scrobble: None,
-
-        discord_presence: discord::DiscordHandle::spawn(),
-    };
+    let mut state = Plaza::new(main_id, player, config::load());
 
     let session_task = if let Some(saved) = state.config.session.clone() {
         let token = saved.token.clone();
@@ -379,6 +320,9 @@ fn subscription(state: &Plaza) -> Subscription<Msg> {
                 key: iced::keyboard::Key::Named(iced::keyboard::key::Named::Space),
                 ..
             }) if status == iced::event::Status::Ignored => Some(Msg::SpaceToggle(id)),
+            iced::Event::Window(iced::window::Event::Opened { .. }) if bench_mode() => {
+                Some(Msg::WinClosed(id))
+            }
             iced::Event::Window(iced::window::Event::Focused) => Some(Msg::WinFocus(id, true)),
             iced::Event::Window(iced::window::Event::Unfocused) => Some(Msg::WinFocus(id, false)),
             _ => None,
@@ -563,69 +507,33 @@ fn update(state: &mut Plaza, msg: Msg) -> Task<Msg> {
             let mut tasks = vec![task.discard()];
             match wt {
                 WinType::History if state.history.list.is_empty() => {
-                    state.history.loading = true;
-                    tasks.push(Task::perform(api::fetch_history(1), |r| match r {
-                        Ok(h) => Msg::History(crate::state::HistoryMsg::Ok(
-                            h.data,
-                            h.meta.last_page,
-                            h.meta.total,
-                            h.date_range,
-                        )),
-                        Err(e) => Msg::History(crate::state::HistoryMsg::Err(e)),
-                    }));
+                    state.history.pager.goto(1);
+                    tasks.push(fetch_history_task(1));
                 }
                 WinType::Ratings if state.ratings.list.is_empty() => {
-                    state.ratings.loading = true;
-                    let range = state.ratings.range.clone();
-                    tasks.push(Task::perform(
-                        async move { api::fetch_ratings(&range, 1).await },
-                        |r| match r {
-                            Ok(h) => Msg::Ratings(crate::state::RatingsMsg::Ok(
-                                h.data,
-                                h.meta.last_page,
-                                h.meta.total,
-                            )),
-                            Err(e) => Msg::Ratings(crate::state::RatingsMsg::Err(e)),
-                        },
-                    ));
+                    state.ratings.pager.goto(1);
+                    tasks.push(fetch_ratings_task(state.ratings.range.clone(), 1));
                 }
                 WinType::UserProfile => {
                     if let Some(ref token) = state.auth_token {
                         state.stats_loading = true;
                         let token = token.clone();
-                        tasks.push(Task::perform(
+                        tasks.push(result_task(
                             async move { api::get_stats(&token).await },
-                            |r| match r {
-                                Ok(s) => Msg::StatsOk(s.data),
-                                Err(e) => Msg::StatsErr(e),
-                            },
+                            |s: api::UserStatsResponse| Msg::StatsOk(s.data),
+                            Msg::StatsErr,
                         ));
                     }
                 }
                 WinType::News if state.news.list.is_empty() => {
-                    state.news.page = 1;
-                    state.news.page_input = "1".into();
-                    state.news.loading = true;
+                    state.news.pager.goto(1);
                     tasks.push(fetch_news_task(1));
                 }
                 WinType::UserFavorites => {
                     state.favorites.deleted.clear();
-                    state.favorites.page = 1;
-                    state.favorites.page_input = "1".into();
                     if let Some(ref token) = state.auth_token {
-                        state.favorites.loading = true;
-                        let token = token.clone();
-                        tasks.push(Task::perform(
-                            async move { api::fetch_favorites(&token, 1).await },
-                            |r| match r {
-                                Ok(f) => Msg::Favorites(crate::state::FavoritesMsg::Ok(
-                                    f.data,
-                                    f.meta.last_page,
-                                    f.meta.total,
-                                )),
-                                Err(e) => Msg::Favorites(crate::state::FavoritesMsg::Err(e)),
-                            },
-                        ));
+                        state.favorites.pager.goto(1);
+                        tasks.push(fetch_favorites_task(token.clone(), 1));
                     }
                 }
                 WinType::UserFavoritesExport => {
@@ -651,14 +559,14 @@ fn update(state: &mut Plaza, msg: Msg) -> Task<Msg> {
         }
         Msg::CloseWin(id) => {
             if id == state.main_window {
-                return iced::exit();
+                std::process::exit(0);
             }
             state.child_windows.remove(&id);
             iced::window::close(id)
         }
         Msg::WinClosed(id) => {
             if id == state.main_window {
-                iced::exit()
+                std::process::exit(0);
             } else {
                 state.child_windows.remove(&id);
                 Task::none()
@@ -1021,7 +929,7 @@ fn update(state: &mut Plaza, msg: Msg) -> Task<Msg> {
         Msg::Timer(t_msg) => {
             use crate::state::TimerMsg;
             match t_msg {
-                TimerMsg::Input(s) => accept_page_input(&mut state.timer.minutes_input, s),
+                TimerMsg::Input(s) => crate::state::digits_input(&mut state.timer.minutes_input, s),
                 TimerMsg::Add(delta) => {
                     let current = state.timer.minutes_input.parse::<i32>().unwrap_or(0);
                     let next = (current + delta).max(1);
@@ -1181,23 +1089,6 @@ fn result_task<T: Send + 'static>(
     })
 }
 
-fn accept_page_input(page_input: &mut String, s: String) {
-    if s.chars().all(|c| c.is_ascii_digit()) || s.is_empty() {
-        *page_input = s;
-    }
-}
-
-fn submit_page(page: u32, pages: u32, page_input: &mut String) -> Option<u32> {
-    if let Ok(p) = page_input.parse::<u32>() {
-        let p = p.clamp(1, pages.max(1));
-        if p != page {
-            return Some(p);
-        }
-    }
-    *page_input = page.to_string();
-    None
-}
-
 fn close_windows_of(state: &mut Plaza, wt: WinType) -> Task<Msg> {
     let ids: Vec<_> = state
         .child_windows
@@ -1284,44 +1175,69 @@ fn fetch_news_task(p: u32) -> Task<Msg> {
     })
 }
 
+fn fetch_history_task(p: u32) -> Task<Msg> {
+    use crate::state::HistoryMsg;
+    Task::perform(api::fetch_history(p), |r| match r {
+        Ok(h) => Msg::History(HistoryMsg::Ok(
+            h.data,
+            h.meta.last_page,
+            h.meta.total,
+            h.date_range,
+        )),
+        Err(e) => Msg::History(HistoryMsg::Err(e)),
+    })
+}
+
+fn fetch_ratings_task(range: String, p: u32) -> Task<Msg> {
+    use crate::state::RatingsMsg;
+    result_task(
+        async move { api::fetch_ratings(&range, p).await },
+        |h: api::PaginatedResponse<api::RatingEntry>| {
+            Msg::Ratings(RatingsMsg::Ok(h.data, h.meta.last_page, h.meta.total))
+        },
+        |e| Msg::Ratings(RatingsMsg::Err(e)),
+    )
+}
+
+fn fetch_favorites_task(token: String, p: u32) -> Task<Msg> {
+    use crate::state::FavoritesMsg;
+    result_task(
+        async move { api::fetch_favorites(&token, p).await },
+        |f: api::PaginatedResponse<api::FavoriteEntry>| {
+            Msg::Favorites(FavoritesMsg::Ok(f.data, f.meta.last_page, f.meta.total))
+        },
+        |e| Msg::Favorites(FavoritesMsg::Err(e)),
+    )
+}
+
 fn update_news(state: &mut Plaza, msg: crate::state::NewsMsg) -> Task<Msg> {
     use crate::state::NewsMsg;
     match msg {
         NewsMsg::Ok(articles, pages) => {
-            state.news.loading = false;
             state.news.list = articles
                 .into_iter()
                 .map(crate::state::ParsedNewsArticle::from)
                 .collect();
-            state.news.pages = pages;
-            state.news.page_input = state.news.page.to_string();
+            state.news.pager.loaded(pages, 0);
             Task::none()
         }
         NewsMsg::Err(e) => {
-            state.news.loading = false;
+            state.news.pager.loading = false;
             state.error_msg = Some(e);
             Task::none()
         }
         NewsMsg::Page(p) => {
-            state.news.page = p;
-            state.news.page_input = p.to_string();
-            state.news.loading = true;
+            state.news.pager.goto(p);
             fetch_news_task(p)
         }
         NewsMsg::PageInput(s) => {
-            accept_page_input(&mut state.news.page_input, s);
+            state.news.pager.accept_input(s);
             Task::none()
         }
-        NewsMsg::PageSubmit => {
-            if let Some(p) = submit_page(
-                state.news.page,
-                state.news.pages,
-                &mut state.news.page_input,
-            ) {
-                return update_news(state, NewsMsg::Page(p));
-            }
-            Task::none()
-        }
+        NewsMsg::PageSubmit => match state.news.pager.submit() {
+            Some(p) => update_news(state, NewsMsg::Page(p)),
+            None => Task::none(),
+        },
     }
 }
 
@@ -1329,11 +1245,8 @@ fn update_history(state: &mut Plaza, msg: crate::state::HistoryMsg) -> Task<Msg>
     use crate::state::HistoryMsg;
     match msg {
         HistoryMsg::Ok(songs, pages, total, date_range) => {
-            state.history.loading = false;
             state.history.list = songs;
-            state.history.pages = pages;
-            state.history.total = total;
-            state.history.page_input = state.history.page.to_string();
+            state.history.pager.loaded(pages, total);
             if let Some(dr) = date_range {
                 state.history.date_from = views::format_date(dr.from_date);
                 state.history.date_to = views::format_date(dr.to_date);
@@ -1341,38 +1254,22 @@ fn update_history(state: &mut Plaza, msg: crate::state::HistoryMsg) -> Task<Msg>
             Task::none()
         }
         HistoryMsg::Err(e) => {
-            state.history.loading = false;
+            state.history.pager.loading = false;
             state.error_msg = Some(e);
             Task::none()
         }
         HistoryMsg::Page(p) => {
-            state.history.page = p;
-            state.history.page_input = p.to_string();
-            state.history.loading = true;
-            Task::perform(api::fetch_history(p), |r| match r {
-                Ok(h) => Msg::History(HistoryMsg::Ok(
-                    h.data,
-                    h.meta.last_page,
-                    h.meta.total,
-                    h.date_range,
-                )),
-                Err(e) => Msg::History(HistoryMsg::Err(e)),
-            })
+            state.history.pager.goto(p);
+            fetch_history_task(p)
         }
         HistoryMsg::PageInput(s) => {
-            accept_page_input(&mut state.history.page_input, s);
+            state.history.pager.accept_input(s);
             Task::none()
         }
-        HistoryMsg::PageSubmit => {
-            if let Some(p) = submit_page(
-                state.history.page,
-                state.history.pages,
-                &mut state.history.page_input,
-            ) {
-                return update_history(state, HistoryMsg::Page(p));
-            }
-            Task::none()
-        }
+        HistoryMsg::PageSubmit => match state.history.pager.submit() {
+            Some(p) => update_history(state, HistoryMsg::Page(p)),
+            None => Task::none(),
+        },
     }
 }
 
@@ -1380,59 +1277,33 @@ fn update_ratings(state: &mut Plaza, msg: crate::state::RatingsMsg) -> Task<Msg>
     use crate::state::RatingsMsg;
     match msg {
         RatingsMsg::Ok(songs, pages, total) => {
-            state.ratings.loading = false;
             state.ratings.list = songs;
-            state.ratings.pages = pages;
-            state.ratings.total = total;
-            state.ratings.page_input = state.ratings.page.to_string();
+            state.ratings.pager.loaded(pages, total);
             Task::none()
         }
         RatingsMsg::Err(e) => {
-            state.ratings.loading = false;
+            state.ratings.pager.loading = false;
             state.error_msg = Some(e);
             Task::none()
         }
         RatingsMsg::Page(p) => {
-            state.ratings.page = p;
-            state.ratings.page_input = p.to_string();
-            state.ratings.loading = true;
-            let range = state.ratings.range.clone();
-            Task::perform(
-                async move { api::fetch_ratings(&range, p).await },
-                |r| match r {
-                    Ok(h) => Msg::Ratings(RatingsMsg::Ok(h.data, h.meta.last_page, h.meta.total)),
-                    Err(e) => Msg::Ratings(RatingsMsg::Err(e)),
-                },
-            )
+            state.ratings.pager.goto(p);
+            fetch_ratings_task(state.ratings.range.clone(), p)
         }
         RatingsMsg::Range(range) => {
-            state.ratings.range = range.clone();
-            state.ratings.page = 1;
-            state.ratings.page_input = "1".into();
+            state.ratings.range = range;
             state.ratings.list.clear();
-            state.ratings.loading = true;
-            Task::perform(
-                async move { api::fetch_ratings(&range, 1).await },
-                |r| match r {
-                    Ok(h) => Msg::Ratings(RatingsMsg::Ok(h.data, h.meta.last_page, h.meta.total)),
-                    Err(e) => Msg::Ratings(RatingsMsg::Err(e)),
-                },
-            )
+            state.ratings.pager.goto(1);
+            fetch_ratings_task(state.ratings.range.clone(), 1)
         }
         RatingsMsg::PageInput(s) => {
-            accept_page_input(&mut state.ratings.page_input, s);
+            state.ratings.pager.accept_input(s);
             Task::none()
         }
-        RatingsMsg::PageSubmit => {
-            if let Some(p) = submit_page(
-                state.ratings.page,
-                state.ratings.pages,
-                &mut state.ratings.page_input,
-            ) {
-                return update_ratings(state, RatingsMsg::Page(p));
-            }
-            Task::none()
-        }
+        RatingsMsg::PageSubmit => match state.ratings.pager.submit() {
+            Some(p) => update_ratings(state, RatingsMsg::Page(p)),
+            None => Task::none(),
+        },
     }
 }
 
@@ -1440,10 +1311,7 @@ fn update_favorites(state: &mut Plaza, msg: crate::state::FavoritesMsg) -> Task<
     use crate::state::FavoritesMsg;
     match msg {
         FavoritesMsg::Ok(list, pages, total) => {
-            state.favorites.loading = false;
-            state.favorites.pages = pages;
-            state.favorites.total = total;
-            state.favorites.page_input = state.favorites.page.to_string();
+            state.favorites.pager.loaded(pages, total);
 
             let mut seen = std::collections::HashSet::new();
             let art_tasks: Vec<Task<Msg>> = list
@@ -1478,7 +1346,7 @@ fn update_favorites(state: &mut Plaza, msg: crate::state::FavoritesMsg) -> Task<
             Task::none()
         }
         FavoritesMsg::Err(e) => {
-            state.favorites.loading = false;
+            state.favorites.pager.loading = false;
             state.error_msg = Some(e);
             Task::none()
         }
@@ -1486,30 +1354,18 @@ fn update_favorites(state: &mut Plaza, msg: crate::state::FavoritesMsg) -> Task<
             let Some(token) = state.auth_token.clone() else {
                 return Task::none();
             };
-            state.favorites.page = p;
-            state.favorites.page_input = p.to_string();
-            state.favorites.loading = true;
+            state.favorites.pager.goto(p);
             state.favorites.deleted.clear();
-            result_task(
-                async move { api::fetch_favorites(&token, p).await },
-                |f| Msg::Favorites(FavoritesMsg::Ok(f.data, f.meta.last_page, f.meta.total)),
-                |e| Msg::Favorites(FavoritesMsg::Err(e)),
-            )
+            fetch_favorites_task(token, p)
         }
         FavoritesMsg::PageInput(s) => {
-            accept_page_input(&mut state.favorites.page_input, s);
+            state.favorites.pager.accept_input(s);
             Task::none()
         }
-        FavoritesMsg::PageSubmit => {
-            if let Some(p) = submit_page(
-                state.favorites.page,
-                state.favorites.pages,
-                &mut state.favorites.page_input,
-            ) {
-                return update_favorites(state, FavoritesMsg::Page(p));
-            }
-            Task::none()
-        }
+        FavoritesMsg::PageSubmit => match state.favorites.pager.submit() {
+            Some(p) => update_favorites(state, FavoritesMsg::Page(p)),
+            None => Task::none(),
+        },
         FavoritesMsg::Delete(id) => {
             let Some(token) = state.auth_token.clone() else {
                 return Task::none();

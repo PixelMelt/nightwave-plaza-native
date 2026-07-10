@@ -72,38 +72,82 @@ impl WinType {
     }
 }
 
-#[derive(Default)]
-pub struct HistoryState {
-    pub list: Vec<HistoryEntry>,
+pub fn digits_input(field: &mut String, s: String) {
+    if s.chars().all(|c| c.is_ascii_digit()) {
+        *field = s;
+    }
+}
+
+pub struct Pager {
     pub page: u32,
     pub pages: u32,
     pub total: u32,
+    pub input: String,
+    pub loading: bool,
+}
+
+impl Default for Pager {
+    fn default() -> Self {
+        Self {
+            page: 1,
+            pages: 1,
+            total: 0,
+            input: "1".into(),
+            loading: false,
+        }
+    }
+}
+
+impl Pager {
+    pub fn goto(&mut self, page: u32) {
+        self.page = page;
+        self.input = page.to_string();
+        self.loading = true;
+    }
+
+    pub fn loaded(&mut self, pages: u32, total: u32) {
+        self.loading = false;
+        self.pages = pages;
+        self.total = total;
+        self.input = self.page.to_string();
+    }
+
+    pub fn accept_input(&mut self, s: String) {
+        digits_input(&mut self.input, s);
+    }
+
+    pub fn submit(&mut self) -> Option<u32> {
+        if let Ok(p) = self.input.parse::<u32>() {
+            let p = p.clamp(1, self.pages.max(1));
+            if p != self.page {
+                return Some(p);
+            }
+        }
+        self.input = self.page.to_string();
+        None
+    }
+}
+
+#[derive(Default)]
+pub struct HistoryState {
+    pub list: Vec<HistoryEntry>,
+    pub pager: Pager,
     pub date_from: String,
     pub date_to: String,
-    pub page_input: String,
-    pub loading: bool,
 }
 
 pub struct RatingsState {
     pub list: Vec<RatingEntry>,
-    pub page: u32,
-    pub pages: u32,
+    pub pager: Pager,
     pub range: String,
-    pub total: u32,
-    pub page_input: String,
-    pub loading: bool,
 }
 
 impl Default for RatingsState {
     fn default() -> Self {
         Self {
             list: Vec::new(),
-            page: 1,
-            pages: 1,
+            pager: Pager::default(),
             range: "overtime".to_string(),
-            total: 0,
-            page_input: "1".to_string(),
-            loading: false,
         }
     }
 }
@@ -139,10 +183,7 @@ pub struct RegisterState {
 #[derive(Default)]
 pub struct NewsState {
     pub list: Vec<ParsedNewsArticle>,
-    pub page: u32,
-    pub pages: u32,
-    pub page_input: String,
-    pub loading: bool,
+    pub pager: Pager,
 }
 
 #[derive(Debug, Clone)]
@@ -163,11 +204,7 @@ pub enum HtmlBlock {
 pub struct FavoritesState {
     pub list: Vec<api::FavoriteEntry>,
     pub deleted: Vec<u64>,
-    pub page: u32,
-    pub pages: u32,
-    pub total: u32,
-    pub page_input: String,
-    pub loading: bool,
+    pub pager: Pager,
     pub artwork: HashMap<String, image::Handle>,
 }
 
@@ -317,6 +354,53 @@ pub struct Plaza {
 }
 
 impl Plaza {
+    pub fn new(
+        main_window: iced::window::Id,
+        player: Option<Arc<AudioPlayer>>,
+        config: crate::config::Config,
+    ) -> Self {
+        Self {
+            main_window,
+            child_windows: HashMap::new(),
+            status: Status::default(),
+            player,
+            volume: 50.0,
+            artwork_handle: None,
+            artwork_url: String::new(),
+            history: HistoryState::default(),
+            ratings: RatingsState::default(),
+            song_info: SongInfoState::default(),
+            login: LoginState::default(),
+            register: RegisterState::default(),
+            news: NewsState::default(),
+            favorites: FavoritesState::default(),
+            export: ExportState::default(),
+            profile_edit: ProfileEditState::default(),
+            password: PasswordState::default(),
+            delete: DeleteState::default(),
+            timer: TimerState::default(),
+            elapsed: 0.0,
+            last_tick: Instant::now(),
+            main_focused: true,
+            error_msg: None,
+            welcome_until: Some(Instant::now() + std::time::Duration::from_secs(2)),
+            volume_text: None,
+            volume_text_until: None,
+            auth_token: None,
+            user: None,
+            user_stats: None,
+            stats_loading: false,
+            reaction_rate: 0,
+            reaction_song_id: String::new(),
+            config,
+            lastfm_token: None,
+            lastfm_busy: false,
+            lastfm_status: None,
+            scrobble: None,
+            discord_presence: crate::discord::DiscordHandle::spawn(),
+        }
+    }
+
     pub fn is_playing(&self) -> bool {
         self.player.as_ref().is_some_and(|p| p.is_playing())
     }

@@ -1,11 +1,10 @@
 use crate::state::{Msg, SongInfoMsg, WinType};
 use crate::theme;
 use crate::views::bevel::{bevel_button, menu_item, title_button};
+use crate::views::pixel;
 use chrono::{Local, TimeZone};
 use iced::widget::text::Shaping;
-use iced::widget::{
-    button, container, image, mouse_area, svg, text, text_input, Column, Row, Space,
-};
+use iced::widget::{button, container, image, mouse_area, text, text_input, Column, Row, Space};
 use iced::{Color, Element, Fill, Length, Padding, Theme};
 
 pub const ICON_FONT: iced::Font = iced::Font {
@@ -36,23 +35,6 @@ pub const IC_LIKE: &str = "\u{e9da}";
 const IC_RIGHT_HAND: &str = "\u{ea42}";
 const IC_LEFT_HAND: &str = "\u{ea44}";
 
-const CLOSE_SVG: &[u8] = b"<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 9 9'><line stroke='#000' stroke-width='1.5' x1='1.5' y1='1.5' x2='7.5' y2='7.5'/><line stroke='#000' stroke-width='1.5' x1='7.5' y1='1.5' x2='1.5' y2='7.5'/></svg>";
-const MINIMIZE_SVG: &[u8] = b"<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 9 9'><rect x='1' y='7' width='6' height='2' fill='#000'/></svg>";
-const DIVIDER_SVG: &[u8] = b"<svg width='100%' height='1' xmlns='http://www.w3.org/2000/svg'><line x1='0' y1='0' x2='100%' y2='0' stroke='#c8c8c8' stroke-width='1' stroke-dasharray='2,3'/></svg>";
-
-fn cached_svg_handle(bytes: &'static [u8]) -> svg::Handle {
-    use std::collections::HashMap;
-    use std::sync::{Mutex, OnceLock};
-    static CACHE: OnceLock<Mutex<HashMap<usize, svg::Handle>>> = OnceLock::new();
-    CACHE
-        .get_or_init(|| Mutex::new(HashMap::new()))
-        .lock()
-        .unwrap()
-        .entry(bytes.as_ptr() as usize)
-        .or_insert_with(|| svg::Handle::from_memory(bytes))
-        .clone()
-}
-
 const WIN_BALL: &[u8] = include_bytes!("../assets/icons/ball.png");
 const WIN_HELP: &[u8] = include_bytes!("../assets/icons/help_question_mark.png");
 const WIN_CALENDAR: &[u8] = include_bytes!("../assets/icons/calendar.png");
@@ -69,22 +51,6 @@ const WIN_RECYCLE: &[u8] = include_bytes!("../assets/icons/recycle_bin_full.png"
 const WIN_GEAR: &[u8] = include_bytes!("../assets/icons/settings_gear.png");
 const FAVICON: &[u8] = include_bytes!("../assets/icons/favicon-32x32.png");
 
-pub const HEART_RED: Color = Color::from_rgb(0.757, 0.153, 0.153);
-pub const FAVORITE_GOLD: Color = Color::from_rgb(1.0, 0.827, 0.0);
-pub const LINK_COLOR: Color = Color::from_rgb(0.024, 0.271, 0.678);
-pub const MUTED: Color = Color::from_rgb(0.4, 0.4, 0.4);
-pub use crate::theme::ERROR_RED;
-
-pub fn flat_button_style(text_color: Color) -> iced::widget::button::Style {
-    iced::widget::button::Style {
-        background: None,
-        border: iced::Border::default(),
-        shadow: iced::Shadow::default(),
-        text_color,
-        snap: false,
-    }
-}
-
 pub fn link_button<'a>(
     label: &'a str,
     size: impl Into<iced::Pixels>,
@@ -93,10 +59,10 @@ pub fn link_button<'a>(
     let btn = button(
         text(label)
             .size(size)
-            .color(LINK_COLOR)
+            .color(theme::LINK_COLOR)
             .line_height(iced::widget::text::LineHeight::Relative(1.5)),
     )
-    .style(|_, _| flat_button_style(LINK_COLOR))
+    .style(|_, _| theme::flat_button(theme::LINK_COLOR))
     .padding(0)
     .width(Fill);
     match msg {
@@ -110,7 +76,7 @@ pub fn link_button<'a>(
 
 pub fn form_error(error: &Option<String>) -> Element<'_, Msg> {
     match error {
-        Some(err) => text(err).size(11).color(ERROR_RED).into(),
+        Some(err) => text(err).size(11).color(theme::ERROR_RED).into(),
         None => Space::new().height(0).into(),
     }
 }
@@ -167,12 +133,7 @@ fn bevel_layer<'a>(
     bg: Color,
     padding: Padding,
 ) -> iced::widget::Container<'a, Msg> {
-    container(content)
-        .style(move |_: &Theme| container::Style {
-            background: Some(iced::Background::Color(bg)),
-            ..Default::default()
-        })
-        .padding(padding)
+    container(content).style(theme::fill(bg)).padding(padding)
 }
 
 const TL: Padding = Padding {
@@ -190,44 +151,30 @@ const BR: Padding = Padding {
 
 fn bevel_2x<'a>(
     content: impl Into<Element<'a, Msg>>,
-    tl_outer: Color,
-    tl_inner: Color,
-    br_inner: Color,
-    br_outer: Color,
+    colors: theme::BevelColors,
 ) -> iced::widget::Container<'a, Msg> {
-    let l4 = bevel_layer(content, br_inner, BR);
-    let l3 = bevel_layer(l4, tl_inner, TL);
-    let l2 = bevel_layer(l3, br_outer, BR);
-    bevel_layer(l2, tl_outer, TL)
+    let l4 = bevel_layer(content, colors.br_inner, BR);
+    let l3 = bevel_layer(l4, colors.tl_inner, TL);
+    let l2 = bevel_layer(l3, colors.br_outer, BR);
+    bevel_layer(l2, colors.tl_outer, TL)
 }
 
 pub fn d3_raised_window<'a>(
     content: impl Into<Element<'a, Msg>>,
 ) -> iced::widget::Container<'a, Msg> {
-    bevel_2x(
-        content,
-        theme::LIGHT_GRAY,
-        theme::WHITE,
-        theme::DARK_GRAY,
-        theme::BLACK,
-    )
+    bevel_2x(content, theme::BEVEL_WINDOW)
 }
 
 pub fn d3_sunken<'a>(content: impl Into<Element<'a, Msg>>) -> iced::widget::Container<'a, Msg> {
-    bevel_2x(
-        content,
-        theme::DARK_GRAY,
-        theme::BLACK,
-        theme::LIGHT_GRAY,
-        theme::WHITE,
-    )
+    bevel_2x(content, theme::BEVEL_SUNKEN)
 }
 
 pub fn d3_thin_sunken<'a>(
     content: impl Into<Element<'a, Msg>>,
 ) -> iced::widget::Container<'a, Msg> {
-    let inner = bevel_layer(content, theme::WHITE, BR);
-    bevel_layer(inner, theme::DARK_GRAY, TL)
+    let (tl, br) = theme::THIN_SUNKEN;
+    let inner = bevel_layer(content, br, BR);
+    bevel_layer(inner, tl, TL)
 }
 
 fn win_icon_bytes(wt: Option<&WinType>) -> &'static [u8] {
@@ -256,7 +203,7 @@ fn win_icon_bytes(wt: Option<&WinType>) -> &'static [u8] {
 pub fn icon_like<'a>() -> iced::widget::Text<'a, Theme> {
     text(IC_LIKE)
         .font(ICON_FONT)
-        .color(HEART_RED)
+        .color(theme::HEART_RED)
         .shaping(Shaping::Advanced)
 }
 
@@ -275,10 +222,7 @@ fn menu_btn_underline(label: &str, msg: Msg) -> Element<'_, Msg> {
 
     let first_col = iced::widget::column![
         text(first).size(11),
-        container(Space::new().width(7).height(1)).style(move |_: &Theme| container::Style {
-            background: Some(iced::Background::Color(theme::BLACK)),
-            ..Default::default()
-        }),
+        container(Space::new().width(7).height(1)).style(theme::fill(theme::BLACK)),
     ]
     .spacing(0);
 
@@ -299,13 +243,12 @@ where
 }
 
 pub fn divider<'a>() -> Element<'a, Msg> {
-    let svg_widget = svg(cached_svg_handle(DIVIDER_SVG))
-        .width(iced::Fill)
-        .height(1);
-    container(svg_widget)
-        .width(iced::Fill)
-        .height(1)
-        .clip(true)
+    pixel::dashed_line(theme::DIVIDER_GRAY).into()
+}
+
+pub fn separator<'a>() -> Element<'a, Msg> {
+    container(Space::new().width(Fill).height(1))
+        .style(theme::separator)
         .into()
 }
 
@@ -431,8 +374,9 @@ pub fn title_bar(
         .align_y(iced::Alignment::Center)
         .height(16);
 
-    let min_svg = svg(cached_svg_handle(MINIMIZE_SVG)).width(9).height(9);
-    let min_content = container(min_svg).center_x(Fill).center_y(Fill);
+    let min_content = container(pixel::minimize_glyph())
+        .center_x(Fill)
+        .center_y(Fill);
     buttons = buttons.push(
         title_button(min_content)
             .on_press(Msg::MinimizeWin(wid))
@@ -440,8 +384,9 @@ pub fn title_bar(
             .height(16),
     );
 
-    let close_svg = svg(cached_svg_handle(CLOSE_SVG)).width(9).height(9);
-    let close_content = container(close_svg).center_x(Fill).center_y(Fill);
+    let close_content = container(pixel::close_glyph())
+        .center_x(Fill)
+        .center_y(Fill);
     buttons = buttons.push(
         title_button(close_content)
             .on_press(Msg::CloseWin(wid))
@@ -577,27 +522,24 @@ pub fn song_list<'a, T>(
 }
 
 pub fn paginate<'a>(
-    page: u32,
-    pages: u32,
-    loading: bool,
-    page_input: &'a str,
+    pager: &'a crate::state::Pager,
     page_msg: impl Fn(u32) -> Msg,
     input_msg: impl Fn(String) -> Msg + 'a,
     submit_msg: Msg,
 ) -> Element<'a, Msg> {
+    let (page, pages) = (pager.page, pager.pages);
     if pages <= 1 {
         return Space::new().width(0).into();
     }
-    let prev = (page > 1 && !loading).then(|| page_msg(page - 1));
-    let next = (page < pages && !loading).then(|| page_msg(page + 1));
-    pagination(page_input, input_msg, submit_msg, prev, next)
+    let prev = (page > 1 && !pager.loading).then(|| page_msg(page - 1));
+    let next = (page < pages && !pager.loading).then(|| page_msg(page + 1));
+    pagination(&pager.input, input_msg, submit_msg, prev, next)
 }
 
 pub fn paged_footer<'a>(
     pages_row: Element<'a, Msg>,
     wid: iced::window::Id,
-    pages: u32,
-    total: u32,
+    pager: &crate::state::Pager,
 ) -> Element<'a, Msg> {
     let bottom = Row::new()
         .push(pages_row)
@@ -606,8 +548,8 @@ pub fn paged_footer<'a>(
         .align_y(iced::Alignment::Center)
         .padding([4, 0]);
     let status = status_bar(vec![
-        text(format!("Pages: {pages}")).size(10).into(),
-        text(format!("Songs: {total}")).size(10).into(),
+        text(format!("Pages: {}", pager.pages)).size(10).into(),
+        text(format!("Songs: {}", pager.total)).size(10).into(),
     ]);
     Column::new()
         .push(bottom)

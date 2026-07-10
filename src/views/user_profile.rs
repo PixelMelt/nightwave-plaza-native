@@ -53,9 +53,7 @@ fn render_user_card(state: &Plaza) -> Element<'_, Msg> {
     let user_info = column![
         text(username).size(14).font(bold),
         Space::new().height(4),
-        text(email)
-            .size(11)
-            .color(iced::Color::from_rgb(0.5, 0.5, 0.5)),
+        text(email).size(11).color(theme::DISABLED),
     ];
 
     let user_card = row![

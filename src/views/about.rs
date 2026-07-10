@@ -1,8 +1,6 @@
 use crate::state::Msg;
 use crate::theme;
-use crate::views::{
-    bold_font, d3_sunken, link_button, raised_btn, static_image, status_bar,
-};
+use crate::views::{bold_font, d3_sunken, link_button, raised_btn, static_image, status_bar};
 use iced::widget::{column, container, image, row, text, Space};
 use iced::{Element, Fill, Padding};
 

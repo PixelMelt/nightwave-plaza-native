@@ -1,16 +1,18 @@
 use crate::state::{HtmlBlock, Msg, NewsMsg, ParsedNewsArticle, Plaza};
+use crate::theme::MUTED;
 use crate::views::{
-    bold_font, close_btn, empty_panel, format_date, loading_panel, paginate, scroll_panel, MUTED,
+    bold_font, close_btn, empty_panel, format_date, loading_panel, paginate, scroll_panel,
+    separator,
 };
 use tl::{Node, Parser};
 
-use iced::widget::{column, container, rich_text, row, span, text, Column, Space};
+use iced::widget::{column, rich_text, row, span, text, Column, Space};
 use iced::{Element, Fill};
 
 pub fn view(state: &Plaza, wid: iced::window::Id) -> Element<'_, Msg> {
     let bold = bold_font();
 
-    let content_area: Element<Msg> = if state.news.loading {
+    let content_area: Element<Msg> = if state.news.pager.loading {
         loading_panel()
     } else if state.news.list.is_empty() {
         empty_panel("No news.")
@@ -69,14 +71,7 @@ pub fn view(state: &Plaza, wid: iced::window::Id) -> Element<'_, Msg> {
             articles = articles.push(article_col);
 
             if idx < state.news.list.len() - 1 {
-                articles = articles.push(container(Space::new().width(Fill).height(1)).style(
-                    |_: &iced::Theme| container::Style {
-                        background: Some(iced::Background::Color(iced::Color::from_rgb(
-                            0.78, 0.78, 0.78,
-                        ))),
-                        ..Default::default()
-                    },
-                ));
+                articles = articles.push(separator());
             }
         }
 
@@ -84,10 +79,7 @@ pub fn view(state: &Plaza, wid: iced::window::Id) -> Element<'_, Msg> {
     };
 
     let pages_row = paginate(
-        state.news.page,
-        state.news.pages,
-        state.news.loading,
-        &state.news.page_input,
+        &state.news.pager,
         |p| Msg::News(NewsMsg::Page(p)),
         |s| Msg::News(NewsMsg::PageInput(s)),
         Msg::News(NewsMsg::PageSubmit),

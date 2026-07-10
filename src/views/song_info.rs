@@ -1,9 +1,9 @@
 use crate::state::{Msg, Plaza, SongInfoMsg};
-use crate::theme;
+use crate::theme::{self, FAVORITE_GOLD};
 use crate::views::bevel_button;
 use crate::views::{
     bold_font, close_btn, d3_sunken, d3_thin_sunken, format_date, format_time, icon_clock,
-    icon_like, loading_panel, shaped, status_bar, FAVORITE_GOLD, ICON_FONT, IC_FAVORITE,
+    icon_like, loading_panel, shaped, status_bar, ICON_FONT, IC_FAVORITE,
 };
 use iced::widget::{column, container, image, row, text, Space};
 use iced::{Element, Fill};

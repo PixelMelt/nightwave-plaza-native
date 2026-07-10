@@ -5,7 +5,7 @@ use souvlaki::{MediaControlEvent, MediaControls, MediaMetadata, MediaPlayback, M
 use std::io::{self, Read, Seek, SeekFrom};
 use std::sync::{
     atomic::{AtomicBool, Ordering},
-    Arc, Mutex,
+    Arc, Condvar, Mutex,
 };
 use std::time::Duration;
 
@@ -20,9 +20,10 @@ const RECONNECT_DELAY: Duration = Duration::from_secs(2);
 pub struct AudioPlayer {
     _stream: MixerDeviceSink,
     player: Arc<Player>,
-    muted: Arc<AtomicBool>,
+    playing: Arc<AtomicBool>,
+    wake: Arc<Condvar>,
+    wake_lock: Arc<Mutex<()>>,
     streaming: Arc<AtomicBool>,
-    target_volume: Mutex<f32>,
     controls: Mutex<Option<MediaControls>>,
     progress: Mutex<Option<Duration>>,
 }
@@ -46,16 +47,20 @@ impl AudioPlayer {
         let this = Self {
             _stream: stream,
             player: Arc::new(player),
-            muted: Arc::new(AtomicBool::new(false)),
+            playing: Arc::new(AtomicBool::new(true)),
+            wake: Arc::new(Condvar::new()),
+            wake_lock: Arc::new(Mutex::new(())),
             streaming: Arc::new(AtomicBool::new(false)),
-            target_volume: Mutex::new(DEFAULT_VOLUME),
             controls: Mutex::new(controls),
             progress: Mutex::new(None),
         };
 
         let player = this.player.clone();
+        let playing = this.playing.clone();
+        let wake = this.wake.clone();
+        let wake_lock = this.wake_lock.clone();
         let streaming = this.streaming.clone();
-        std::thread::spawn(move || stream_forever(player, streaming));
+        std::thread::spawn(move || stream_forever(player, playing, wake, wake_lock, streaming));
 
         this.emit_playback();
 
@@ -63,7 +68,7 @@ impl AudioPlayer {
     }
 
     pub fn is_playing(&self) -> bool {
-        !self.muted.load(Ordering::Relaxed)
+        self.playing.load(Ordering::Relaxed)
     }
 
     pub fn is_streaming(&self) -> bool {
@@ -71,27 +76,23 @@ impl AudioPlayer {
     }
 
     pub fn set_volume(&self, vol: f32) {
-        let v = vol.clamp(0.0, 1.0);
-        *self.target_volume.lock().unwrap() = v;
-        if !self.muted.load(Ordering::Relaxed) {
-            self.player.set_volume(v);
-        }
+        self.player.set_volume(vol.clamp(0.0, 1.0));
     }
 
     pub fn play(&self) {
-        if !self.muted.swap(false, Ordering::Relaxed) {
+        if self.playing.swap(true, Ordering::Relaxed) {
             return;
         }
-        let v = *self.target_volume.lock().unwrap();
-        self.player.set_volume(v);
+        self.player.play();
+        self.wake.notify_all();
         self.emit_playback();
     }
 
     pub fn stop(&self) {
-        if self.muted.swap(true, Ordering::Relaxed) {
+        if !self.playing.swap(false, Ordering::Relaxed) {
             return;
         }
-        self.player.set_volume(0.0);
+        self.player.clear();
         self.emit_playback();
     }
 
@@ -116,10 +117,10 @@ impl AudioPlayer {
 
     fn emit_playback(&self) {
         let progress = (*self.progress.lock().unwrap()).map(MediaPosition);
-        let playback = if self.muted.load(Ordering::Relaxed) {
-            MediaPlayback::Paused { progress }
-        } else {
+        let playback = if self.playing.load(Ordering::Relaxed) {
             MediaPlayback::Playing { progress }
+        } else {
+            MediaPlayback::Paused { progress }
         };
         if let Some(controls) = self.controls.lock().unwrap().as_mut() {
             let _ = controls.set_playback(playback);
@@ -151,18 +152,33 @@ fn build_controls(
     Ok(controls)
 }
 
-fn stream_forever(player: Arc<Player>, streaming: Arc<AtomicBool>) {
+fn stream_forever(
+    player: Arc<Player>,
+    playing: Arc<AtomicBool>,
+    wake: Arc<Condvar>,
+    wake_lock: Arc<Mutex<()>>,
+    streaming: Arc<AtomicBool>,
+) {
     loop {
-        if let Err(e) = stream_once(&player, &streaming) {
+        {
+            let mut guard = wake_lock.lock().unwrap();
+            while !playing.load(Ordering::Relaxed) {
+                guard = wake.wait(guard).unwrap();
+            }
+        }
+        if let Err(e) = stream_once(&player, &playing, &streaming) {
             eprintln!("Audio stream error: {e}");
         }
         streaming.store(false, Ordering::Relaxed);
-        std::thread::sleep(RECONNECT_DELAY);
+        if playing.load(Ordering::Relaxed) {
+            std::thread::sleep(RECONNECT_DELAY);
+        }
     }
 }
 
 fn stream_once(
     player: &Player,
+    playing: &AtomicBool,
     streaming: &AtomicBool,
 ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     let url = format!(
@@ -195,6 +211,9 @@ fn stream_once(
             prebuffer_len
         };
         if buf.len() >= threshold {
+            if !playing.load(Ordering::Relaxed) {
+                return Ok(());
+            }
             let chunk = std::mem::replace(&mut buf, Vec::with_capacity(chunk_len));
             player.append(SamplesBuffer::new(channels, sample_rate, chunk));
             if !prebuffered {
@@ -204,7 +223,7 @@ fn stream_once(
         }
     }
 
-    if !buf.is_empty() {
+    if !buf.is_empty() && playing.load(Ordering::Relaxed) {
         player.append(SamplesBuffer::new(channels, sample_rate, buf));
     }
 

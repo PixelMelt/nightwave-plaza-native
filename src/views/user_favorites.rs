@@ -30,10 +30,10 @@ pub fn view(state: &Plaza, wid: iced::window::Id) -> Element<'_, Msg> {
     .padding([4, 0]);
 
     let status = status_bar(vec![
-        text(format!("Pages: {}", state.favorites.pages))
+        text(format!("Pages: {}", state.favorites.pager.pages))
             .size(10)
             .into(),
-        text(format!("Songs: {}", state.favorites.total))
+        text(format!("Songs: {}", state.favorites.pager.total))
             .size(10)
             .into(),
     ]);
@@ -51,7 +51,7 @@ pub fn view(state: &Plaza, wid: iced::window::Id) -> Element<'_, Msg> {
 }
 
 fn render_list_area(state: &Plaza) -> Element<'_, Msg> {
-    if state.favorites.loading {
+    if state.favorites.pager.loading {
         loading_panel()
     } else if state.favorites.list.is_empty() {
         empty_panel("Your list is empty. Like a song to add it here.")
@@ -74,7 +74,7 @@ fn render_row<'a>(
     deleted: bool,
     art: Option<&image::Handle>,
 ) -> Element<'a, Msg> {
-    let muted = iced::Color::from_rgb(0.5, 0.5, 0.5);
+    let muted = theme::DISABLED;
     let row_color = if deleted { muted } else { theme::BLACK };
 
     let thumb: Element<Msg> = match art {
@@ -103,7 +103,11 @@ fn render_row<'a>(
     let action: Element<Msg> = if deleted {
         text("Removed").size(10).color(muted).into()
     } else {
-        link_button("Remove", 10, Some(Msg::Favorites(FavoritesMsg::Delete(entry.id))))
+        link_button(
+            "Remove",
+            10,
+            Some(Msg::Favorites(FavoritesMsg::Delete(entry.id))),
+        )
     };
 
     row![
@@ -120,10 +124,7 @@ fn render_row<'a>(
 
 fn render_pagination(state: &Plaza) -> Element<'_, Msg> {
     paginate(
-        state.favorites.page,
-        state.favorites.pages,
-        state.favorites.loading,
-        &state.favorites.page_input,
+        &state.favorites.pager,
         |p| Msg::Favorites(FavoritesMsg::Page(p)),
         |s| Msg::Favorites(FavoritesMsg::PageInput(s)),
         Msg::Favorites(FavoritesMsg::PageSubmit),

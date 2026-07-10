@@ -1,6 +1,7 @@
 use crate::state::{DiscordMsg, LastfmMsg, Msg, Plaza, WinType};
+use crate::theme::MUTED;
 use crate::views::bevel_button;
-use crate::views::{bold_font, close_btn, group_box, link_button, MUTED};
+use crate::views::{bold_font, close_btn, group_box, link_button};
 use iced::widget::{checkbox, column, row, text, Space};
 use iced::{Element, Fill};
 

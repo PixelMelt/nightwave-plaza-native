@@ -3,6 +3,7 @@ pub mod bevel;
 pub mod credits;
 pub mod history;
 pub mod news;
+pub mod pixel;
 pub mod player;
 pub mod player_timer;
 pub mod ratings;
