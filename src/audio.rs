@@ -24,6 +24,9 @@ const DEFAULT_VOLUME: f32 = 0.5;
 const RECONNECT_DELAY: Duration = Duration::from_secs(2);
 /// How often the streaming thread checks whether the OS default output device changed.
 const DEVICE_POLL: Duration = Duration::from_secs(2);
+/// Device buffer length. Radio does not need low latency, and a longer buffer
+/// means far fewer audio callback wakeups than rodio's 50 ms default.
+const DEVICE_BUFFER: Duration = Duration::from_millis(200);
 
 /// Format of the app-owned mixer that sits between the player and whatever
 /// output device is currently open.
@@ -40,8 +43,9 @@ pub struct AudioPlayer {
 struct Shared {
     /// Player connected to the app-owned mixer; survives output device changes.
     player: Player,
-    /// Output side of the app-owned mixer, pulled by the currently open device sink.
-    relay: Arc<Mutex<MixerSource>>,
+    /// Output side of the app-owned mixer. Parked here between device sinks;
+    /// the open sink's `Relay` owns it while it plays.
+    relay: Arc<Mutex<Option<MixerSource>>>,
     playing: AtomicBool,
     streaming: AtomicBool,
     /// Set by the device error callback (e.g. device unplugged); forces a reopen.
@@ -61,7 +65,7 @@ impl AudioPlayer {
 
         let shared = Arc::new(Shared {
             player,
-            relay: Arc::new(Mutex::new(relay)),
+            relay: Arc::new(Mutex::new(Some(relay))),
             playing: AtomicBool::new(true),
             streaming: AtomicBool::new(false),
             device_lost: Arc::new(AtomicBool::new(false)),
@@ -174,16 +178,28 @@ fn build_controls(tx: UnboundedSender<Msg>) -> Result<MediaControls, souvlaki::E
     Ok(controls)
 }
 
-/// Feeds the app-owned mixer's output into a device sink's mixer. A fresh one
-/// is attached to every device sink we open, so the player's queue carries
-/// over untouched when the output device changes.
-struct Relay(Arc<Mutex<MixerSource>>);
+/// Feeds the app-owned mixer's output into a device sink's mixer. It owns the
+/// mixer output while its sink is open (no locking on the audio thread) and
+/// parks it back in the shared slot when the sink is dropped, so the player's
+/// queue carries over untouched when the output device changes.
+struct Relay {
+    slot: Arc<Mutex<Option<MixerSource>>>,
+    source: Option<MixerSource>,
+}
 
 impl Iterator for Relay {
     type Item = Sample;
 
     fn next(&mut self) -> Option<Sample> {
-        Some(self.0.lock().unwrap().next().unwrap_or(0.0))
+        Some(self.source.as_mut().and_then(|s| s.next()).unwrap_or(0.0))
+    }
+}
+
+impl Drop for Relay {
+    fn drop(&mut self) {
+        if let Some(source) = self.source.take() {
+            *self.slot.lock().unwrap() = Some(source);
+        }
     }
 }
 
@@ -221,6 +237,26 @@ fn default_device_id() -> Option<DeviceId> {
         .ok()
 }
 
+fn open_sink(
+    device: &rodio::cpal::Device,
+    lost: &Arc<AtomicBool>,
+    buffer: Option<u32>,
+) -> Result<MixerDeviceSink, BoxError> {
+    let lost = lost.clone();
+    let mut builder = DeviceSinkBuilder::from_device(device.clone())?;
+    if let Some(frames) = buffer {
+        builder = builder.with_buffer_size(rodio::cpal::BufferSize::Fixed(frames));
+    }
+    let mut sink = builder
+        .with_error_callback(move |e| {
+            eprintln!("Audio device error: {e}");
+            lost.store(true, Ordering::Relaxed);
+        })
+        .open_stream()?;
+    sink.log_on_drop(false);
+    Ok(sink)
+}
+
 fn open_output(shared: &Shared) -> Result<Output, BoxError> {
     let host = rodio::cpal::default_host();
     let device = host
@@ -229,15 +265,13 @@ fn open_output(shared: &Shared) -> Result<Output, BoxError> {
     let id = device.id().ok();
 
     let open = |device: rodio::cpal::Device| -> Result<MixerDeviceSink, BoxError> {
-        let lost = shared.device_lost.clone();
-        let mut sink = DeviceSinkBuilder::from_device(device)?
-            .with_error_callback(move |e| {
-                eprintln!("Audio device error: {e}");
-                lost.store(true, Ordering::Relaxed);
-            })
-            .open_stream()?;
-        sink.log_on_drop(false);
-        Ok(sink)
+        // Prefer a long buffer; fall back to the device default if refused.
+        let frames = device
+            .default_output_config()
+            .ok()
+            .map(|c| c.sample_rate() * DEVICE_BUFFER.as_millis() as u32 / 1000);
+        open_sink(&device, &shared.device_lost, frames)
+            .or_else(|_| open_sink(&device, &shared.device_lost, None))
     };
 
     // Like rodio's open_default_sink: fall back to any other working device.
@@ -247,7 +281,19 @@ fn open_output(shared: &Shared) -> Result<Output, BoxError> {
             .and_then(|devices| devices.filter_map(|d| open(d).ok()).next())
             .ok_or(err)
     })?;
-    sink.mixer().add(Relay(shared.relay.clone()));
+
+    // The previous sink hands the mixer output back when its stream is torn
+    // down; if that has not happened yet the caller simply retries later.
+    let source = shared
+        .relay
+        .lock()
+        .unwrap()
+        .take()
+        .ok_or("previous audio output is still shutting down")?;
+    sink.mixer().add(Relay {
+        slot: shared.relay.clone(),
+        source: Some(source),
+    });
 
     Ok(Output {
         _sink: sink,

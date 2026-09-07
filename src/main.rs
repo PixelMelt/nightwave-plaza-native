@@ -214,21 +214,25 @@ fn win_view(state: &Plaza, wid: iced::window::Id) -> Element<'_, Msg> {
 fn subscription(state: &Plaza) -> Subscription<Msg> {
     let is_playing = state.is_playing();
 
-    // The clock text only needs ticking while it is visible and changing.
+    // The clock shows whole seconds, so one tick per second is enough, and
+    // only while the clock is visible and changing (or the sleep timer runs).
     let display_active = state.main_focused()
         && (is_playing || state.welcome_until.is_some() || state.volume_text_until.is_some());
-    let tick_period = if display_active {
-        Some(Duration::from_millis(500))
-    } else if state.timer.until.is_some() {
-        Some(Duration::from_secs(1))
-    } else {
-        None
-    };
+    let tick_period =
+        (display_active || state.timer.until.is_some()).then(|| Duration::from_secs(1));
 
-    let refresh_period = if is_playing {
-        Duration::from_secs(5)
-    } else {
-        Duration::from_secs(30)
+    // Poll status when the current song should have ended, and otherwise
+    // every 30 s for the listener and like counts. The period is derived from
+    // the last status only, so the subscription restarts exactly when a new
+    // status arrives and its countdown starts from that moment.
+    let refresh_period = {
+        let song = &state.status.song;
+        let remaining = if is_playing && song.length > 0.0 {
+            Duration::from_secs_f64((song.length - song.position).max(0.0)) + Duration::from_secs(1)
+        } else {
+            Duration::MAX
+        };
+        remaining.clamp(Duration::from_secs(2), Duration::from_secs(30))
     };
 
     let mut subs = vec![
