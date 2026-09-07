@@ -1,4 +1,4 @@
-use crate::state::{Msg, SongInfoMsg, WinType};
+use crate::state::{Msg, PageMsg, SongInfoMsg, WinType};
 use crate::theme;
 use crate::views::bevel::{bevel_button, menu_item, title_button};
 use crate::views::pixel;
@@ -27,9 +27,7 @@ pub fn static_image(bytes: &'static [u8]) -> image::Handle {
         .clone()
 }
 
-const IC_CLOCK: &str = "\u{e94e}";
-pub const IC_USER: &str = "\u{e971}";
-pub const IC_COG: &str = "\u{e994}";
+pub const IC_CLOCK: &str = "\u{e94e}";
 pub const IC_FAVORITE: &str = "\u{e9d9}";
 pub const IC_LIKE: &str = "\u{e9da}";
 const IC_RIGHT_HAND: &str = "\u{ea42}";
@@ -49,7 +47,7 @@ const WIN_WORLD_STAR: &[u8] = include_bytes!("../assets/icons/world_star.png");
 const WIN_CLOCK: &[u8] = include_bytes!("../assets/icons/clock.png");
 const WIN_RECYCLE: &[u8] = include_bytes!("../assets/icons/recycle_bin_full.png");
 const WIN_GEAR: &[u8] = include_bytes!("../assets/icons/settings_gear.png");
-const FAVICON: &[u8] = include_bytes!("../assets/icons/favicon-32x32.png");
+const STATUS_GRIP: &[u8] = include_bytes!("../assets/icons/statusbar.png");
 
 pub fn link_button<'a>(
     label: &'a str,
@@ -196,7 +194,7 @@ fn win_icon_bytes(wt: Option<&WinType>) -> &'static [u8] {
         Some(WinType::UserProfileDelete) => WIN_RECYCLE,
         Some(WinType::PlayerTimer) => WIN_CLOCK,
         Some(WinType::Settings) => WIN_GEAR,
-        None => FAVICON,
+        None => WIN_BALL,
     }
 }
 
@@ -330,17 +328,36 @@ pub fn pagination<'a>(
     r.into()
 }
 
-pub fn status_bar<'a>(cells: Vec<Element<'a, Msg>>) -> Element<'a, Msg> {
-    let mut r = Row::new().spacing(2);
-    for cell in cells {
-        r = r.push(d3_thin_sunken(
-            container(cell).style(theme::panel).padding([3, 4]),
-        ));
+/// Cells are (content, portion): portion 0 = shrink to content (web `col-auto`),
+/// n > 0 = FillPortion(n) (web `col` / `col-N`).
+pub fn status_bar<'a>(cells: Vec<(Element<'a, Msg>, u16)>) -> Element<'a, Msg> {
+    let mut r = Row::new().spacing(2).width(iced::Fill);
+    for (cell, portion) in cells {
+        let inner = container(cell)
+            .style(theme::panel)
+            .padding([3, 4])
+            .width(iced::Fill);
+        let boxed = d3_thin_sunken(inner);
+        if portion > 0 {
+            r = r.push(boxed.width(Length::FillPortion(portion)));
+        } else {
+            r = r.push(boxed);
+        }
     }
-    container(r)
+    let grip = container(image(static_image(STATUS_GRIP)).width(12).height(16))
+        .width(iced::Fill)
+        .height(iced::Fill)
+        .align_x(iced::alignment::Horizontal::Right)
+        .align_y(iced::alignment::Vertical::Bottom);
+    container(iced::widget::stack![r, grip])
         .style(theme::panel)
         .width(iced::Fill)
-        .padding([2, 1])
+        .padding(Padding {
+            top: 2.0,
+            right: 1.0,
+            bottom: 1.0,
+            left: 1.0,
+        })
         .into()
 }
 
@@ -348,6 +365,7 @@ pub fn title_bar(
     title: String,
     wid: iced::window::Id,
     wt: Option<&WinType>,
+    active: bool,
 ) -> Element<'static, Msg> {
     let icon_bytes = win_icon_bytes(wt);
     let icon = image(static_image(icon_bytes)).width(16).height(16);
@@ -397,11 +415,16 @@ pub fn title_bar(
     let bar = Row::new()
         .push(drag_area)
         .push(buttons)
+        .push(Space::new().width(1))
         .align_y(iced::Alignment::Center)
         .height(16);
 
     container(bar)
-        .style(theme::title_bar_bg)
+        .style(if active {
+            theme::title_bar_bg
+        } else {
+            theme::title_bar_bg_inactive
+        })
         .padding(2)
         .width(Fill)
         .into()
@@ -523,17 +546,17 @@ pub fn song_list<'a, T>(
 
 pub fn paginate<'a>(
     pager: &'a crate::state::Pager,
-    page_msg: impl Fn(u32) -> Msg,
-    input_msg: impl Fn(String) -> Msg + 'a,
-    submit_msg: Msg,
+    msg: impl Fn(PageMsg) -> Msg + 'a,
 ) -> Element<'a, Msg> {
     let (page, pages) = (pager.page, pager.pages);
     if pages <= 1 {
         return Space::new().width(0).into();
     }
-    let prev = (page > 1 && !pager.loading).then(|| page_msg(page - 1));
-    let next = (page < pages && !pager.loading).then(|| page_msg(page + 1));
-    pagination(&pager.input, input_msg, submit_msg, prev, next)
+    let prev = (page > 1 && !pager.loading).then(|| msg(PageMsg::Go(page - 1)));
+    let next = (page < pages && !pager.loading).then(|| msg(PageMsg::Go(page + 1)));
+    let submit = msg(PageMsg::Submit);
+    let input = move |s| msg(PageMsg::Input(s));
+    pagination(&pager.input, input, submit, prev, next)
 }
 
 pub fn paged_footer<'a>(
@@ -548,8 +571,8 @@ pub fn paged_footer<'a>(
         .align_y(iced::Alignment::Center)
         .padding([4, 0]);
     let status = status_bar(vec![
-        text(format!("Pages: {}", pager.pages)).size(10).into(),
-        text(format!("Songs: {}", pager.total)).size(10).into(),
+        (text(format!("Pages: {}", pager.pages)).size(10).into(), 0),
+        (text(format!("Songs: {}", pager.total)).size(10).into(), 1),
     ]);
     Column::new()
         .push(bottom)

@@ -4,7 +4,7 @@ use iced::advanced::widget::{tree, Tree, Widget};
 use iced::advanced::{mouse, Clipboard, Shell};
 use iced::event::Event;
 use iced::{
-    touch, Background, Border, Color, Element, Length, Padding, Rectangle, Shadow, Size, Vector,
+    touch, Background, Border, Color, Element, Length, Padding, Rectangle, Shadow, Size,
 };
 
 use crate::theme;
@@ -46,7 +46,12 @@ where
             style: BevelStyle::Object,
             width: Length::Shrink,
             height: Length::Shrink,
-            padding: Padding::new(4.0),
+            padding: Padding {
+                top: 2.0,
+                right: 6.0,
+                bottom: 3.0,
+                left: 6.0,
+            },
             active: false,
             status: None,
         }
@@ -54,23 +59,16 @@ where
 
     fn kind(&self, is_pressed: bool, is_mouse_over: bool) -> BevelKind {
         match self.style {
-            BevelStyle::Object => {
+            BevelStyle::Object | BevelStyle::TitleButton => {
                 if is_pressed {
                     BevelKind::Pressed
                 } else {
                     BevelKind::Object
                 }
             }
-            BevelStyle::TitleButton => {
-                if is_pressed {
-                    BevelKind::ThinPressed
-                } else {
-                    BevelKind::Thin
-                }
-            }
             BevelStyle::Menu => {
                 if self.on_press.is_some() && is_mouse_over {
-                    BevelKind::Window
+                    BevelKind::MenuHover
                 } else {
                     BevelKind::None
                 }
@@ -174,7 +172,7 @@ where
     ) {
         let bounds = layout.bounds();
         let state = tree.state.downcast_ref::<State>();
-        let (bevel, is_pressed) = self.visual(state, cursor.is_over(bounds));
+        let (bevel, _) = self.visual(state, cursor.is_over(bounds));
 
         if !matches!(bevel, BevelKind::None) {
             quad(renderer, bounds, theme::BG_GRAY);
@@ -182,30 +180,21 @@ where
 
         match bevel {
             BevelKind::Object => draw_symmetric_bevel(renderer, bounds, theme::BEVEL_RAISED),
-            BevelKind::Window => draw_symmetric_bevel(renderer, bounds, theme::BEVEL_WINDOW),
-            BevelKind::Thin => draw_thin_bevel(renderer, bounds, theme::THIN_RAISED),
-            BevelKind::ThinPressed => draw_thin_bevel(renderer, bounds, theme::THIN_PRESSED),
+            BevelKind::MenuHover => draw_thin_bevel(renderer, bounds, theme::THIN_MENU_HOVER),
             BevelKind::Pressed => draw_symmetric_bevel(renderer, bounds, theme::BEVEL_PRESSED),
             BevelKind::None => {}
         }
 
         let content_layout = layout.children().next().unwrap();
-        let translation = if is_pressed {
-            Vector::new(1.0, 1.0)
-        } else {
-            Vector::new(0.0, 0.0)
-        };
-        renderer.with_translation(translation, |renderer| {
-            self.content.as_widget().draw(
-                &tree.children[0],
-                renderer,
-                theme,
-                style,
-                content_layout,
-                cursor,
-                viewport,
-            );
-        });
+        self.content.as_widget().draw(
+            &tree.children[0],
+            renderer,
+            theme,
+            style,
+            content_layout,
+            cursor,
+            viewport,
+        );
     }
 
     fn update(
@@ -293,13 +282,11 @@ where
 enum BevelKind {
     None,
     Object,
-    Window,
-    Thin,
-    ThinPressed,
+    MenuHover,
     Pressed,
 }
 
-fn draw_thin_bevel<R: iced::advanced::Renderer>(
+pub(crate) fn draw_thin_bevel<R: iced::advanced::Renderer>(
     renderer: &mut R,
     b: Rectangle,
     (tl, br): (Color, Color),
@@ -316,7 +303,7 @@ fn draw_thin_bevel<R: iced::advanced::Renderer>(
     quad(renderer, edge(b.x + b.width - 1.0, b.y, 1.0, b.height), br);
 }
 
-fn draw_symmetric_bevel<R: iced::advanced::Renderer>(
+pub(crate) fn draw_symmetric_bevel<R: iced::advanced::Renderer>(
     renderer: &mut R,
     bounds: Rectangle,
     c: theme::BevelColors,
@@ -331,7 +318,7 @@ fn draw_symmetric_bevel<R: iced::advanced::Renderer>(
     draw_thin_bevel(renderer, inner, (c.tl_inner, c.br_inner));
 }
 
-fn quad<R: iced::advanced::Renderer>(renderer: &mut R, bounds: Rectangle, color: Color) {
+pub(crate) fn quad<R: iced::advanced::Renderer>(renderer: &mut R, bounds: Rectangle, color: Color) {
     renderer.fill_quad(
         renderer::Quad {
             bounds,

@@ -2,7 +2,6 @@ use crate::api::{self, HistoryEntry, RatingEntry, Status};
 use crate::audio::AudioPlayer;
 use iced::widget::image;
 use std::collections::HashMap;
-use std::sync::Arc;
 use std::time::Instant;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -47,6 +46,14 @@ impl WinType {
             WinType::PlayerTimer => iced::Size::new(280.0, 150.0),
             WinType::Settings => iced::Size::new(360.0, 340.0),
         }
+    }
+
+    /// Windows whose content is a scrolling list may be resized by the user.
+    pub fn resizable(&self) -> bool {
+        matches!(
+            self,
+            WinType::History | WinType::Ratings | WinType::News | WinType::UserFavorites
+        )
     }
 
     pub fn title(&self) -> &'static str {
@@ -98,6 +105,14 @@ impl Default for Pager {
     }
 }
 
+/// Interaction with a page control; shared by every paginated window.
+#[derive(Debug, Clone)]
+pub enum PageMsg {
+    Go(u32),
+    Input(String),
+    Submit,
+}
+
 impl Pager {
     pub fn goto(&mut self, page: u32) {
         self.page = page;
@@ -112,19 +127,28 @@ impl Pager {
         self.input = self.page.to_string();
     }
 
-    pub fn accept_input(&mut self, s: String) {
-        digits_input(&mut self.input, s);
-    }
-
-    pub fn submit(&mut self) -> Option<u32> {
-        if let Ok(p) = self.input.parse::<u32>() {
-            let p = p.clamp(1, self.pages.max(1));
-            if p != self.page {
-                return Some(p);
+    /// Applies a page control interaction; returns the page to fetch, if any.
+    pub fn apply(&mut self, msg: PageMsg) -> Option<u32> {
+        let page = match msg {
+            PageMsg::Go(p) => p,
+            PageMsg::Input(s) => {
+                digits_input(&mut self.input, s);
+                return None;
             }
-        }
-        self.input = self.page.to_string();
-        None
+            PageMsg::Submit => {
+                let parsed = self.input.parse::<u32>().ok();
+                let Some(p) = parsed
+                    .map(|p| p.clamp(1, self.pages.max(1)))
+                    .filter(|&p| p != self.page)
+                else {
+                    self.input = self.page.to_string();
+                    return None;
+                };
+                p
+            }
+        };
+        self.goto(page);
+        Some(page)
     }
 }
 
@@ -308,7 +332,7 @@ pub struct Plaza {
     pub main_window: iced::window::Id,
     pub child_windows: HashMap<iced::window::Id, WinType>,
     pub status: Status,
-    pub player: Option<Arc<AudioPlayer>>,
+    pub player: AudioPlayer,
     pub volume: f32,
     pub artwork_handle: Option<image::Handle>,
     pub artwork_url: String,
@@ -330,6 +354,7 @@ pub struct Plaza {
     pub last_tick: Instant,
 
     pub main_focused: bool,
+    pub focused_child: Option<iced::window::Id>,
     pub error_msg: Option<String>,
 
     pub welcome_until: Option<Instant>,
@@ -356,7 +381,7 @@ pub struct Plaza {
 impl Plaza {
     pub fn new(
         main_window: iced::window::Id,
-        player: Option<Arc<AudioPlayer>>,
+        player: AudioPlayer,
         config: crate::config::Config,
     ) -> Self {
         Self {
@@ -382,6 +407,7 @@ impl Plaza {
             elapsed: 0.0,
             last_tick: Instant::now(),
             main_focused: true,
+            focused_child: None,
             error_msg: None,
             welcome_until: Some(Instant::now() + std::time::Duration::from_secs(2)),
             volume_text: None,
@@ -402,31 +428,34 @@ impl Plaza {
     }
 
     pub fn is_playing(&self) -> bool {
-        self.player.as_ref().is_some_and(|p| p.is_playing())
+        self.player.is_playing()
     }
 
     pub fn is_streaming(&self) -> bool {
-        self.player.as_ref().is_some_and(|p| p.is_streaming())
+        self.player.is_streaming()
+    }
+
+    pub fn window_of(&self, wt: WinType) -> Option<iced::window::Id> {
+        self.child_windows
+            .iter()
+            .find(|(_, &t)| t == wt)
+            .map(|(&id, _)| id)
     }
 }
 
 #[derive(Debug, Clone)]
 pub enum HistoryMsg {
-    Ok(Vec<HistoryEntry>, u32, u32, Option<api::DateRange>),
+    Ok(api::HistoryResponse),
     Err(String),
-    Page(u32),
-    PageInput(String),
-    PageSubmit,
+    Page(PageMsg),
 }
 
 #[derive(Debug, Clone)]
 pub enum RatingsMsg {
     Ok(Vec<RatingEntry>, u32, u32),
     Err(String),
-    Page(u32),
+    Page(PageMsg),
     Range(String),
-    PageInput(String),
-    PageSubmit,
 }
 
 #[derive(Debug, Clone)]
@@ -434,7 +463,7 @@ pub enum SongInfoMsg {
     Open(String),
     Ok(api::SongResponse),
     Err(String),
-    ArtworkOk(Vec<u8>),
+    ArtworkOk(image::Handle),
     ArtworkErr,
     ToggleFavorite,
     FavoriteAdded(u64),
@@ -467,19 +496,15 @@ pub enum RegisterMsg {
 pub enum NewsMsg {
     Ok(Vec<api::NewsArticle>, u32),
     Err(String),
-    Page(u32),
-    PageInput(String),
-    PageSubmit,
+    Page(PageMsg),
 }
 
 #[derive(Debug, Clone)]
 pub enum FavoritesMsg {
     Ok(Vec<api::FavoriteEntry>, u32, u32),
-    ArtworkOk(String, Vec<u8>),
+    ArtworkOk(String, image::Handle),
     Err(String),
-    Page(u32),
-    PageInput(String),
-    PageSubmit,
+    Page(PageMsg),
     Delete(u64),
     DeleteOk(u64),
     DeleteErr(String),
@@ -551,8 +576,10 @@ pub enum Msg {
     StatusErr(String),
     Tick(Instant),
     TogglePlay,
+    /// The audio thread connected to or lost the stream; only the view changes.
+    StreamChanged,
     Volume(f32),
-    ArtworkOk(Vec<u8>),
+    ArtworkOk(image::Handle),
     ArtworkErr,
     OpenWin(WinType),
     CloseWin(iced::window::Id),

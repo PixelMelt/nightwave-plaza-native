@@ -1,4 +1,4 @@
-use iced::widget::{button, container, scrollable, slider, text_input};
+use iced::widget::{button, container, scrollable, text_input};
 use iced::{Background, Border, Color, Gradient, Shadow, Theme};
 
 pub const BG_GRAY: Color = Color::from_rgb(0.753, 0.753, 0.753);
@@ -13,6 +13,7 @@ pub const ERROR_RED: Color = Color::from_rgb(0.8, 0.0, 0.0);
 
 pub const HEART_RED: Color = Color::from_rgb(0.757, 0.153, 0.153);
 pub const FAVORITE_GOLD: Color = Color::from_rgb(1.0, 0.827, 0.0);
+pub const TIMER_BLUE: Color = Color::from_rgb(0.204, 0.333, 0.859); // #3455DB
 pub const LINK_COLOR: Color = Color::from_rgb(0.024, 0.271, 0.678);
 pub const MUTED: Color = Color::from_rgb(0.4, 0.4, 0.4);
 pub const DISABLED: Color = Color::from_rgb(0.5, 0.5, 0.5);
@@ -55,9 +56,8 @@ pub const BEVEL_SUNKEN: BevelColors = BevelColors {
     br_outer: WHITE,
 };
 
-pub const THIN_RAISED: (Color, Color) = (WHITE, BLACK);
-pub const THIN_PRESSED: (Color, Color) = (BLACK, DARK_GRAY);
 pub const THIN_SUNKEN: (Color, Color) = (DARK_GRAY, WHITE);
+pub const THIN_MENU_HOVER: (Color, Color) = (WHITE, DARK_GRAY);
 
 pub fn app_theme() -> Theme {
     static THEME: std::sync::OnceLock<Theme> = std::sync::OnceLock::new();
@@ -143,6 +143,18 @@ pub fn title_bar_bg(_t: &Theme) -> container::Style {
     }
 }
 
+pub fn title_bar_bg_inactive(_t: &Theme) -> container::Style {
+    container::Style {
+        background: Some(Background::Gradient(Gradient::Linear(
+            iced::gradient::Linear::new(iced::Radians(std::f32::consts::FRAC_PI_2))
+                .add_stop(0.0, DARK_GRAY)
+                .add_stop(1.0, BG_GRAY),
+        ))),
+        text_color: Some(BG_GRAY),
+        ..base_panel()
+    }
+}
+
 pub fn sunken_inner(_t: &Theme) -> container::Style {
     container::Style {
         background: Some(Background::Color(WHITE)),
@@ -203,24 +215,5 @@ pub fn page_input(_t: &Theme, _s: text_input::Status) -> text_input::Style {
         placeholder: DARK_GRAY,
         value: BLACK,
         selection: Color::from_rgb(0.0, 0.0, 0.5),
-    }
-}
-
-pub fn volume_slider(_t: &Theme, _s: slider::Status) -> slider::Style {
-    slider::Style {
-        rail: slider::Rail {
-            backgrounds: (Background::Color(DARK_GRAY), Background::Color(LIGHT_GRAY)),
-            width: 4.0,
-            border: solid_border(DARK_GRAY),
-        },
-        handle: slider::Handle {
-            shape: slider::HandleShape::Rectangle {
-                width: 12,
-                border_radius: 0.0.into(),
-            },
-            background: Background::Color(BG_GRAY),
-            border_color: BLACK,
-            border_width: 1.0,
-        },
     }
 }

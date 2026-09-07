@@ -6,14 +6,23 @@ arch=('x86_64')
 url="https://github.com/PixelMelt/nightwave-plaza-native"
 license=('GPL-3.0-or-later')
 depends=('alsa-lib' 'dbus')
-makedepends=('rust' 'cargo' 'pkgconf')
+makedepends=('rust' 'pkgconf')
+# Cargo.toml already sets lto/strip for release builds; keep makepkg from
+# injecting its own flags on top.
 options=('!lto' '!debug')
-\
+
 _reporoot="$startdir/.."
+
+prepare() {
+    cd "$_reporoot"
+    # Resolve every dependency here so build() can run offline with --frozen.
+    # Fails loudly if Cargo.lock is stale instead of silently updating it.
+    cargo fetch --locked --target "$(rustc -vV | sed -n 's/host: //p')"
+}
 
 build() {
     cd "$_reporoot"
-    cargo build --release --locked
+    cargo build --release --frozen
 }
 
 package() {

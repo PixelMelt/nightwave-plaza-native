@@ -30,12 +30,18 @@ pub fn view(state: &Plaza, wid: iced::window::Id) -> Element<'_, Msg> {
     .padding([4, 0]);
 
     let status = status_bar(vec![
-        text(format!("Pages: {}", state.favorites.pager.pages))
-            .size(10)
-            .into(),
-        text(format!("Songs: {}", state.favorites.pager.total))
-            .size(10)
-            .into(),
+        (
+            text(format!("Pages: {}", state.favorites.pager.pages))
+                .size(10)
+                .into(),
+            0,
+        ),
+        (
+            text(format!("Songs: {}", state.favorites.pager.total))
+                .size(10)
+                .into(),
+            1,
+        ),
     ]);
 
     column![
@@ -123,10 +129,7 @@ fn render_row<'a>(
 }
 
 fn render_pagination(state: &Plaza) -> Element<'_, Msg> {
-    paginate(
-        &state.favorites.pager,
-        |p| Msg::Favorites(FavoritesMsg::Page(p)),
-        |s| Msg::Favorites(FavoritesMsg::PageInput(s)),
-        Msg::Favorites(FavoritesMsg::PageSubmit),
-    )
+    paginate(&state.favorites.pager, |m| {
+        Msg::Favorites(FavoritesMsg::Page(m))
+    })
 }

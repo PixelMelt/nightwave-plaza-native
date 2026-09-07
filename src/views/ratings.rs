@@ -69,12 +69,7 @@ fn render_row(entry: &RatingEntry, rank: u32) -> Element<'_, Msg> {
 }
 
 fn render_pagination(state: &Plaza) -> Element<'_, Msg> {
-    paginate(
-        &state.ratings.pager,
-        |p| Msg::Ratings(RatingsMsg::Page(p)),
-        |s| Msg::Ratings(RatingsMsg::PageInput(s)),
-        Msg::Ratings(RatingsMsg::PageSubmit),
-    )
+    paginate(&state.ratings.pager, |m| Msg::Ratings(RatingsMsg::Page(m)))
 }
 
 fn range_btn(label: &'static str, range: &str, active: bool) -> Element<'static, Msg> {

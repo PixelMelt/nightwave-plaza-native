@@ -193,7 +193,9 @@ const API: &str = "https://api.plaza.one";
 const STATUS_URL: &str = "https://api.plaza.one/status";
 
 use crate::net::{agent, blocking, read_body};
+use iced::widget::image;
 use serde::de::DeserializeOwned;
+use std::io::Read;
 
 fn body_text(result: Result<ureq::Response, ureq::Error>) -> Result<String, String> {
     let (status, body) = read_body(result)?;
@@ -254,13 +256,25 @@ pub async fn fetch_news(page: u32) -> Result<PaginatedResponse<NewsArticle>, Str
     blocking(move || parse_json(agent().get(&url).call())).await
 }
 
-pub async fn fetch_artwork(url: &str) -> Result<Vec<u8>, String> {
+/// Downloads an image and decodes it off the UI thread, shrinking it to at
+/// most `max_px` on either side so the renderer never touches the original.
+pub async fn fetch_artwork(url: &str, max_px: u32) -> Result<image::Handle, String> {
     let url = url.to_string();
     blocking(move || {
         let resp = agent().get(&url).call().map_err(|e| e.to_string())?;
         let mut buf = Vec::new();
-        std::io::Read::read_to_end(&mut resp.into_reader(), &mut buf).map_err(|e| e.to_string())?;
-        Ok(buf)
+        resp.into_reader()
+            .read_to_end(&mut buf)
+            .map_err(|e| e.to_string())?;
+        let img = ::image::load_from_memory(&buf)
+            .map_err(|e| e.to_string())?
+            .thumbnail(max_px, max_px)
+            .into_rgba8();
+        Ok(image::Handle::from_rgba(
+            img.width(),
+            img.height(),
+            img.into_raw(),
+        ))
     })
     .await
 }

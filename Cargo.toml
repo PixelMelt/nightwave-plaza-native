@@ -14,13 +14,14 @@ iced = { version = "0.14", default-features = false, features = [
     "smol",
     "x11",
     "wayland",
-    "image",
+    "image-without-codecs",
     "advanced",
 ] }
 ureq = { version = "2", features = ["json"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 rodio = { version = "0.22", default-features = false, features = ["playback", "mp3"] }
+# iced decodes with whatever codecs are enabled here: png + jpeg is all the API serves.
 image = { version = "0.25", default-features = false, features = ["png", "jpeg"] }
 futures = "0.3"
 chrono = { version = "0.4", default-features = false, features = ["clock", "std"] }

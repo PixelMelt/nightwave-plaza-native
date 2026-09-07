@@ -108,7 +108,7 @@ pub fn view(state: &Plaza, wid: iced::window::Id) -> Element<'_, Msg> {
     let status_text = first_played
         .map(|fp| format!("First Played: {}", format_date(fp)))
         .unwrap_or_default();
-    let status = status_bar(vec![text(status_text).size(10).width(Fill).into()]);
+    let status = status_bar(vec![(text(status_text).size(10).into(), 1)]);
 
     column![panel, bottom, status].spacing(2).padding(2).into()
 }

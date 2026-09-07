@@ -1,9 +1,20 @@
 use futures::channel::oneshot;
 use std::sync::OnceLock;
+use std::time::Duration;
 
+/// Shared HTTP agent. The read timeout is what lets a dead connection
+/// (network drop, sleep/resume) surface as an error instead of blocking
+/// a request or the radio stream forever.
 pub fn agent() -> ureq::Agent {
     static A: OnceLock<ureq::Agent> = OnceLock::new();
-    A.get_or_init(|| ureq::AgentBuilder::new().build()).clone()
+    A.get_or_init(|| {
+        ureq::AgentBuilder::new()
+            .timeout_connect(Duration::from_secs(10))
+            .timeout_read(Duration::from_secs(15))
+            .timeout_write(Duration::from_secs(10))
+            .build()
+    })
+    .clone()
 }
 
 pub fn read_body(

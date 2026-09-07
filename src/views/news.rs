@@ -78,12 +78,7 @@ pub fn view(state: &Plaza, wid: iced::window::Id) -> Element<'_, Msg> {
         scroll_panel(articles)
     };
 
-    let pages_row = paginate(
-        &state.news.pager,
-        |p| Msg::News(NewsMsg::Page(p)),
-        |s| Msg::News(NewsMsg::PageInput(s)),
-        Msg::News(NewsMsg::PageSubmit),
-    );
+    let pages_row = paginate(&state.news.pager, |m| Msg::News(NewsMsg::Page(m)));
 
     let bottom = row![pages_row, Space::new().width(iced::Fill), close_btn(wid)]
         .align_y(iced::Alignment::Center)

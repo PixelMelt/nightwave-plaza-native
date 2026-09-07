@@ -18,6 +18,7 @@ pub mod user_profile;
 pub mod user_profile_delete;
 pub mod user_profile_edit;
 pub mod user_register;
+pub mod volume;
 pub mod widgets;
 
 pub use bevel::bevel_button;

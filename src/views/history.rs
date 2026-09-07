@@ -79,10 +79,5 @@ fn render_row(entry: &crate::api::HistoryEntry, bold: iced::Font) -> Element<'_,
 }
 
 fn render_pagination(state: &Plaza) -> Element<'_, Msg> {
-    paginate(
-        &state.history.pager,
-        |p| Msg::History(HistoryMsg::Page(p)),
-        |s| Msg::History(HistoryMsg::PageInput(s)),
-        Msg::History(HistoryMsg::PageSubmit),
-    )
+    paginate(&state.history.pager, |m| Msg::History(HistoryMsg::Page(m)))
 }

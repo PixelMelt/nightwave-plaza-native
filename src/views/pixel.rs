@@ -87,6 +87,8 @@ where
 
         match self.glyph {
             Glyph::Close => {
+                // plaza draws the close glyph as 1px SVG lines
+                // (1,1)-(8,8) and (8,1)-(1,8) inside a 9x9 box
                 for i in 0..7 {
                     let o = i as f32;
                     quad(
@@ -94,8 +96,8 @@ where
                         Rectangle {
                             x: b.x + 1.0 + o,
                             y: b.y + 1.0 + o,
-                            width: 1.5,
-                            height: 1.5,
+                            width: 1.0,
+                            height: 1.0,
                         },
                         theme::BLACK,
                     );
@@ -104,8 +106,8 @@ where
                         Rectangle {
                             x: b.x + 7.0 - o,
                             y: b.y + 1.0 + o,
-                            width: 1.5,
-                            height: 1.5,
+                            width: 1.0,
+                            height: 1.0,
                         },
                         theme::BLACK,
                     );

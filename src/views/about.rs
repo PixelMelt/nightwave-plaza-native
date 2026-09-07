@@ -130,10 +130,9 @@ pub fn view(wid: iced::window::Id) -> Element<'static, Msg> {
     ];
 
     let version = env!("CARGO_PKG_VERSION");
-    let status = status_bar(vec![text(format!("Version: {}", version))
+    let status = status_bar(vec![(text(format!("Version: {}", version))
         .size(10)
-        .width(Fill)
-        .into()]);
+        .into(), 1)]);
 
     column![
         top_row,

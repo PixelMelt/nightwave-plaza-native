@@ -11,8 +11,39 @@ env:
   CARGO_TERM_COLOR: always
 
 jobs:
+  # Fails fast (seconds, not minutes) on the two things that have broken
+  # releases before: a stale Cargo.lock, which makes every `--locked` build
+  # (Arch, Debian) fail, and a tag that does not match Cargo.toml.
+  check:
+    name: Check lockfile & version
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Verify Cargo.lock is up to date
+        run: |
+          if ! cargo metadata --locked --format-version 1 >/dev/null; then
+            echo "::error::Cargo.lock is out of date — run 'cargo update --workspace' (or 'cargo build') and commit Cargo.lock."
+            exit 1
+          fi
+
+      - name: Verify tag matches Cargo.toml version
+        if: startsWith(github.ref, 'refs/tags/v')
+        run: |
+          cargo_ver=$(sed -n 's/^version *= *"\([^"]*\)".*/\1/p' Cargo.toml | head -n1)
+          tag_ver=${GITHUB_REF_NAME#v}
+          echo "Cargo.toml: $cargo_ver | tag: $tag_ver"
+          if [ "$cargo_ver" != "$tag_ver" ]; then
+            echo "::error::Tag v$tag_ver does not match Cargo.toml version $cargo_ver — bump Cargo.toml and re-tag."
+            exit 1
+          fi
+
   build:
     name: Build (${{ matrix.name }})
+    needs: check
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
@@ -28,7 +59,7 @@ jobs:
             artifact: nightwave-plaza.exe
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       - name: Install Linux dependencies
         if: matrix.name == 'linux'
@@ -47,7 +78,7 @@ jobs:
           key: ${{ matrix.target }}
 
       - name: Build
-        run: cargo build --release --target ${{ matrix.target }}
+        run: cargo build --release --locked --target ${{ matrix.target }}
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
@@ -58,9 +89,10 @@ jobs:
 
   package-deb:
     name: Package (Debian .deb)
+    needs: check
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       - name: Install Linux dependencies
         run: |
@@ -90,21 +122,28 @@ jobs:
 
   package-arch:
     name: Package (Arch .pkg.tar.zst)
+    needs: check
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       - name: Build Arch package
         run: |
           docker run --rm -v "$PWD":/build archlinux:latest bash -c '
             set -euo pipefail
-            pacman -Syu --noconfirm --needed base-devel rust alsa-lib dbus pkgconf
+            # makepkg refuses to run as root, and files it creates must end up
+            # owned by the runner user again (also on failure, or the checkout
+            # cleanup step cannot touch .git). Do that in a trap.
             host_uid=$(stat -c %u /build)
             host_gid=$(stat -c %g /build)
+            trap "chown -R $host_uid:$host_gid /build" EXIT
+            # The base image keyring can be older than the packages we pull;
+            # refreshing it first avoids spurious signature failures.
+            pacman -Sy --noconfirm --needed archlinux-keyring
+            pacman -Su --noconfirm --needed base-devel rust alsa-lib dbus pkgconf
             useradd -m builder
             chown -R builder:builder /build
             sudo -u builder bash -c "cd /build/dist && makepkg -f --noconfirm"
-            chown -R "$host_uid:$host_gid" /build
           '
 
       - name: Collect package
@@ -127,18 +166,6 @@ jobs:
     permissions:
       contents: write
     steps:
-      - uses: actions/checkout@v4
-
-      - name: Verify tag matches Cargo.toml version
-        run: |
-          cargo_ver=$(sed -n 's/^version *= *"\([^"]*\)".*/\1/p' Cargo.toml | head -n1)
-          tag_ver=${GITHUB_REF_NAME#v}
-          echo "Cargo.toml: $cargo_ver | tag: $tag_ver"
-          if [ "$cargo_ver" != "$tag_ver" ]; then
-            echo "::error::Tag v$tag_ver does not match Cargo.toml version $cargo_ver — bump Cargo.toml and re-tag."
-            exit 1
-          fi
-
       - name: Download artifacts
         uses: actions/download-artifact@v4
         with:
