@@ -13,7 +13,6 @@ pub const ERROR_RED: Color = Color::from_rgb(0.8, 0.0, 0.0);
 
 pub const HEART_RED: Color = Color::from_rgb(0.757, 0.153, 0.153);
 pub const FAVORITE_GOLD: Color = Color::from_rgb(1.0, 0.827, 0.0);
-pub const TIMER_BLUE: Color = Color::from_rgb(0.204, 0.333, 0.859); // #3455DB
 pub const LINK_COLOR: Color = Color::from_rgb(0.024, 0.271, 0.678);
 pub const MUTED: Color = Color::from_rgb(0.4, 0.4, 0.4);
 pub const DISABLED: Color = Color::from_rgb(0.5, 0.5, 0.5);

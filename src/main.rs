@@ -166,10 +166,10 @@ fn win_title(state: &Plaza, wid: iced::window::Id) -> String {
 
 fn win_view(state: &Plaza, wid: iced::window::Id) -> Element<'_, Msg> {
     let wt = state.child_windows.get(&wid);
-    let (inner, active) = if wid == state.main_window {
-        (views::player::view(state), state.main_focused)
+    let inner = if wid == state.main_window {
+        views::player::view(state)
     } else {
-        let inner = match wt {
+        match wt {
             Some(WinType::History) => views::history::view(state, wid),
             Some(WinType::About) => views::about::view(wid),
             Some(WinType::Support) => views::support::view(wid),
@@ -188,11 +188,10 @@ fn win_view(state: &Plaza, wid: iced::window::Id) -> Element<'_, Msg> {
             Some(WinType::PlayerTimer) => views::player_timer::view(state, wid),
             Some(WinType::Settings) => views::settings::view(state, wid),
             None => iced::widget::text("").into(),
-        };
-        (inner, state.focused_child == Some(wid))
+        }
     };
     let title = wt.map_or("Nightwave Plaza", WinType::title).to_string();
-    let title_bar = views::title_bar(title, wid, wt, active);
+    let title_bar = views::title_bar(title, wid, wt, state.focused == Some(wid));
 
     let framed = iced::widget::column![title_bar, inner]
         .spacing(1)
@@ -216,7 +215,7 @@ fn subscription(state: &Plaza) -> Subscription<Msg> {
     let is_playing = state.is_playing();
 
     // The clock text only needs ticking while it is visible and changing.
-    let display_active = state.main_focused
+    let display_active = state.main_focused()
         && (is_playing || state.welcome_until.is_some() || state.volume_text_until.is_some());
     let tick_period = if display_active {
         Some(Duration::from_millis(500))
@@ -437,17 +436,11 @@ fn update(state: &mut Plaza, msg: Msg) -> Task<Msg> {
             Task::batch(tasks)
         }
         Msg::CloseWin(id) => {
-            if id == state.main_window {
-                quit();
-            }
-            state.child_windows.remove(&id);
+            forget_window(state, id);
             iced::window::close(id)
         }
         Msg::WinClosed(id) => {
-            if id == state.main_window {
-                quit();
-            }
-            state.child_windows.remove(&id);
+            forget_window(state, id);
             Task::none()
         }
 
@@ -586,14 +579,14 @@ fn update(state: &mut Plaza, msg: Msg) -> Task<Msg> {
             Task::none()
         }
         Msg::WinFocus(id, focused) => {
-            if id != state.main_window {
-                if focused {
-                    state.focused_child = Some(id);
-                }
-                return Task::none();
-            }
-            state.main_focused = focused;
+            // Focus can arrive before the previous window's unfocus, so only
+            // clear when the unfocused window is the one we think is focused.
             if focused {
+                state.focused = Some(id);
+            } else if state.focused == Some(id) {
+                state.focused = None;
+            }
+            if focused && id == state.main_window {
                 state.last_tick = Instant::now();
                 if state.is_playing() {
                     return fetch_status_task();
@@ -731,6 +724,17 @@ fn open_window(state: &mut Plaza, wt: WinType) -> Task<Msg> {
     let (id, task) = iced::window::open(window_settings(wt.size(), wt.resizable()));
     state.child_windows.insert(id, wt);
     task.discard()
+}
+
+/// Drops bookkeeping for a window that is closing; quits if it is the main one.
+fn forget_window(state: &mut Plaza, id: iced::window::Id) {
+    if id == state.main_window {
+        quit();
+    }
+    state.child_windows.remove(&id);
+    if state.focused == Some(id) {
+        state.focused = None;
+    }
 }
 
 fn close_windows_of(state: &mut Plaza, wt: WinType) -> Task<Msg> {

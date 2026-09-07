@@ -353,8 +353,8 @@ pub struct Plaza {
     pub elapsed: f64,
     pub last_tick: Instant,
 
-    pub main_focused: bool,
-    pub focused_child: Option<iced::window::Id>,
+    /// Window that currently has keyboard focus; `None` while another app does.
+    pub focused: Option<iced::window::Id>,
     pub error_msg: Option<String>,
 
     pub welcome_until: Option<Instant>,
@@ -406,8 +406,7 @@ impl Plaza {
             timer: TimerState::default(),
             elapsed: 0.0,
             last_tick: Instant::now(),
-            main_focused: true,
-            focused_child: None,
+            focused: Some(main_window),
             error_msg: None,
             welcome_until: Some(Instant::now() + std::time::Duration::from_secs(2)),
             volume_text: None,
@@ -433,6 +432,10 @@ impl Plaza {
 
     pub fn is_streaming(&self) -> bool {
         self.player.is_streaming()
+    }
+
+    pub fn main_focused(&self) -> bool {
+        self.focused == Some(self.main_window)
     }
 
     pub fn window_of(&self, wt: WinType) -> Option<iced::window::Id> {

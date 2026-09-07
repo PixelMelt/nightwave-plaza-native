@@ -1,10 +1,9 @@
 use crate::state::{Msg, Plaza, WinType};
-use crate::theme::{self, ERROR_RED, TIMER_BLUE};
+use crate::theme::{self, ERROR_RED};
 use crate::views::bevel_button;
 use crate::views::volume::volume_slider;
 use crate::views::{
-    bold_font, d3_thin_sunken, format_time, menu_bar, shaped, static_image, status_bar, ICON_FONT,
-    IC_CLOCK,
+    bold_font, d3_thin_sunken, format_time, menu_bar, shaped, static_image, status_bar,
 };
 use iced::widget::text::LineHeight;
 use iced::widget::{column, container, image, mouse_area, row, text, Row, Space};
@@ -157,8 +156,6 @@ fn render_controls(state: &Plaza) -> Element<'_, Msg> {
     let song = &state.status.song;
     let is_playing = state.is_playing();
     let is_streaming = state.is_streaming();
-    let streaming = is_playing && is_streaming;
-
     let play_txt = if is_playing && !is_streaming {
         "Loading…"
     } else if is_playing {
@@ -199,33 +196,10 @@ fn render_controls(state: &Plaza) -> Element<'_, Msg> {
     .on_press(Msg::React)
     .width(Fill);
 
-    let mut left_btns = Row::new().spacing(4);
-    if streaming {
-        left_btns = left_btns.push(container(play_btn).width(Length::FillPortion(5)));
-
-        let timer_active = state.timer.until.is_some();
-        let clock_btn = bevel_button(
-            text(IC_CLOCK)
-                .font(ICON_FONT)
-                .size(11)
-                .line_height(LH11)
-                .color(if timer_active {
-                    TIMER_BLUE
-                } else {
-                    theme::BLACK
-                })
-                .center()
-                .width(Fill)
-                .shaping(iced::widget::text::Shaping::Advanced),
-        )
-        .on_press(Msg::OpenWin(WinType::PlayerTimer))
-        .width(Fill);
-        left_btns = left_btns.push(container(clock_btn).width(Length::FillPortion(3)));
-        left_btns = left_btns.push(container(react_btn).width(Length::FillPortion(4)));
-    } else {
-        left_btns = left_btns.push(container(play_btn).width(Length::FillPortion(7)));
-        left_btns = left_btns.push(container(react_btn).width(Length::FillPortion(5)));
-    }
+    let left_btns = Row::new()
+        .spacing(4)
+        .push(container(play_btn).width(Length::FillPortion(7)))
+        .push(container(react_btn).width(Length::FillPortion(5)));
 
     let user_msg = if state.user.is_some() {
         Msg::OpenWin(WinType::UserProfile)
