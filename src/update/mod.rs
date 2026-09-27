@@ -8,7 +8,7 @@ use crate::api;
 use crate::message::Msg;
 use crate::platform;
 use crate::state::{DeleteAccountForm, ExportState, PasswordForm, Plaza, ProfileEditForm};
-use crate::window::WindowKind;
+use crate::window::{MessageIcon, WindowKind, message_box_size, settings};
 use iced::widget::image;
 use iced::{Task, window};
 
@@ -37,10 +37,7 @@ pub fn update(state: &mut Plaza, msg: Msg) -> Task<Msg> {
             Task::none()
         }
         Msg::React => playback::react(state),
-        Msg::Reacted(reaction, result) => {
-            playback::reacted(state, reaction, result);
-            Task::none()
-        }
+        Msg::Reacted(reaction, result) => playback::reacted(state, reaction, result),
 
         Msg::History(msg) => lists::history(state, msg),
         Msg::Ratings(msg) => lists::ratings(state, msg),
@@ -99,6 +96,7 @@ pub fn update(state: &mut Plaza, msg: Msg) -> Task<Msg> {
         }
         Msg::MinimizeWindow(id) => window::minimize(id, true),
         Msg::DragWindow(id) => window::drag(id),
+        Msg::DismissPressed(id) => dismiss_message_box(state, id),
         Msg::SpacePressed(id) => {
             if id == state.main_window {
                 playback::toggle(state)
@@ -108,10 +106,6 @@ pub fn update(state: &mut Plaza, msg: Msg) -> Task<Msg> {
         }
         Msg::OpenUrl(url) => {
             platform::open_url(&url);
-            Task::none()
-        }
-        Msg::DismissAlert => {
-            state.alert = None;
             Task::none()
         }
     }
@@ -149,6 +143,35 @@ pub fn open_window(state: &mut Plaza, kind: WindowKind) -> Task<Msg> {
         _ => Task::none(),
     };
     Task::batch([opened.discard(), prepare])
+}
+
+fn show_message(state: &mut Plaza, icon: MessageIcon, message: impl Into<String>) -> Task<Msg> {
+    let message = message.into();
+    let size = message_box_size(&message);
+    state.messages.insert(icon, message);
+    let kind = WindowKind::MessageBox(icon);
+    if let Some(id) = state.window_of(kind) {
+        return Task::batch([window::resize(id, size), window::gain_focus(id)]);
+    }
+    let (id, opened) = window::open(settings(size, false));
+    state.windows.insert(id, kind);
+    opened.discard()
+}
+
+fn show_error(state: &mut Plaza, message: impl Into<String>) -> Task<Msg> {
+    show_message(state, MessageIcon::Error, message)
+}
+
+fn show_info(state: &mut Plaza, message: impl Into<String>) -> Task<Msg> {
+    show_message(state, MessageIcon::Information, message)
+}
+
+fn dismiss_message_box(state: &Plaza, id: window::Id) -> Task<Msg> {
+    if matches!(state.windows.get(&id), Some(WindowKind::MessageBox(_))) {
+        window::close(id)
+    } else {
+        Task::none()
+    }
 }
 
 fn close_windows(state: &Plaza, kinds: &[WindowKind]) -> Task<Msg> {

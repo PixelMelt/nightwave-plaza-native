@@ -3,6 +3,7 @@ mod bevel;
 mod credits;
 mod frame;
 mod history;
+mod message_box;
 mod news;
 mod paint;
 mod pixel;
@@ -36,6 +37,7 @@ pub fn view(state: &Plaza, wid: Id) -> Element<'_, Msg> {
         Some(WindowKind::About) => about::view(wid),
         Some(WindowKind::Credits) => credits::view(wid),
         Some(WindowKind::History) => history::view(state, wid),
+        Some(WindowKind::MessageBox(icon)) => message_box::view(state, icon, wid),
         Some(WindowKind::News) => news::view(state, wid),
         Some(WindowKind::PlayerTimer) => player_timer::view(state, wid),
         Some(WindowKind::Ratings) => ratings::view(state, wid),

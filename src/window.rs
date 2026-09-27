@@ -4,7 +4,13 @@ use std::sync::LazyLock;
 
 pub static DEV_MODE: LazyLock<bool> = LazyLock::new(|| std::env::var_os("NIGHTWAVE_DEV").is_some());
 
-pub const MAIN_SIZE: Size = Size::new(450.0, 218.0);
+pub const MAIN_SIZE: Size = Size::new(450.0, 203.0);
+
+const MESSAGE_BOX_WIDTH: f32 = 340.0;
+const MESSAGE_BOX_CHROME: f32 = 90.0;
+const MESSAGE_BOX_ICON: f32 = 32.0;
+const MESSAGE_BOX_LINE_HEIGHT: f32 = 14.0;
+const MESSAGE_BOX_LINE_CHARS: usize = 44;
 
 static APP_ICON: LazyLock<Icon> = LazyLock::new(|| {
     let img = image::load_from_memory(include_bytes!("assets/icons/favicon-32x32.png"))
@@ -15,10 +21,17 @@ static APP_ICON: LazyLock<Icon> = LazyLock::new(|| {
 });
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum MessageIcon {
+    Error,
+    Information,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum WindowKind {
     About,
     Credits,
     History,
+    MessageBox(MessageIcon),
     News,
     PlayerTimer,
     Ratings,
@@ -41,6 +54,7 @@ impl WindowKind {
             Self::About => (380.0, 518.0),
             Self::Credits => (420.0, 195.0),
             Self::History => (400.0, 630.0),
+            Self::MessageBox(_) => (MESSAGE_BOX_WIDTH, MESSAGE_BOX_CHROME + MESSAGE_BOX_ICON),
             Self::News => (350.0, 300.0),
             Self::PlayerTimer => (280.0, 150.0),
             Self::Ratings => (440.0, 630.0),
@@ -71,6 +85,8 @@ impl WindowKind {
             Self::About => "About",
             Self::Credits => "Credits",
             Self::History => "Play History",
+            Self::MessageBox(MessageIcon::Error) => "Error",
+            Self::MessageBox(MessageIcon::Information) => "Nightwave Plaza",
             Self::News => "News",
             Self::PlayerTimer => "Sleep Timer",
             Self::Ratings => "Ratings",
@@ -91,6 +107,19 @@ impl WindowKind {
     pub fn settings(self) -> Settings {
         settings(self.size(), self.is_resizable())
     }
+}
+
+pub fn message_box_size(message: &str) -> Size {
+    let lines = message
+        .chars()
+        .count()
+        .div_ceil(MESSAGE_BOX_LINE_CHARS)
+        .max(1);
+    let text_height = lines as f32 * MESSAGE_BOX_LINE_HEIGHT;
+    Size::new(
+        MESSAGE_BOX_WIDTH,
+        MESSAGE_BOX_CHROME + text_height.max(MESSAGE_BOX_ICON),
+    )
 }
 
 pub fn settings(size: Size, resizable: bool) -> Settings {

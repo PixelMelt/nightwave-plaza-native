@@ -3,7 +3,7 @@ use super::pixel;
 use super::widgets::{BOLD, Png, bevel_frame};
 use crate::message::Msg;
 use crate::theme;
-use crate::window::WindowKind;
+use crate::window::{MessageIcon, WindowKind};
 use iced::widget::text::{LineHeight, Shaping};
 use iced::widget::{Row, Space, column, container, mouse_area, text};
 use iced::window::Id;
@@ -17,6 +17,7 @@ static SMILEY: Png = Png::new(include_bytes!("../assets/icons/smiley.png"));
 static CD: Png = Png::new(include_bytes!("../assets/icons/cd_audio.png"));
 static KEYS: Png = Png::new(include_bytes!("../assets/icons/keys.png"));
 static USER: Png = Png::new(include_bytes!("../assets/icons/user_computer.png"));
+static ERROR: Png = Png::new(include_bytes!("../assets/icons/msg_error.png"));
 static INFO: Png = Png::new(include_bytes!("../assets/icons/msg_information.png"));
 static DOC: Png = Png::new(include_bytes!("../assets/icons/document.png"));
 static WORLD_STAR: Png = Png::new(include_bytes!("../assets/icons/world_star.png"));
@@ -32,9 +33,10 @@ fn icon(kind: Option<WindowKind>) -> &'static Png {
         Some(WindowKind::Ratings) => &CHART,
         Some(WindowKind::Support) => &SMILEY,
         Some(WindowKind::SongInfo) => &CD,
+        Some(WindowKind::MessageBox(MessageIcon::Error)) => &ERROR,
         Some(WindowKind::UserLogin | WindowKind::UserPassword) => &KEYS,
         Some(WindowKind::UserProfile) => &USER,
-        Some(WindowKind::Credits) => &INFO,
+        Some(WindowKind::Credits | WindowKind::MessageBox(MessageIcon::Information)) => &INFO,
         Some(WindowKind::News) => &DOC,
         Some(WindowKind::UserFavorites | WindowKind::UserFavoritesExport) => &WORLD_STAR,
         Some(WindowKind::UserProfileEdit | WindowKind::Settings) => &GEAR,
@@ -69,11 +71,9 @@ fn title_bar(wid: Id, kind: Option<WindowKind>, focused: bool) -> Element<'stati
             .width(16)
             .height(16)
     };
+    let minimizable = !matches!(kind, Some(WindowKind::MessageBox(_)));
     let buttons = Row::new()
-        .push(title_button(
-            pixel::minimize_glyph(),
-            Msg::MinimizeWindow(wid),
-        ))
+        .push(minimizable.then(|| title_button(pixel::minimize_glyph(), Msg::MinimizeWindow(wid))))
         .push(title_button(pixel::close_glyph(), Msg::CloseWindow(wid)))
         .align_y(iced::Alignment::Center)
         .height(16);

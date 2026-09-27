@@ -1,4 +1,4 @@
-use super::COVER_PX;
+use super::{COVER_PX, show_error, show_info};
 use crate::api::{self, Status};
 use crate::lastfm::{self, Scrobble};
 use crate::message::Msg;
@@ -15,10 +15,16 @@ pub fn status(state: &mut Plaza, result: api::Result<Status>) -> Task<Msg> {
     let status = match result {
         Ok(status) => status,
         Err(e) => {
-            state.alert = Some(e.to_string());
-            return Task::none();
+            let first_failure = !state.status_failed;
+            state.status_failed = true;
+            return if first_failure {
+                show_error(state, e.to_string())
+            } else {
+                Task::none()
+            };
         }
     };
+    state.status_failed = false;
     let now = Instant::now();
     let song_changed = state
         .scrobble
@@ -119,9 +125,10 @@ pub fn set_volume(state: &mut Plaza, percent: f32) {
 
 pub fn react(state: &mut Plaza) -> Task<Msg> {
     let Some(token) = state.token() else {
-        state.alert =
-            Some("Please sign in to your Nightwave Plaza account to access this feature.".into());
-        return Task::none();
+        return show_info(
+            state,
+            "Please sign in to your Nightwave Plaza account to access this feature.",
+        );
     };
     let song_id = state.status.song.id.clone();
     if song_id.is_empty() {
@@ -136,15 +143,16 @@ pub fn react(state: &mut Plaza) -> Task<Msg> {
     })
 }
 
-pub fn reacted(state: &mut Plaza, reaction: SongReaction, result: api::Result<u32>) {
+pub fn reacted(state: &mut Plaza, reaction: SongReaction, result: api::Result<u32>) -> Task<Msg> {
     match result {
         Ok(count) => {
             if state.status.song.id == reaction.song_id {
                 state.status.song.reactions = count;
             }
             state.reaction = reaction;
+            Task::none()
         }
-        Err(e) => state.alert = Some(e.to_string()),
+        Err(e) => show_error(state, e.to_string()),
     }
 }
 

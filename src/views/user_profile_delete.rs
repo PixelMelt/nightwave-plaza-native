@@ -1,5 +1,5 @@
 use super::widgets::{
-    BOLD, action_close_row, form_error, form_input, labeled_panel, submit_button, sunken_frame,
+    BOLD, action_close_row, form_input, labeled_panel, submit_button, sunken_frame,
 };
 use crate::message::{DeleteAccountMsg, Msg};
 use crate::state::Plaza;
@@ -60,9 +60,7 @@ pub fn view(state: &Plaza, wid: Id) -> Element<'_, Msg> {
         confirm,
         Space::new().height(8),
         labeled_panel("Current Password:", password),
-        Space::new().height(8),
-        form_error(form.error.as_deref()),
-        Space::new().height(4),
+        Space::new().height(12),
         action_close_row(delete_button, wid),
     ]
     .padding(8)

@@ -112,13 +112,6 @@ pub fn link_button(label: &str, size: impl Into<Pixels>, msg: Option<Msg>) -> El
     }
 }
 
-pub fn form_error(error: Option<&str>) -> Element<'_, Msg> {
-    match error {
-        Some(error) => text(error).size(11).color(theme::ERROR_RED).into(),
-        None => Space::new().height(0).into(),
-    }
-}
-
 pub fn form_input<'a>(value: &'a str, on_input: impl Fn(String) -> Msg + 'a) -> TextInput<'a, Msg> {
     text_input("", value)
         .on_input(on_input)

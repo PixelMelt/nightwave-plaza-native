@@ -1,5 +1,5 @@
 use super::widgets::{
-    action_close_row, form_error, form_input, group_box, labeled_panel, menu_bar, submit_button,
+    action_close_row, form_input, group_box, labeled_panel, menu_bar, submit_button,
 };
 use crate::message::{Msg, ProfileEditMsg};
 use crate::state::Plaza;
@@ -52,9 +52,7 @@ pub fn view(state: &Plaza, wid: Id) -> Element<'_, Msg> {
             details,
             Space::new().height(8),
             labeled_panel("Current Password:", password),
-            Space::new().height(8),
-            form_error(edit.error.as_deref()),
-            Space::new().height(4),
+            Space::new().height(12),
             action_close_row(save_button, wid),
         ])
         .padding(8),

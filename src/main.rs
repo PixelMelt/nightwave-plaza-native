@@ -91,6 +91,10 @@ fn subscription(state: &Plaza) -> Subscription<Msg> {
                 key: keyboard::Key::Named(key::Named::Space),
                 ..
             }) if status == event::Status::Ignored => Some(Msg::SpacePressed(id)),
+            Event::Keyboard(keyboard::Event::KeyPressed {
+                key: keyboard::Key::Named(key::Named::Enter | key::Named::Escape),
+                ..
+            }) if status == event::Status::Ignored => Some(Msg::DismissPressed(id)),
             Event::Window(iced::window::Event::Opened { .. }) if *BENCH_MODE => {
                 Some(Msg::WindowClosed(id))
             }

@@ -1,4 +1,4 @@
-use super::THUMB_PX;
+use super::{THUMB_PX, show_error};
 use crate::api;
 use crate::message::{ExportMsg, FavoritesMsg, HistoryMsg, Msg, NewsMsg, RatingsMsg};
 use crate::state::{ExportState, Plaza};
@@ -45,8 +45,7 @@ pub fn history(state: &mut Plaza, msg: HistoryMsg) -> Task<Msg> {
         }
         HistoryMsg::Loaded(Err(e)) => {
             state.history.pager.loading = false;
-            state.alert = Some(e.to_string());
-            Task::none()
+            show_error(state, e.to_string())
         }
         HistoryMsg::Page(msg) => match state.history.pager.apply(msg) {
             Some(page) => load_history(state, page),
@@ -64,8 +63,7 @@ pub fn ratings(state: &mut Plaza, msg: RatingsMsg) -> Task<Msg> {
         }
         RatingsMsg::Loaded(Err(e)) => {
             state.ratings.pager.loading = false;
-            state.alert = Some(e.to_string());
-            Task::none()
+            show_error(state, e.to_string())
         }
         RatingsMsg::Page(msg) => match state.ratings.pager.apply(msg) {
             Some(page) => load_ratings(state, page),
@@ -88,8 +86,7 @@ pub fn news(state: &mut Plaza, msg: NewsMsg) -> Task<Msg> {
         }
         NewsMsg::Loaded(Err(e)) => {
             state.news.pager.loading = false;
-            state.alert = Some(e.to_string());
-            Task::none()
+            show_error(state, e.to_string())
         }
         NewsMsg::Page(msg) => match state.news.pager.apply(msg) {
             Some(page) => load_news(state, page),
@@ -128,8 +125,7 @@ pub fn favorites(state: &mut Plaza, msg: FavoritesMsg) -> Task<Msg> {
         }
         FavoritesMsg::Loaded(Err(e)) => {
             favorites.pager.loading = false;
-            state.alert = Some(e.to_string());
-            Task::none()
+            show_error(state, e.to_string())
         }
         FavoritesMsg::Artwork(url, Ok(handle)) => {
             favorites.artwork.insert(url, handle);
@@ -157,10 +153,7 @@ pub fn favorites(state: &mut Plaza, msg: FavoritesMsg) -> Task<Msg> {
             }
             Task::none()
         }
-        FavoritesMsg::Removed(_, Err(e)) => {
-            state.alert = Some(e.to_string());
-            Task::none()
-        }
+        FavoritesMsg::Removed(_, Err(e)) => show_error(state, e.to_string()),
     }
 }
 

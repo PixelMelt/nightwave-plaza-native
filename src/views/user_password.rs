@@ -1,4 +1,4 @@
-use super::widgets::{action_close_row, form_error, form_input, submit_button, sunken_panel};
+use super::widgets::{action_close_row, form_input, submit_button, sunken_panel};
 use crate::message::{Msg, PasswordMsg};
 use crate::state::Plaza;
 use iced::widget::{Space, column, text};
@@ -36,9 +36,7 @@ pub fn view(state: &Plaza, wid: Id) -> Element<'_, Msg> {
 
     column![
         sunken_panel(fields),
-        Space::new().height(8),
-        form_error(form.error.as_deref()),
-        Space::new().height(4),
+        Space::new().height(12),
         action_close_row(change_button, wid),
     ]
     .padding(8)

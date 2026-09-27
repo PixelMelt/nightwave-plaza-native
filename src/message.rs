@@ -48,8 +48,8 @@ pub enum Msg {
     MinimizeWindow(Id),
     DragWindow(Id),
     SpacePressed(Id),
+    DismissPressed(Id),
     OpenUrl(String),
-    DismissAlert,
 }
 
 #[derive(Debug, Clone)]

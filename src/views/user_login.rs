@@ -1,6 +1,4 @@
-use super::widgets::{
-    Png, button, form_error, form_field_row, form_input, link_button, submit_button,
-};
+use super::widgets::{Png, button, form_field_row, form_input, link_button, submit_button};
 use crate::message::{LoginMsg, Msg};
 use crate::state::Plaza;
 use crate::window::WindowKind;
@@ -37,8 +35,6 @@ pub fn view(state: &Plaza, wid: Id) -> Element<'_, Msg> {
         ),
         Space::new().height(5),
         row![Space::new().width(72), remember],
-        Space::new().height(4),
-        form_error(login.error.as_deref()),
     ]
     .width(Fill);
 

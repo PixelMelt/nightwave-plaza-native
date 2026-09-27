@@ -1,6 +1,4 @@
-use super::widgets::{
-    BOLD, button, form_error, form_field_row, form_input, submit_button, sunken_frame,
-};
+use super::widgets::{BOLD, button, form_field_row, form_input, submit_button, sunken_frame};
 use crate::message::{Msg, RegisterMsg};
 use crate::state::Plaza;
 use crate::theme;
@@ -55,9 +53,7 @@ pub fn view(state: &Plaza, wid: Id) -> Element<'_, Msg> {
         text("Please complete all fields to create your account.").size(11),
         Space::new().height(8),
         fields,
-        Space::new().height(6),
-        form_error(form.error.as_deref()),
-        Space::new().height(4),
+        Space::new().height(10),
         bottom,
     ]
     .padding(8);

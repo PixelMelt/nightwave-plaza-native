@@ -1,7 +1,7 @@
 use super::bevel::bevel_button;
 use super::volume::volume_slider;
 use super::widgets::{
-    BOLD, CellWidth, Png, button, format_duration, menu_bar, shaped, status_bar, thin_sunken_frame,
+    BOLD, CellWidth, Png, format_duration, menu_bar, shaped, status_bar, thin_sunken_frame,
 };
 use crate::api::Reaction;
 use crate::message::{Msg, SongInfoMsg};
@@ -48,11 +48,7 @@ pub fn view(state: &Plaza) -> Element<'_, Msg> {
         left: 1.0,
     });
 
-    let mut col = column![menu, player, status(state)];
-    if let Some(alert) = &state.alert {
-        col = col.push(alert_bar(alert));
-    }
-    col.into()
+    column![menu, player, status(state)].into()
 }
 
 fn cover(state: &Plaza) -> Element<'_, Msg> {
@@ -218,21 +214,4 @@ fn status(state: &Plaza) -> Element<'_, Msg> {
         ));
     }
     status_bar(cells)
-}
-
-fn alert_bar(message: &str) -> Element<'_, Msg> {
-    container(
-        row![
-            text(message).size(10).color(theme::ERROR_RED),
-            Space::new().width(Fill),
-            button("x", Length::Shrink)
-                .on_press(Msg::DismissAlert)
-                .padding(2),
-        ]
-        .align_y(Alignment::Center)
-        .padding([2, 4]),
-    )
-    .style(theme::panel)
-    .width(Fill)
-    .into()
 }

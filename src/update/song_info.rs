@@ -1,4 +1,4 @@
-use super::{COVER_PX, artwork_or_log, open_window};
+use super::{COVER_PX, artwork_or_log, open_window, show_error, show_info};
 use crate::api;
 use crate::message::{Msg, SongInfoMsg};
 use crate::state::{Plaza, SongInfoState};
@@ -43,26 +43,29 @@ pub fn update(state: &mut Plaza, msg: SongInfoMsg) -> Task<Msg> {
         SongInfoMsg::FavoriteAdded(result) => {
             info.favorite_pending = false;
             match result {
-                Ok(id) => info.favorite_id = Some(id),
-                Err(e) => state.alert = Some(e.to_string()),
+                Ok(id) => {
+                    info.favorite_id = Some(id);
+                    Task::none()
+                }
+                Err(e) => show_error(state, e.to_string()),
             }
-            Task::none()
         }
         SongInfoMsg::FavoriteRemoved(result) => {
             info.favorite_pending = false;
             match result {
-                Ok(()) => info.favorite_id = None,
-                Err(e) => state.alert = Some(e.to_string()),
+                Ok(()) => {
+                    info.favorite_id = None;
+                    Task::none()
+                }
+                Err(e) => show_error(state, e.to_string()),
             }
-            Task::none()
         }
     }
 }
 
 fn toggle_favorite(state: &mut Plaza) -> Task<Msg> {
     let Some(token) = state.token() else {
-        state.alert = Some("Please sign in to favorite songs.".into());
-        return Task::none();
+        return show_info(state, "Please sign in to favorite songs.");
     };
     let info = &mut state.song_info;
     if info.favorite_pending {

@@ -6,7 +6,7 @@ use crate::discord::Discord;
 use crate::lastfm::Scrobble;
 use crate::media_controls::MediaSession;
 use crate::message::{Msg, PageMsg};
-use crate::window::WindowKind;
+use crate::window::{MessageIcon, WindowKind};
 use futures::channel::mpsc::UnboundedSender;
 use iced::widget::image;
 use iced::window::Id;
@@ -30,7 +30,8 @@ pub struct Plaza {
     pub artwork: Option<image::Handle>,
     pub artwork_url: String,
     pub notice: Option<Notice>,
-    pub alert: Option<String>,
+    pub messages: HashMap<MessageIcon, String>,
+    pub status_failed: bool,
 
     pub session: Option<Session>,
     pub user_stats: Option<api::UserStats>,
@@ -75,7 +76,8 @@ impl Plaza {
             artwork: None,
             artwork_url: String::new(),
             notice: Some(Notice::new("Welcome back!")),
-            alert: None,
+            messages: HashMap::new(),
+            status_failed: false,
             session: config.session.clone(),
             user_stats: None,
             stats_loading: false,
@@ -287,7 +289,6 @@ pub struct LoginForm {
     pub password: String,
     pub remember: bool,
     pub loading: bool,
-    pub error: Option<String>,
 }
 
 impl LoginForm {
@@ -306,7 +307,6 @@ pub struct RegisterForm {
     pub password: String,
     pub password_repeat: String,
     pub loading: bool,
-    pub error: Option<String>,
 }
 
 impl RegisterForm {
@@ -336,7 +336,6 @@ pub struct ProfileEditForm {
     pub email: String,
     pub current_password: String,
     pub loading: bool,
-    pub error: Option<String>,
 }
 
 impl ProfileEditForm {
@@ -362,7 +361,6 @@ pub struct PasswordForm {
     pub password: String,
     pub password_repeat: String,
     pub loading: bool,
-    pub error: Option<String>,
 }
 
 impl PasswordForm {
@@ -384,7 +382,6 @@ pub struct DeleteAccountForm {
     pub current_password: String,
     pub confirmed: bool,
     pub loading: bool,
-    pub error: Option<String>,
 }
 
 impl DeleteAccountForm {
