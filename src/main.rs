@@ -23,10 +23,6 @@ use state::{AccountMsg, Msg, Plaza};
 use std::sync::LazyLock;
 use std::time::Duration;
 
-const TAHOMA: &[u8] = include_bytes!("assets/fonts/subset-Tahoma.ttf");
-const TAHOMA_BOLD: &[u8] = include_bytes!("assets/fonts/subset-Tahoma-Bold.ttf");
-const ICONS_FONT: &[u8] = include_bytes!("assets/fonts/icons.ttf");
-
 static APP_ICON: LazyLock<iced::window::Icon> = LazyLock::new(|| {
     let img = image::load_from_memory(include_bytes!("assets/icons/favicon-32x32.png"))
         .expect("app icon is a valid PNG")
@@ -59,14 +55,11 @@ pub fn window_settings(size: Size, resizable: bool) -> iced::window::Settings {
 
 fn main() -> iced::Result {
     heap::limit_arenas();
-    fonts::install_fallback();
+    fonts::install();
     iced::daemon(boot, update::update, views::view)
         .title(title)
         .subscription(subscription)
         .theme(|_: &Plaza, _| theme::app_theme())
-        .font(TAHOMA)
-        .font(TAHOMA_BOLD)
-        .font(ICONS_FONT)
         .default_font(Font {
             family: iced::font::Family::Name("Tahoma"),
             ..Font::DEFAULT
