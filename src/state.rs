@@ -1,8 +1,16 @@
-use crate::api::{self, HistoryEntry, RatingEntry, Status};
+use crate::api::{self, RatingsRange, Status, User};
 use crate::audio::AudioPlayer;
+use crate::config::{Config, Session};
+use crate::discord::Discord;
+use crate::lastfm::Scrobble;
+use crate::news::Article;
 use iced::widget::image;
+use iced::window::Id;
 use std::collections::HashMap;
-use std::time::Instant;
+use std::time::{Duration, Instant};
+
+pub const DEFAULT_VOLUME: f32 = 50.0;
+pub const NOTICE_DURATION: Duration = Duration::from_secs(2);
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum WinType {
@@ -26,37 +34,37 @@ pub enum WinType {
 }
 
 impl WinType {
-    pub fn size(&self) -> iced::Size {
-        match self {
-            WinType::History => iced::Size::new(400.0, 630.0),
-            WinType::About => iced::Size::new(380.0, 518.0),
-            WinType::Ratings => iced::Size::new(440.0, 630.0),
-            WinType::Support => iced::Size::new(450.0, 270.0),
-            WinType::SongInfo => iced::Size::new(360.0, 225.0),
-            WinType::UserLogin => iced::Size::new(480.0, 150.0),
-            WinType::UserProfile => iced::Size::new(290.0, 250.0),
-            WinType::UserRegister => iced::Size::new(430.0, 240.0),
-            WinType::Credits => iced::Size::new(420.0, 195.0),
-            WinType::News => iced::Size::new(350.0, 300.0),
-            WinType::UserFavorites => iced::Size::new(450.0, 600.0),
-            WinType::UserFavoritesExport => iced::Size::new(320.0, 175.0),
-            WinType::UserProfileEdit => iced::Size::new(290.0, 293.0),
-            WinType::UserPassword => iced::Size::new(280.0, 232.0),
-            WinType::UserProfileDelete => iced::Size::new(340.0, 296.0),
-            WinType::PlayerTimer => iced::Size::new(280.0, 150.0),
-            WinType::Settings => iced::Size::new(360.0, 340.0),
-        }
+    pub fn size(self) -> iced::Size {
+        let (w, h) = match self {
+            WinType::History => (400.0, 630.0),
+            WinType::About => (380.0, 518.0),
+            WinType::Ratings => (440.0, 630.0),
+            WinType::Support => (450.0, 270.0),
+            WinType::SongInfo => (360.0, 225.0),
+            WinType::UserLogin => (480.0, 150.0),
+            WinType::UserProfile => (290.0, 250.0),
+            WinType::UserRegister => (430.0, 240.0),
+            WinType::Credits => (420.0, 195.0),
+            WinType::News => (350.0, 300.0),
+            WinType::UserFavorites => (450.0, 600.0),
+            WinType::UserFavoritesExport => (320.0, 175.0),
+            WinType::UserProfileEdit => (290.0, 293.0),
+            WinType::UserPassword => (280.0, 232.0),
+            WinType::UserProfileDelete => (340.0, 296.0),
+            WinType::PlayerTimer => (280.0, 150.0),
+            WinType::Settings => (360.0, 340.0),
+        };
+        iced::Size::new(w, h)
     }
 
-    /// Windows whose content is a scrolling list may be resized by the user.
-    pub fn resizable(&self) -> bool {
+    pub fn resizable(self) -> bool {
         matches!(
             self,
             WinType::History | WinType::Ratings | WinType::News | WinType::UserFavorites
         )
     }
 
-    pub fn title(&self) -> &'static str {
+    pub fn title(self) -> &'static str {
         match self {
             WinType::History => "Play History",
             WinType::About => "About",
@@ -105,7 +113,6 @@ impl Default for Pager {
     }
 }
 
-/// Interaction with a page control; shared by every paginated window.
 #[derive(Debug, Clone)]
 pub enum PageMsg {
     Go(u32),
@@ -120,50 +127,47 @@ impl Pager {
         self.loading = true;
     }
 
-    pub fn loaded(&mut self, pages: u32, total: u32) {
+    pub fn loaded(&mut self, meta: &api::PaginatedMeta) {
         self.loading = false;
-        self.pages = pages;
-        self.total = total;
+        self.pages = meta.last_page;
+        self.total = meta.total;
         self.input = self.page.to_string();
     }
 
-    /// Applies a page control interaction; returns the page to fetch, if any.
     pub fn apply(&mut self, msg: PageMsg) -> Option<u32> {
-        let page = match msg {
-            PageMsg::Go(p) => p,
+        match msg {
+            PageMsg::Go(p) => Some(p),
             PageMsg::Input(s) => {
                 digits_input(&mut self.input, s);
-                return None;
+                None
             }
             PageMsg::Submit => {
-                let parsed = self.input.parse::<u32>().ok();
-                let Some(p) = parsed
+                let page = self
+                    .input
+                    .parse::<u32>()
+                    .ok()
                     .map(|p| p.clamp(1, self.pages.max(1)))
-                    .filter(|&p| p != self.page)
-                else {
+                    .filter(|&p| p != self.page);
+                if page.is_none() {
                     self.input = self.page.to_string();
-                    return None;
-                };
-                p
+                }
+                page
             }
-        };
-        self.goto(page);
-        Some(page)
+        }
     }
 }
 
 #[derive(Default)]
 pub struct HistoryState {
-    pub list: Vec<HistoryEntry>,
+    pub list: Vec<api::HistoryEntry>,
     pub pager: Pager,
-    pub date_from: String,
-    pub date_to: String,
+    pub date_range: Option<api::DateRange>,
 }
 
 pub struct RatingsState {
-    pub list: Vec<RatingEntry>,
+    pub list: Vec<api::RatingEntry>,
     pub pager: Pager,
-    pub range: String,
+    pub range: RatingsRange,
 }
 
 impl Default for RatingsState {
@@ -171,7 +175,7 @@ impl Default for RatingsState {
         Self {
             list: Vec::new(),
             pager: Pager::default(),
-            range: "overtime".to_string(),
+            range: RatingsRange::AllTime,
         }
     }
 }
@@ -179,7 +183,7 @@ impl Default for RatingsState {
 #[derive(Default)]
 pub struct SongInfoState {
     pub data: Option<api::SongResponse>,
-    pub loading: bool,
+    pub error: Option<String>,
     pub artwork: Option<image::Handle>,
     pub favorite_id: Option<u64>,
     pub fav_sending: bool,
@@ -206,22 +210,8 @@ pub struct RegisterState {
 
 #[derive(Default)]
 pub struct NewsState {
-    pub list: Vec<ParsedNewsArticle>,
+    pub list: Vec<Article>,
     pub pager: Pager,
-}
-
-#[derive(Debug, Clone)]
-pub struct ParsedNewsArticle {
-    pub author: String,
-    pub created_at: u64,
-    pub blocks: Vec<HtmlBlock>,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum HtmlBlock {
-    Heading(String),
-    Paragraph(Vec<(String, bool)>),
-    ListItem(String),
 }
 
 #[derive(Default)]
@@ -270,55 +260,6 @@ pub struct TimerState {
     pub until: Option<Instant>,
 }
 
-#[derive(Debug, Clone)]
-pub struct ScrobbleTrack {
-    pub song_id: String,
-    pub artist: String,
-    pub title: String,
-    pub album: String,
-    pub duration: f64,
-    pub start_unix: Option<u64>,
-    pub played_secs: f64,
-    pub playing_since: Option<Instant>,
-}
-
-impl ScrobbleTrack {
-    pub fn new(song: &api::StatusSong) -> Self {
-        Self {
-            song_id: song.id.clone(),
-            artist: song.artist.clone(),
-            title: song.title.clone(),
-            album: song.album.clone(),
-            duration: song.length,
-            start_unix: None,
-            played_secs: 0.0,
-            playing_since: None,
-        }
-    }
-
-    pub fn total_played(&self, now: Instant) -> f64 {
-        self.played_secs
-            + self
-                .playing_since
-                .map_or(0.0, |s| now.duration_since(s).as_secs_f64())
-    }
-
-    pub fn resume(&mut self, now: Instant) {
-        if self.start_unix.is_none() {
-            self.start_unix = Some(crate::now_unix());
-        }
-        if self.playing_since.is_none() {
-            self.playing_since = Some(now);
-        }
-    }
-
-    pub fn pause(&mut self, now: Instant) {
-        if let Some(s) = self.playing_since.take() {
-            self.played_secs += now.duration_since(s).as_secs_f64();
-        }
-    }
-}
-
 impl Default for TimerState {
     fn default() -> Self {
         Self {
@@ -328,14 +269,47 @@ impl Default for TimerState {
     }
 }
 
+#[derive(Default)]
+pub struct LastfmState {
+    pub token: Option<String>,
+    pub busy: bool,
+    pub status: Option<String>,
+}
+
+#[derive(Debug, Clone, Default)]
+pub struct Reaction {
+    pub song_id: String,
+    pub rate: u8,
+}
+
+impl Reaction {
+    pub fn rate_for(&self, song_id: &str) -> u8 {
+        if !song_id.is_empty() && self.song_id == song_id {
+            self.rate
+        } else {
+            0
+        }
+    }
+}
+
 pub struct Plaza {
-    pub main_window: iced::window::Id,
-    pub child_windows: HashMap<iced::window::Id, WinType>,
+    pub main_window: Id,
+    pub child_windows: HashMap<Id, WinType>,
+    pub focused: Option<Id>,
+
     pub status: Status,
+    pub status_at: Instant,
     pub player: AudioPlayer,
     pub volume: f32,
-    pub artwork_handle: Option<image::Handle>,
+    pub artwork: Option<image::Handle>,
     pub artwork_url: String,
+    pub time_notice: Option<(String, Instant)>,
+    pub error_msg: Option<String>,
+
+    pub session: Option<Session>,
+    pub user_stats: Option<api::UserStats>,
+    pub stats_loading: bool,
+    pub reaction: Reaction,
 
     pub history: HistoryState,
     pub ratings: RatingsState,
@@ -349,49 +323,32 @@ pub struct Plaza {
     pub password: PasswordState,
     pub delete: DeleteState,
     pub timer: TimerState,
+    pub lastfm: LastfmState,
 
-    pub elapsed: f64,
-    pub last_tick: Instant,
-
-    /// Window that currently has keyboard focus; `None` while another app does.
-    pub focused: Option<iced::window::Id>,
-    pub error_msg: Option<String>,
-
-    pub welcome_until: Option<Instant>,
-    pub volume_text: Option<String>,
-    pub volume_text_until: Option<Instant>,
-
-    pub auth_token: Option<String>,
-    pub user: Option<api::User>,
-    pub user_stats: Option<api::UserStatsData>,
-    pub stats_loading: bool,
-
-    pub reaction_rate: u8,
-    pub reaction_song_id: String,
-
-    pub config: crate::config::Config,
-    pub lastfm_token: Option<String>,
-    pub lastfm_busy: bool,
-    pub lastfm_status: Option<String>,
-    pub scrobble: Option<ScrobbleTrack>,
-
-    pub discord_presence: crate::discord::DiscordHandle,
+    pub config: Config,
+    pub scrobble: Option<Scrobble>,
+    pub discord: Discord,
 }
 
 impl Plaza {
-    pub fn new(
-        main_window: iced::window::Id,
-        player: AudioPlayer,
-        config: crate::config::Config,
-    ) -> Self {
+    pub fn new(main_window: Id, player: AudioPlayer, config: Config) -> Self {
+        player.set_volume(DEFAULT_VOLUME / 100.0);
         Self {
             main_window,
             child_windows: HashMap::new(),
+            focused: Some(main_window),
             status: Status::default(),
+            status_at: Instant::now(),
             player,
-            volume: 50.0,
-            artwork_handle: None,
+            volume: DEFAULT_VOLUME,
+            artwork: None,
             artwork_url: String::new(),
+            time_notice: Some(("Welcome back!".into(), Instant::now() + NOTICE_DURATION)),
+            error_msg: None,
+            session: config.session.clone(),
+            user_stats: None,
+            stats_loading: false,
+            reaction: Reaction::default(),
             history: HistoryState::default(),
             ratings: RatingsState::default(),
             song_info: SongInfoState::default(),
@@ -404,74 +361,59 @@ impl Plaza {
             password: PasswordState::default(),
             delete: DeleteState::default(),
             timer: TimerState::default(),
-            elapsed: 0.0,
-            last_tick: Instant::now(),
-            focused: Some(main_window),
-            error_msg: None,
-            welcome_until: Some(Instant::now() + std::time::Duration::from_secs(2)),
-            volume_text: None,
-            volume_text_until: None,
-            auth_token: None,
-            user: None,
-            user_stats: None,
-            stats_loading: false,
-            reaction_rate: 0,
-            reaction_song_id: String::new(),
+            lastfm: LastfmState::default(),
             config,
-            lastfm_token: None,
-            lastfm_busy: false,
-            lastfm_status: None,
             scrobble: None,
-            discord_presence: crate::discord::DiscordHandle::spawn(),
+            discord: Discord::spawn(),
         }
-    }
-
-    pub fn is_playing(&self) -> bool {
-        self.player.is_playing()
-    }
-
-    pub fn is_streaming(&self) -> bool {
-        self.player.is_streaming()
     }
 
     pub fn main_focused(&self) -> bool {
         self.focused == Some(self.main_window)
     }
 
-    pub fn window_of(&self, wt: WinType) -> Option<iced::window::Id> {
+    pub fn window_of(&self, wt: WinType) -> Option<Id> {
         self.child_windows
             .iter()
             .find(|(_, &t)| t == wt)
             .map(|(&id, _)| id)
     }
+
+    pub fn user(&self) -> Option<&User> {
+        self.session.as_ref().map(|s| &s.user)
+    }
+
+    pub fn token(&self) -> Option<String> {
+        self.session.as_ref().map(|s| s.token.clone())
+    }
+
+    pub fn song_position(&self) -> f64 {
+        let song = &self.status.song;
+        (song.position + self.status_at.elapsed().as_secs_f64()).min(song.length)
+    }
 }
 
 #[derive(Debug, Clone)]
 pub enum HistoryMsg {
-    Ok(api::HistoryResponse),
-    Err(String),
+    Loaded(Result<api::HistoryResponse, String>),
     Page(PageMsg),
 }
 
 #[derive(Debug, Clone)]
 pub enum RatingsMsg {
-    Ok(Vec<RatingEntry>, u32, u32),
-    Err(String),
+    Loaded(Result<api::Paginated<api::RatingEntry>, String>),
     Page(PageMsg),
-    Range(String),
+    Range(RatingsRange),
 }
 
 #[derive(Debug, Clone)]
 pub enum SongInfoMsg {
     Open(String),
-    Ok(api::SongResponse),
-    Err(String),
-    ArtworkOk(image::Handle),
-    ArtworkErr,
+    Loaded(Result<api::SongResponse, String>),
+    Artwork(Result<image::Handle, String>),
     ToggleFavorite,
-    FavoriteAdded(u64),
-    FavoriteRemoved,
-    FavoriteErr(String),
+    FavoriteAdded(Result<u64, String>),
+    FavoriteRemoved(Result<(), String>),
 }
 
 #[derive(Debug, Clone)]
@@ -480,8 +422,7 @@ pub enum LoginMsg {
     Password(String),
     Remember(bool),
     Submit,
-    Ok(api::LoginResponse),
-    Err(String),
+    Done(Result<api::LoginResponse, String>),
 }
 
 #[derive(Debug, Clone)]
@@ -491,33 +432,28 @@ pub enum RegisterMsg {
     Password(String),
     PasswordRepeat(String),
     Submit,
-    Ok(api::User),
-    Err(String),
+    Done(Result<User, String>),
 }
 
 #[derive(Debug, Clone)]
 pub enum NewsMsg {
-    Ok(Vec<api::NewsArticle>, u32),
-    Err(String),
+    Loaded(Result<api::Paginated<api::NewsArticle>, String>),
     Page(PageMsg),
 }
 
 #[derive(Debug, Clone)]
 pub enum FavoritesMsg {
-    Ok(Vec<api::FavoriteEntry>, u32, u32),
-    ArtworkOk(String, image::Handle),
-    Err(String),
+    Loaded(Result<api::Paginated<api::FavoriteEntry>, String>),
+    Artwork(String, Result<image::Handle, String>),
     Page(PageMsg),
     Delete(u64),
-    DeleteOk(u64),
-    DeleteErr(String),
+    Deleted(u64, Result<(), String>),
 }
 
 #[derive(Debug, Clone)]
 pub enum ExportMsg {
     Start,
-    Ok(String),
-    Err(String),
+    Done(Result<String, String>),
 }
 
 #[derive(Debug, Clone)]
@@ -526,8 +462,7 @@ pub enum ProfileEditMsg {
     Email(String),
     CurrentPassword(String),
     Submit,
-    Ok,
-    Err(String),
+    Done(Result<(), String>),
 }
 
 #[derive(Debug, Clone)]
@@ -536,8 +471,7 @@ pub enum PasswordMsg {
     New(String),
     Repeat(String),
     Submit,
-    Ok,
-    Err(String),
+    Done(Result<(), String>),
 }
 
 #[derive(Debug, Clone)]
@@ -545,24 +479,25 @@ pub enum DeleteMsg {
     Password(String),
     Confirm(bool),
     Submit,
-    Ok,
-    Err(String),
+    Done(Result<(), String>),
+}
+
+#[derive(Debug, Clone)]
+pub enum AccountMsg {
+    Checked(Result<User, api::Error>),
+    Logout,
+    LoggedOut(Result<(), String>),
+    Stats(Result<api::UserStats, String>),
 }
 
 #[derive(Debug, Clone)]
 pub enum LastfmMsg {
     ToggleEnabled(bool),
     Connect,
-    TokenReady(String),
+    Token(Result<String, String>),
     Finish,
-    SessionOk(String, String),
+    Session(Result<(String, String), String>),
     Disconnect,
-    Err(String),
-}
-
-#[derive(Debug, Clone)]
-pub enum DiscordMsg {
-    ToggleEnabled(bool),
 }
 
 #[derive(Debug, Clone)]
@@ -575,18 +510,16 @@ pub enum TimerMsg {
 
 #[derive(Debug, Clone)]
 pub enum Msg {
-    StatusOk(Status),
-    StatusErr(String),
-    Tick(Instant),
+    Refresh,
+    Status(Result<Status, String>),
+    Tick,
     TogglePlay,
-    /// The audio thread connected to or lost the stream; only the view changes.
     StreamChanged,
+    Media(souvlaki::MediaControlEvent),
     Volume(f32),
-    ArtworkOk(image::Handle),
-    ArtworkErr,
-    OpenWin(WinType),
-    CloseWin(iced::window::Id),
-    WinClosed(iced::window::Id),
+    Artwork(Result<image::Handle, String>),
+    React,
+    Reacted(Reaction, Result<u32, String>),
 
     History(HistoryMsg),
     Ratings(RatingsMsg),
@@ -599,34 +532,19 @@ pub enum Msg {
     ProfileEdit(ProfileEditMsg),
     Password(PasswordMsg),
     DeleteAccount(DeleteMsg),
-    Timer(TimerMsg),
+    Account(AccountMsg),
     Lastfm(LastfmMsg),
-    Discord(DiscordMsg),
+    DiscordEnabled(bool),
+    Timer(TimerMsg),
 
-    SessionRestored(api::User, String),
-
-    Logout,
-    LogoutOk,
-    LogoutErr(String),
-
-    StatsOk(api::UserStatsData),
-    StatsErr(String),
-
-    React,
-    ReactOk(u32),
-    ReactErr(String),
-
-    MinimizeWin(iced::window::Id),
-    DragWin(iced::window::Id),
+    OpenWin(WinType),
+    CloseWin(Id),
+    WinClosed(Id),
+    WinFocus(Id, bool),
+    WinResized(Id, iced::Size),
+    MinimizeWin(Id),
+    DragWin(Id),
+    SpaceToggle(Id),
     OpenUrl(String),
-
-    Refresh,
     DismissErr,
-    Noop,
-    SpaceToggle(iced::window::Id),
-
-    Media(souvlaki::MediaControlEvent),
-
-    WinResized(iced::window::Id, iced::Size),
-    WinFocus(iced::window::Id, bool),
 }

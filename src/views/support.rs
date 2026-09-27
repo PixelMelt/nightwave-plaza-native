@@ -1,22 +1,20 @@
 use crate::state::Msg;
 use crate::theme;
-use crate::views::{bold_font, close_btn, d3_sunken, link_button, static_image};
-use iced::widget::{column, container, image, mouse_area, row, text, Space};
+use crate::views::{close_btn, d3_sunken, link_button, Png, BOLD};
+use iced::widget::{column, container, mouse_area, row, text, Space};
 use iced::{Element, Fill};
 
-const BOOSTY_IMG: &[u8] = include_bytes!("../assets/img/boosty.png");
+static BOOSTY: Png = Png::new(include_bytes!("../assets/img/boosty.png"));
 const BOOSTY_URL: &str = "https://boosty.to/nightwaveplaza";
 
 pub fn view(wid: iced::window::Id) -> Element<'static, Msg> {
-    let bold = bold_font();
-
     let title = text("Love Nightwave Plaza?")
         .size(14)
-        .font(bold)
+        .font(BOLD)
         .center()
         .width(Fill);
 
-    let info_text = column![
+    let info = column![
         text("Support the radio station and future updates by donating via Boosty to receive special Discord rewards!")
             .size(11).center().width(Fill),
         Space::new().height(4),
@@ -27,15 +25,13 @@ pub fn view(wid: iced::window::Id) -> Element<'static, Msg> {
 
     let boosty_image = mouse_area(column![
         Space::new().height(8),
-        container(image(static_image(BOOSTY_IMG)).width(122)).center_x(Fill),
+        container(BOOSTY.image().width(122)).center_x(Fill),
     ])
     .interaction(iced::mouse::Interaction::Pointer)
     .on_press(Msg::OpenUrl(BOOSTY_URL.into()));
 
-    let panel_content = row![info_text, Space::new().width(8), boosty_image].padding(8);
-
     let panel = d3_sunken(
-        container(panel_content)
+        container(row![info, Space::new().width(8), boosty_image].padding(8))
             .style(theme::panel)
             .width(Fill)
             .padding(4),
@@ -45,16 +41,9 @@ pub fn view(wid: iced::window::Id) -> Element<'static, Msg> {
         "Thank you for your donations. All contributions go directly toward funding the station.",
     )
     .size(11)
-    .font(bold)
+    .font(BOLD)
     .center()
     .width(Fill);
-
-    let bottom = row![
-        Space::new().width(iced::Fill),
-        close_btn(wid),
-        Space::new().width(iced::Fill)
-    ]
-    .padding([4, 2]);
 
     column![
         Space::new().height(8),
@@ -64,7 +53,7 @@ pub fn view(wid: iced::window::Id) -> Element<'static, Msg> {
         Space::new().height(16),
         thanks,
         Space::new().height(16),
-        bottom,
+        container(close_btn(wid)).center_x(Fill).padding([4, 2]),
     ]
     .padding(8)
     .width(Fill)

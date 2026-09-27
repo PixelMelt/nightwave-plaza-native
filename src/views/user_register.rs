@@ -1,65 +1,60 @@
-use crate::state::{Msg, Plaza};
+use crate::state::{Msg, Plaza, RegisterMsg};
 use crate::theme;
-use crate::views::bevel_button;
-use crate::views::{bold_font, d3_sunken, form_error, form_field_row, form_input, submit_button};
+use crate::views::{
+    button, d3_sunken, form_error, form_field_row, form_input, submit_button, BOLD,
+};
 use iced::widget::{column, container, row, text, Space};
 use iced::{Element, Fill};
 
 pub fn view(state: &Plaza, wid: iced::window::Id) -> Element<'_, Msg> {
-    let instruction = column![
-        text("User Information:").size(11).font(bold_font()),
-        Space::new().height(4),
-        text("Please complete all fields to create your account.").size(11),
-    ];
-
-    let username_input = form_input(&state.register.username, |s| {
-        Msg::Register(crate::state::RegisterMsg::Username(s))
-    });
-    let password_input = form_input(&state.register.password, |s| {
-        Msg::Register(crate::state::RegisterMsg::Password(s))
-    })
-    .secure(true);
-    let repeat_input = form_input(&state.register.password_repeat, |s| {
-        Msg::Register(crate::state::RegisterMsg::PasswordRepeat(s))
-    })
-    .secure(true);
-    let email_input = form_input(&state.register.email, |s| {
-        Msg::Register(crate::state::RegisterMsg::Email(s))
-    })
-    .on_submit(Msg::Register(crate::state::RegisterMsg::Submit));
+    let reg = &state.register;
+    let field =
+        |value, msg: fn(String) -> RegisterMsg| form_input(value, move |s| Msg::Register(msg(s)));
 
     let form = column![
-        form_field_row("Username:", 120, username_input),
+        form_field_row(
+            "Username:",
+            120,
+            field(&reg.username, RegisterMsg::Username)
+        ),
         Space::new().height(4),
-        form_field_row("Password:", 120, password_input),
+        form_field_row(
+            "Password:",
+            120,
+            field(&reg.password, RegisterMsg::Password).secure(true)
+        ),
         Space::new().height(4),
-        form_field_row("Repeat Password:", 120, repeat_input),
+        form_field_row(
+            "Repeat Password:",
+            120,
+            field(&reg.password_repeat, RegisterMsg::PasswordRepeat).secure(true)
+        ),
         Space::new().height(4),
-        form_field_row("Email:", 120, email_input),
+        form_field_row(
+            "Email:",
+            120,
+            field(&reg.email, RegisterMsg::Email).on_submit(Msg::Register(RegisterMsg::Submit))
+        ),
     ];
 
-    let error_row = form_error(&state.register.error);
-
     let register_btn = submit_button(
-        state.register.loading,
+        reg.loading,
         "Loading...",
         "Register",
-        Msg::Register(crate::state::RegisterMsg::Submit),
+        Msg::Register(RegisterMsg::Submit),
         90,
     );
-
-    let cancel_btn = bevel_button(text("Cancel").size(11).center().width(90))
-        .on_press(Msg::CloseWin(wid))
-        .width(90);
-
-    let bottom = row![register_btn, Space::new().width(iced::Fill), cancel_btn].padding([4, 0]);
+    let cancel_btn = button("Cancel", 90).on_press(Msg::CloseWin(wid));
+    let bottom = row![register_btn, Space::new().width(Fill), cancel_btn].padding([4, 0]);
 
     let content = column![
-        instruction,
+        text("User Information:").size(11).font(BOLD),
+        Space::new().height(4),
+        text("Please complete all fields to create your account.").size(11),
         Space::new().height(8),
         form,
         Space::new().height(6),
-        error_row,
+        form_error(&reg.error),
         Space::new().height(4),
         bottom,
     ]
@@ -71,6 +66,5 @@ pub fn view(state: &Plaza, wid: iced::window::Id) -> Element<'_, Msg> {
             .width(Fill)
             .padding(4),
     );
-
     column![panel].padding(4).into()
 }

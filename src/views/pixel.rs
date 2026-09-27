@@ -1,12 +1,12 @@
 use crate::theme;
+use crate::views::bevel::quad;
 use iced::advanced::layout::{self, Layout};
 use iced::advanced::mouse;
 use iced::advanced::renderer;
 use iced::advanced::widget::{Tree, Widget};
-use iced::{Background, Border, Color, Element, Length, Rectangle, Shadow, Size};
+use iced::{Color, Element, Length, Rectangle, Size};
 
-#[derive(Clone, Copy)]
-pub enum Glyph {
+enum Glyph {
     Close,
     Minimize,
     DashedLine(Color),
@@ -42,10 +42,20 @@ pub fn dashed_line(color: Color) -> Pixel {
     }
 }
 
-impl<Message, Theme, Renderer> Widget<Message, Theme, Renderer> for Pixel
-where
-    Renderer: iced::advanced::Renderer,
-{
+fn dot(renderer: &mut iced::Renderer, x: f32, y: f32, width: f32, height: f32, color: Color) {
+    quad(
+        renderer,
+        Rectangle {
+            x,
+            y,
+            width,
+            height,
+        },
+        color,
+    );
+}
+
+impl<Message> Widget<Message, iced::Theme, iced::Renderer> for Pixel {
     fn size(&self) -> Size<Length> {
         Size {
             width: self.width,
@@ -56,7 +66,7 @@ where
     fn layout(
         &mut self,
         _tree: &mut Tree,
-        _renderer: &Renderer,
+        _renderer: &iced::Renderer,
         limits: &layout::Limits,
     ) -> layout::Node {
         layout::atomic(limits, self.width, self.height)
@@ -65,79 +75,41 @@ where
     fn draw(
         &self,
         _tree: &Tree,
-        renderer: &mut Renderer,
-        _theme: &Theme,
+        renderer: &mut iced::Renderer,
+        _theme: &iced::Theme,
         _style: &renderer::Style,
         layout: Layout<'_>,
         _cursor: mouse::Cursor,
         _viewport: &Rectangle,
     ) {
         let b = layout.bounds();
-        let quad = |renderer: &mut Renderer, rect: Rectangle, color: Color| {
-            renderer.fill_quad(
-                renderer::Quad {
-                    bounds: rect,
-                    border: Border::default(),
-                    shadow: Shadow::default(),
-                    snap: false,
-                },
-                Background::Color(color),
-            );
-        };
-
         match self.glyph {
             Glyph::Close => {
-                // plaza draws the close glyph as 1px SVG lines
-                // (1,1)-(8,8) and (8,1)-(1,8) inside a 9x9 box
                 for i in 0..7 {
                     let o = i as f32;
-                    quad(
+                    dot(
                         renderer,
-                        Rectangle {
-                            x: b.x + 1.0 + o,
-                            y: b.y + 1.0 + o,
-                            width: 1.0,
-                            height: 1.0,
-                        },
+                        b.x + 1.0 + o,
+                        b.y + 1.0 + o,
+                        1.0,
+                        1.0,
                         theme::BLACK,
                     );
-                    quad(
+                    dot(
                         renderer,
-                        Rectangle {
-                            x: b.x + 7.0 - o,
-                            y: b.y + 1.0 + o,
-                            width: 1.0,
-                            height: 1.0,
-                        },
+                        b.x + 7.0 - o,
+                        b.y + 1.0 + o,
+                        1.0,
+                        1.0,
                         theme::BLACK,
                     );
                 }
             }
-            Glyph::Minimize => {
-                quad(
-                    renderer,
-                    Rectangle {
-                        x: b.x + 1.0,
-                        y: b.y + 7.0,
-                        width: 6.0,
-                        height: 2.0,
-                    },
-                    theme::BLACK,
-                );
-            }
+            Glyph::Minimize => dot(renderer, b.x + 1.0, b.y + 7.0, 6.0, 2.0, theme::BLACK),
             Glyph::DashedLine(color) => {
                 let mut x = b.x;
                 while x < b.x + b.width {
-                    quad(
-                        renderer,
-                        Rectangle {
-                            x,
-                            y: b.y,
-                            width: 2.0f32.min(b.x + b.width - x),
-                            height: 1.0,
-                        },
-                        color,
-                    );
+                    dot(renderer, x, b.y, 2.0f32.min(b.x + b.width - x), 1.0, color);
                     x += 5.0;
                 }
             }
@@ -145,10 +117,7 @@ where
     }
 }
 
-impl<'a, Message, Theme, Renderer> From<Pixel> for Element<'a, Message, Theme, Renderer>
-where
-    Renderer: iced::advanced::Renderer,
-{
+impl<'a, Message> From<Pixel> for Element<'a, Message> {
     fn from(p: Pixel) -> Self {
         Element::new(p)
     }

@@ -1,138 +1,110 @@
-use crate::state::Msg;
-use crate::theme;
-use crate::views::{bold_font, d3_sunken, link_button, raised_btn, static_image, status_bar};
-use iced::widget::{column, container, image, row, text, Space};
-use iced::{Element, Fill, Padding};
+use crate::state::{Msg, WinType};
+use crate::views::{button, link_button, status_bar, sunken_panel, Png, BOLD};
+use iced::widget::text::LineHeight;
+use iced::widget::{column, row, text, Space};
+use iced::{Element, Fill, Font, Length};
 
-const PC_IMG: &[u8] = include_bytes!("../assets/img/pc.png");
+static PC: Png = Png::new(include_bytes!("../assets/img/pc.png"));
 
-fn about_link(label: &'static str, url: &'static str) -> Element<'static, Msg> {
+const BOLD_ITALIC: Font = Font {
+    weight: iced::font::Weight::Bold,
+    style: iced::font::Style::Italic,
+    ..Font::DEFAULT
+};
+const ITALIC: Font = Font {
+    style: iced::font::Style::Italic,
+    ..Font::DEFAULT
+};
+const LH: LineHeight = LineHeight::Relative(1.5);
+
+fn link(label: &'static str, url: &'static str) -> Element<'static, Msg> {
     link_button(label, 12, Some(Msg::OpenUrl(url.into())))
 }
 
+fn heading(label: &'static str) -> iced::widget::Text<'static> {
+    text(label).size(12).font(BOLD).line_height(LH)
+}
+
+fn line(label: &'static str) -> iced::widget::Text<'static> {
+    text(label).size(12).line_height(LH)
+}
+
 pub fn view(wid: iced::window::Id) -> Element<'static, Msg> {
-    let bold = bold_font();
-    let bold_italic = iced::Font {
-        weight: iced::font::Weight::Bold,
-        style: iced::font::Style::Italic,
-        ..iced::Font::DEFAULT
-    };
-    let italic = iced::Font {
-        style: iced::font::Style::Italic,
-        ..iced::Font::DEFAULT
-    };
-
-    let lh = iced::widget::text::LineHeight::Relative(1.5);
-
     let title_col = column![
         text("Nightwave Plaza")
             .size(14)
-            .font(bold_italic)
+            .font(BOLD_ITALIC)
             .center()
             .width(Fill),
         Space::new().height(4),
         text("Welcome to the 24/7 online vaporwave and future funk radio station.")
             .size(12)
-            .font(italic)
-            .line_height(lh)
+            .font(ITALIC)
+            .line_height(LH)
             .center()
             .width(Fill),
     ]
     .width(Fill)
     .align_x(iced::Alignment::Center);
 
-    let pc_image = image(static_image(PC_IMG)).width(70);
-
-    let top_row = row![title_col, pc_image]
+    let top_row = row![title_col, PC.image().width(70)]
         .spacing(8)
         .padding([4, 6])
         .align_y(iced::Alignment::Center);
 
-    let panel_body = column![
-        text("Contact Information")
-            .size(12)
-            .font(bold)
-            .line_height(lh),
+    let panel = sunken_panel(column![
+        heading("Contact Information"),
         Space::new().height(4),
-        text("Please send any inquiries you may have to mail@plaza.one.")
-            .size(12)
-            .line_height(lh),
+        line("Please send any inquiries you may have to mail@plaza.one."),
         Space::new().height(4),
-        text("Join our community Discord server!")
-            .size(12)
-            .line_height(lh),
+        line("Join our community Discord server!"),
         Space::new().height(8),
-        text("Submissions").size(12).font(bold).line_height(lh),
+        heading("Submissions"),
         Space::new().height(4),
-        text("Want to submit music for broadcast? Please use this form.")
-            .size(12)
-            .line_height(lh),
+        line("Want to submit music for broadcast? Please use this form."),
         Space::new().height(8),
-        text("Mobile applications (iOS / Android)")
-            .size(12)
-            .font(bold)
-            .line_height(lh),
-        about_link("Show more", "https://plaza.one"),
+        heading("Mobile applications (iOS / Android)"),
+        link("Show more", "https://plaza.one"),
         Space::new().height(8),
-        text("Useful links").size(12).font(bold).line_height(lh),
+        heading("Useful links"),
         Space::new().height(4),
-        text("Playlists").size(12).line_height(lh),
+        line("Playlists"),
         row![
-            about_link("M3U (Winamp)", "https://radio.plaza.one/mp3.m3u"),
+            link("M3U (Winamp)", "https://radio.plaza.one/mp3.m3u"),
             Space::new().width(12),
-            about_link("PLS (Foobar2000)", "https://plaza.one/plaza.pls"),
+            link("PLS (Foobar2000)", "https://plaza.one/plaza.pls"),
         ],
         Space::new().height(8),
-        text("Streams").size(12).line_height(lh),
-        about_link(
+        line("Streams"),
+        link(
             "http://radio.plaza.one/mp3 (mp3 / 128kbps)",
             "http://radio.plaza.one/mp3",
         ),
-        about_link(
+        link(
             "http://radio.plaza.one/ogg (opus / 96kbps)",
             "http://radio.plaza.one/ogg",
         ),
-        about_link(
+        link(
             "http://radio.plaza.one/hls (hls / aac)",
             "http://radio.plaza.one/hls",
         ),
-    ]
-    .spacing(0);
+    ]);
 
-    let panel = d3_sunken(
-        container(panel_body)
-            .style(theme::panel)
-            .width(Fill)
-            .padding(8),
-    );
-
-    let pad = Padding::from([4, 24]);
-    let credits_btn = raised_btn(
-        "Credits",
-        Msg::OpenWin(crate::state::WinType::Credits),
-        iced::Length::Shrink,
-        pad,
-    );
-    let news_btn = raised_btn(
-        "News",
-        Msg::OpenWin(crate::state::WinType::News),
-        iced::Length::Shrink,
-        pad,
-    );
-    let close_btn = raised_btn("Close", Msg::CloseWin(wid), iced::Length::Shrink, pad);
-
+    let wide = |label, msg| button(label, Length::Shrink).on_press(msg).padding([4, 24]);
     let bottom = row![
-        credits_btn,
+        wide("Credits", Msg::OpenWin(WinType::Credits)),
         Space::new().width(8),
-        news_btn,
-        Space::new().width(iced::Fill),
-        close_btn,
+        wide("News", Msg::OpenWin(WinType::News)),
+        Space::new().width(Fill),
+        wide("Close", Msg::CloseWin(wid)),
     ];
 
-    let version = env!("CARGO_PKG_VERSION");
-    let status = status_bar(vec![(text(format!("Version: {}", version))
-        .size(10)
-        .into(), 1)]);
+    let status = status_bar(vec![(
+        text(format!("Version: {}", env!("CARGO_PKG_VERSION")))
+            .size(10)
+            .into(),
+        1,
+    )]);
 
     column![
         top_row,
@@ -143,7 +115,6 @@ pub fn view(wid: iced::window::Id) -> Element<'static, Msg> {
         Space::new().height(2),
         status,
     ]
-    .spacing(0)
     .padding(8)
     .into()
 }

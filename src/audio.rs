@@ -1,5 +1,6 @@
 use crate::api::StatusSong;
 use crate::state::Msg;
+use chrono::Utc;
 use futures::channel::mpsc::UnboundedSender;
 use rodio::cpal::traits::{DeviceTrait, HostTrait};
 use rodio::cpal::DeviceId;
@@ -9,6 +10,7 @@ use rodio::{
     Sample, SampleRate, Source,
 };
 use souvlaki::{MediaControls, MediaMetadata, MediaPlayback, MediaPosition};
+use std::collections::VecDeque;
 use std::io::{self, Read, Seek, SeekFrom};
 use std::num::NonZero;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -18,37 +20,29 @@ use std::time::{Duration, Instant};
 const STREAM_URL: &str = "https://radio.plaza.one/mp3";
 
 const PREBUFFER: Duration = Duration::from_secs(5);
+const DEFAULT_KBPS: usize = 128;
+const PIPE_CAP: usize = 512 * 1024;
 const CHUNK: Duration = Duration::from_millis(250);
+const QUEUE_AHEAD: usize = 3;
 
-const DEFAULT_VOLUME: f32 = 0.5;
 const RECONNECT_DELAY: Duration = Duration::from_secs(2);
-/// How often the streaming thread checks whether the OS default output device changed.
 const DEVICE_POLL: Duration = Duration::from_secs(2);
-/// Device buffer length. Radio does not need low latency, and a longer buffer
-/// means far fewer audio callback wakeups than rodio's 50 ms default.
 const DEVICE_BUFFER: Duration = Duration::from_millis(200);
 
-/// Format of the app-owned mixer that sits between the player and whatever
-/// output device is currently open.
 const MIX_CHANNELS: ChannelCount = NonZero::new(2).unwrap();
 const MIX_RATE: SampleRate = NonZero::new(44100).unwrap();
 
 pub struct AudioPlayer {
     shared: Arc<Shared>,
-    controls: Mutex<Option<MediaControls>>,
-    progress: Mutex<Option<Duration>>,
+    controls: Option<MediaControls>,
+    progress: Option<Duration>,
 }
 
-/// State shared between the UI, the streaming thread and the device error callback.
 struct Shared {
-    /// Player connected to the app-owned mixer; survives output device changes.
     player: Player,
-    /// Output side of the app-owned mixer. Parked here between device sinks;
-    /// the open sink's `Relay` owns it while it plays.
     relay: Arc<Mutex<Option<MixerSource>>>,
     playing: AtomicBool,
     streaming: AtomicBool,
-    /// Set by the device error callback (e.g. device unplugged); forces a reopen.
     device_lost: Arc<AtomicBool>,
     wake: Condvar,
     wake_lock: Mutex<()>,
@@ -56,12 +50,9 @@ struct Shared {
 }
 
 impl AudioPlayer {
-    /// Never fails: the output device is opened lazily by the streaming thread,
-    /// so a missing or broken device only delays playback.
     pub fn new(events: UnboundedSender<Msg>) -> Self {
         let (mixer, relay) = rodio::mixer::mixer(MIX_CHANNELS, MIX_RATE);
         let player = Player::connect_new(&mixer);
-        player.set_volume(DEFAULT_VOLUME);
 
         let shared = Arc::new(Shared {
             player,
@@ -79,10 +70,10 @@ impl AudioPlayer {
         #[cfg(target_os = "windows")]
         let controls: Option<MediaControls> = None;
 
-        let this = Self {
+        let mut this = Self {
             shared: shared.clone(),
-            controls: Mutex::new(controls),
-            progress: Mutex::new(None),
+            controls,
+            progress: None,
         };
         std::thread::spawn(move || stream_forever(shared));
         this.emit_playback();
@@ -101,9 +92,7 @@ impl AudioPlayer {
         self.shared.player.set_volume(vol.clamp(0.0, 1.0));
     }
 
-    pub fn play(&self) {
-        // Hold the wake lock while flipping the flag so the streaming thread
-        // cannot miss the notification between its check and its wait.
+    pub fn play(&mut self) {
         let guard = self.shared.wake_lock.lock().unwrap();
         if self.shared.playing.swap(true, Ordering::Relaxed) {
             return;
@@ -114,7 +103,7 @@ impl AudioPlayer {
         self.emit_playback();
     }
 
-    pub fn stop(&self) {
+    pub fn stop(&mut self) {
         if !self.shared.playing.swap(false, Ordering::Relaxed) {
             return;
         }
@@ -122,11 +111,11 @@ impl AudioPlayer {
         self.emit_playback();
     }
 
-    pub fn update_metadata(&self, song: &StatusSong) {
+    pub fn update_metadata(&mut self, song: &StatusSong) {
         let length = (song.length > 0.0).then(|| Duration::from_secs_f64(song.length));
-        *self.progress.lock().unwrap() = Some(Duration::from_secs_f64(song.position));
+        self.progress = Some(Duration::from_secs_f64(song.position));
 
-        if let Some(controls) = self.controls.lock().unwrap().as_mut() {
+        if let Some(controls) = self.controls.as_mut() {
             let _ = controls.set_metadata(MediaMetadata {
                 title: opt_str(&song.title),
                 album: opt_str(&song.album),
@@ -139,14 +128,14 @@ impl AudioPlayer {
         self.emit_playback();
     }
 
-    fn emit_playback(&self) {
-        let progress = (*self.progress.lock().unwrap()).map(MediaPosition);
+    fn emit_playback(&mut self) {
+        let progress = self.progress.map(MediaPosition);
         let playback = if self.is_playing() {
             MediaPlayback::Playing { progress }
         } else {
             MediaPlayback::Paused { progress }
         };
-        if let Some(controls) = self.controls.lock().unwrap().as_mut() {
+        if let Some(controls) = self.controls.as_mut() {
             let _ = controls.set_playback(playback);
         }
     }
@@ -178,10 +167,6 @@ fn build_controls(tx: UnboundedSender<Msg>) -> Result<MediaControls, souvlaki::E
     Ok(controls)
 }
 
-/// Feeds the app-owned mixer's output into a device sink's mixer. It owns the
-/// mixer output while its sink is open (no locking on the audio thread) and
-/// parks it back in the shared slot when the sink is dropped, so the player's
-/// queue carries over untouched when the output device changes.
 struct Relay {
     slot: Arc<Mutex<Option<MixerSource>>>,
     source: Option<MixerSource>,
@@ -221,7 +206,6 @@ impl Source for Relay {
     }
 }
 
-/// The currently open output device, owned by the streaming thread.
 struct Output {
     _sink: MixerDeviceSink,
     device: Option<DeviceId>,
@@ -240,12 +224,16 @@ fn default_device_id() -> Option<DeviceId> {
 fn open_sink(
     device: &rodio::cpal::Device,
     lost: &Arc<AtomicBool>,
-    buffer: Option<u32>,
+    rate: Option<SampleRate>,
 ) -> Result<MixerDeviceSink, BoxError> {
     let lost = lost.clone();
     let mut builder = DeviceSinkBuilder::from_device(device.clone())?;
-    if let Some(frames) = buffer {
-        builder = builder.with_buffer_size(rodio::cpal::BufferSize::Fixed(frames));
+    if let Some(rate) = rate {
+        let frames = rate.get() * DEVICE_BUFFER.as_millis() as u32 / 1000;
+        builder = builder
+            .with_sample_rate(rate)
+            .with_channels(MIX_CHANNELS)
+            .with_buffer_size(rodio::cpal::BufferSize::Fixed(frames));
     }
     let mut sink = builder
         .with_error_callback(move |e| {
@@ -265,16 +253,16 @@ fn open_output(shared: &Shared) -> Result<Output, BoxError> {
     let id = device.id().ok();
 
     let open = |device: rodio::cpal::Device| -> Result<MixerDeviceSink, BoxError> {
-        // Prefer a long buffer; fall back to the device default if refused.
-        let frames = device
+        let lost = &shared.device_lost;
+        let default_rate = device
             .default_output_config()
             .ok()
-            .map(|c| c.sample_rate() * DEVICE_BUFFER.as_millis() as u32 / 1000);
-        open_sink(&device, &shared.device_lost, frames)
-            .or_else(|_| open_sink(&device, &shared.device_lost, None))
+            .and_then(|c| SampleRate::new(c.sample_rate()));
+        open_sink(&device, lost, Some(MIX_RATE))
+            .or_else(|_| open_sink(&device, lost, default_rate))
+            .or_else(|_| open_sink(&device, lost, None))
     };
 
-    // Like rodio's open_default_sink: fall back to any other working device.
     let sink = open(device).or_else(|err| {
         host.output_devices()
             .ok()
@@ -282,8 +270,6 @@ fn open_output(shared: &Shared) -> Result<Output, BoxError> {
             .ok_or(err)
     })?;
 
-    // The previous sink hands the mixer output back when its stream is torn
-    // down; if that has not happened yet the caller simply retries later.
     let source = shared
         .relay
         .lock()
@@ -302,8 +288,6 @@ fn open_output(shared: &Shared) -> Result<Output, BoxError> {
     })
 }
 
-/// Makes sure a usable output is open, reopening it after a device error or
-/// when the OS default output device has changed.
 fn ensure_output(output: &mut Option<Output>, shared: &Shared) -> Result<(), BoxError> {
     if let Some(out) = output.as_mut() {
         let lost = shared.device_lost.swap(false, Ordering::Relaxed);
@@ -314,7 +298,6 @@ fn ensure_output(output: &mut Option<Output>, shared: &Shared) -> Result<(), Box
             out.checked = Instant::now();
             return Ok(());
         }
-        // Drop the old sink first so only one relay pulls from the mixer.
         *output = None;
         let reopened = open_output(shared)?;
         eprintln!("Audio output reopened on {:?}", reopened.device);
@@ -331,7 +314,6 @@ fn stream_forever(shared: Arc<Shared>) {
         {
             let mut guard = shared.wake_lock.lock().unwrap();
             if !shared.playing.load(Ordering::Relaxed) {
-                // Release the device while stopped so it can power down.
                 output = None;
             }
             while !shared.playing.load(Ordering::Relaxed) {
@@ -351,27 +333,41 @@ fn stream_forever(shared: Arc<Shared>) {
 fn stream_once(shared: &Shared, output: &mut Option<Output>) -> Result<(), BoxError> {
     ensure_output(output, shared)?;
 
-    let nocache = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .map_or(0, |d| d.as_millis());
     let resp = crate::net::agent()
-        .get(&format!("{STREAM_URL}?nocache={nocache}"))
+        .get(&format!(
+            "{STREAM_URL}?nocache={}",
+            Utc::now().timestamp_millis()
+        ))
         .call()?;
-    let decoder = Decoder::new_mp3(StreamReader::new(resp.into_reader()))?;
+    let kbps = resp
+        .header("icy-br")
+        .and_then(|br| br.trim().parse().ok())
+        .unwrap_or(DEFAULT_KBPS);
+    let prebuffer_bytes = kbps * 125 * PREBUFFER.as_millis() as usize / 1000;
 
+    let pipe = Arc::new(Pipe::default());
+    let feeder = pipe.clone();
+    let mut body = resp.into_reader();
+    std::thread::spawn(move || feeder.fill(&mut body));
+    let reader = PipeReader { pipe, pos: 0 };
+    if !reader.pipe.wait_for(prebuffer_bytes) || !shared.playing.load(Ordering::Relaxed) {
+        return Ok(());
+    }
+
+    let decoder = Decoder::new_mp3(reader)?;
     let channels = decoder.channels();
     let sample_rate = decoder.sample_rate();
     let per_sec = sample_rate.get() as usize * channels.get() as usize;
-    let prebuffer_len = per_sec * PREBUFFER.as_millis() as usize / 1000;
     let chunk_len = (per_sec * CHUNK.as_millis() as usize / 1000).max(1);
-
-    let mut buf: Vec<f32> = Vec::with_capacity(prebuffer_len);
-    let mut threshold = prebuffer_len;
+    let mut buf: Vec<f32> = Vec::with_capacity(chunk_len);
 
     for sample in decoder {
         buf.push(sample);
-        if buf.len() < threshold {
+        if buf.len() < chunk_len {
             continue;
+        }
+        while shared.player.len() >= QUEUE_AHEAD && shared.playing.load(Ordering::Relaxed) {
+            std::thread::sleep(CHUNK);
         }
         if !shared.playing.load(Ordering::Relaxed) {
             return Ok(());
@@ -381,36 +377,98 @@ fn stream_once(shared: &Shared, output: &mut Option<Output>) -> Result<(), BoxEr
         shared
             .player
             .append(SamplesBuffer::new(channels, sample_rate, chunk));
-        if threshold != chunk_len {
-            threshold = chunk_len;
-            shared.set_streaming(true);
-        }
+        shared.set_streaming(true);
     }
 
     Ok(())
 }
 
-struct StreamReader {
-    inner: Box<dyn Read + Send + Sync>,
-    pos: u64,
+#[derive(Default)]
+struct Pipe {
+    state: Mutex<PipeState>,
+    changed: Condvar,
 }
 
-impl StreamReader {
-    fn new(inner: Box<dyn Read + Send + Sync>) -> Self {
-        Self { inner, pos: 0 }
+#[derive(Default)]
+struct PipeState {
+    buf: VecDeque<u8>,
+    done: bool,
+    error: Option<io::Error>,
+    closed: bool,
+}
+
+impl Pipe {
+    fn fill(&self, body: &mut dyn Read) {
+        let mut scratch = [0u8; 16 * 1024];
+        let error = loop {
+            let n = match body.read(&mut scratch) {
+                Ok(0) => break None,
+                Ok(n) => n,
+                Err(e) if e.kind() == io::ErrorKind::Interrupted => continue,
+                Err(e) => {
+                    eprintln!("Audio stream read error: {e}");
+                    break Some(e);
+                }
+            };
+            let mut state = self.state.lock().unwrap();
+            while state.buf.len() >= PIPE_CAP && !state.closed {
+                state = self.changed.wait(state).unwrap();
+            }
+            if state.closed {
+                return;
+            }
+            state.buf.extend(&scratch[..n]);
+            self.changed.notify_all();
+        };
+        let mut state = self.state.lock().unwrap();
+        state.done = true;
+        state.error = error;
+        self.changed.notify_all();
+    }
+
+    fn wait_for(&self, bytes: usize) -> bool {
+        let mut state = self.state.lock().unwrap();
+        while state.buf.len() < bytes && !state.done {
+            state = self.changed.wait(state).unwrap();
+        }
+        state.buf.len() >= bytes
     }
 }
 
-impl Read for StreamReader {
-    fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
-        let n = self.inner.read(buf)?;
+struct PipeReader {
+    pipe: Arc<Pipe>,
+    pos: u64,
+}
+
+impl Read for PipeReader {
+    fn read(&mut self, out: &mut [u8]) -> io::Result<usize> {
+        let mut state = self.pipe.state.lock().unwrap();
+        while state.buf.is_empty() && !state.done {
+            state = self.pipe.changed.wait(state).unwrap();
+        }
+        if state.buf.is_empty() {
+            if let Some(e) = state.error.take() {
+                return Err(e);
+            }
+        }
+        let was_full = state.buf.len() >= PIPE_CAP;
+        let n = state.buf.read(out)?;
+        if was_full {
+            self.pipe.changed.notify_all();
+        }
         self.pos += n as u64;
         Ok(n)
     }
 }
 
-/// The decoder probes with seeks; a live stream can only skip forward.
-impl Seek for StreamReader {
+impl Drop for PipeReader {
+    fn drop(&mut self) {
+        self.pipe.state.lock().unwrap().closed = true;
+        self.pipe.changed.notify_all();
+    }
+}
+
+impl Seek for PipeReader {
     fn seek(&mut self, pos: SeekFrom) -> io::Result<u64> {
         let target = match pos {
             SeekFrom::Start(n) => n,

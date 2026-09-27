@@ -1,57 +1,52 @@
 use crate::state::{ExportMsg, Msg, Plaza};
 use crate::theme;
-use crate::theme::ERROR_RED;
-use crate::views::bevel_button;
-use crate::views::{close_btn_padded, d3_sunken, link_button};
+use crate::views::{button, link_button, sunken_panel};
 use iced::widget::{column, container, text, Space};
-use iced::{Element, Fill};
+use iced::{Element, Fill, Length};
 
 pub fn view(state: &Plaza, wid: iced::window::Id) -> Element<'_, Msg> {
-    let body: Element<Msg> = if let Some(ref link) = state.export.link {
-        column![
-            text("Export successful! Your file is ready to download.")
-                .size(11)
-                .center()
-                .width(Fill),
-            Space::new().height(8),
-            link_button("Download", 11, Some(Msg::OpenUrl(link.clone()))),
-        ]
-        .width(Fill)
-        .into()
-    } else if state.export.loading {
-        column![text("Exporting...").size(11).center().width(Fill)]
-            .width(Fill)
-            .into()
-    } else {
-        column![
-            text("Export your favorites list as a CSV file. Click below to begin.")
-                .size(11)
-                .center()
-                .width(Fill),
-            Space::new().height(10),
-            container(
-                bevel_button(text("Export").size(11).center().width(90))
-                    .on_press(Msg::Export(ExportMsg::Start))
-                    .width(90)
-            )
-            .center_x(Fill),
-        ]
-        .width(Fill)
-        .into()
-    };
+    let export = &state.export;
+    let message = |s| text(s).size(11).center().width(Fill);
 
-    let mut col = column![body].width(Fill);
-    if let Some(ref err) = state.export.error {
-        col = col.push(Space::new().height(6));
-        col = col.push(text(err).size(11).color(ERROR_RED).center().width(Fill));
+    let mut body = column![].width(Fill);
+    if let Some(link) = &export.link {
+        body = body
+            .push(message(
+                "Export successful! Your file is ready to download.",
+            ))
+            .push(Space::new().height(8))
+            .push(link_button(
+                "Download",
+                11,
+                Some(Msg::OpenUrl(link.clone())),
+            ));
+    } else if export.loading {
+        body = body.push(message("Exporting..."));
+    } else {
+        body = body
+            .push(message(
+                "Export your favorites list as a CSV file. Click below to begin.",
+            ))
+            .push(Space::new().height(10))
+            .push(
+                container(button("Export", 90).on_press(Msg::Export(ExportMsg::Start)))
+                    .center_x(Fill),
+            );
+    }
+    if let Some(err) = &export.error {
+        body = body
+            .push(Space::new().height(6))
+            .push(message(err).color(theme::ERROR_RED));
     }
 
-    let panel = d3_sunken(container(col).style(theme::panel).width(Fill).padding(12));
+    let close = button("Close", Length::Shrink)
+        .on_press(Msg::CloseWin(wid))
+        .padding([4, 24]);
 
     column![
-        panel,
+        sunken_panel(container(body).padding(4)),
         Space::new().height(12),
-        container(close_btn_padded(wid)).center_x(Fill),
+        container(close).center_x(Fill),
     ]
     .padding(8)
     .width(Fill)

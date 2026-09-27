@@ -1,8 +1,10 @@
+use crate::api::StatusSong;
+use chrono::Utc;
 use discord_rich_presence::{activity, DiscordIpc, DiscordIpcClient};
 use serde::{Deserialize, Serialize};
 use std::sync::mpsc::{self, Receiver, Sender};
 
-pub const CLIENT_ID: &str = "1511775400425160784";
+const CLIENT_ID: &str = "1511775400425160784";
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct DiscordConfig {
@@ -15,66 +17,50 @@ impl Default for DiscordConfig {
     }
 }
 
-#[derive(Debug, Clone)]
-pub struct Presence {
-    pub title: String,
-    pub artist: String,
-    pub album: String,
-    pub cover_url: Option<String>,
-    pub start_unix: i64,
-    pub end_unix: Option<i64>,
+struct Presence {
+    song: StatusSong,
+    start_unix: i64,
 }
 
-enum Cmd {
-    Set(Presence),
-    Clear,
+pub struct Discord {
+    tx: Sender<Option<Presence>>,
 }
 
-pub struct DiscordHandle {
-    tx: Sender<Cmd>,
-}
-
-impl DiscordHandle {
+impl Discord {
     pub fn spawn() -> Self {
         let (tx, rx) = mpsc::channel();
         std::thread::spawn(move || worker(rx));
         Self { tx }
     }
 
-    pub fn set(&self, presence: Presence) {
-        let _ = self.tx.send(Cmd::Set(presence));
+    pub fn set(&self, song: &StatusSong) {
+        let start_unix = Utc::now().timestamp() - song.position.max(0.0) as i64;
+        let _ = self.tx.send(Some(Presence {
+            song: song.clone(),
+            start_unix,
+        }));
     }
 
     pub fn clear(&self) {
-        let _ = self.tx.send(Cmd::Clear);
+        let _ = self.tx.send(None);
     }
 }
 
-fn worker(rx: Receiver<Cmd>) {
+fn worker(rx: Receiver<Option<Presence>>) {
     let mut client = DiscordIpcClient::new(CLIENT_ID);
     let mut connected = false;
-    while let Ok(cmd) = rx.recv() {
-        let mut cmd = cmd;
+    while let Ok(mut presence) = rx.recv() {
         while let Ok(next) = rx.try_recv() {
-            cmd = next;
+            presence = next;
         }
-        let current = match cmd {
-            Cmd::Set(p) => Some(p),
-            Cmd::Clear => None,
-        };
-
         if !connected {
             if client.connect().is_err() {
                 continue;
             }
             connected = true;
         }
-
-        if !apply(&mut client, current.as_ref()) {
-            connected = false;
-            if client.reconnect().is_ok() {
-                connected = apply(&mut client, current.as_ref());
-            }
+        if !apply(&mut client, presence.as_ref()) {
+            connected = client.reconnect().is_ok() && apply(&mut client, presence.as_ref());
         }
     }
 }
@@ -83,26 +69,14 @@ fn apply(client: &mut DiscordIpcClient, presence: Option<&Presence>) -> bool {
     let Some(p) = presence else {
         return client.clear_activity().is_ok();
     };
-
-    let title = p.title.trim();
-    let artist = p.artist.trim();
-    let album = p.album.trim();
-
-    let mut assets = activity::Assets::new();
-    let mut has_assets = false;
-    if let Some(url) = p.cover_url.as_deref().filter(|u| !u.is_empty()) {
-        assets = assets.large_image(url);
-        assets = assets.large_text(if album.len() >= 2 {
-            album
-        } else {
-            "Nightwave Plaza"
-        });
-        has_assets = true;
-    }
+    let song = &p.song;
+    let title = song.title.trim();
+    let artist = song.artist.trim();
+    let album = song.album.trim();
 
     let mut ts = activity::Timestamps::new().start(p.start_unix * 1000);
-    if let Some(end) = p.end_unix {
-        ts = ts.end(end * 1000);
+    if song.length > 0.0 {
+        ts = ts.end((p.start_unix + song.length as i64) * 1000);
     }
 
     let mut act = activity::Activity::new()
@@ -115,8 +89,17 @@ fn apply(client: &mut DiscordIpcClient, presence: Option<&Presence>) -> bool {
     if artist.len() >= 2 {
         act = act.state(artist);
     }
-    if has_assets {
-        act = act.assets(assets);
+    if let Some(url) = song.artwork_src.as_deref().filter(|u| !u.is_empty()) {
+        let large_text = if album.len() >= 2 {
+            album
+        } else {
+            "Nightwave Plaza"
+        };
+        act = act.assets(
+            activity::Assets::new()
+                .large_image(url)
+                .large_text(large_text),
+        );
     }
 
     client.set_activity(act).is_ok()

@@ -1,12 +1,12 @@
 use crate::state::{DeleteMsg, Msg, Plaza};
 use crate::theme;
 use crate::views::{
-    action_close_row, bold_font, d3_sunken, form_error, form_input, labeled_panel, submit_button,
+    action_close_row, d3_sunken, form_error, form_input, labeled_panel, submit_button, BOLD,
 };
 use iced::widget::{checkbox, column, container, text, Space};
 use iced::{Element, Fill};
 
-const WARNINGS: &[&str] = &[
+const WARNINGS: [&str; 4] = [
     "\u{2014} Immediate deletion.",
     "\u{2014} All your data will be completely deleted.",
     "\u{2014} Recovery is not possible.",
@@ -14,16 +14,17 @@ const WARNINGS: &[&str] = &[
 ];
 
 pub fn view(state: &Plaza, wid: iced::window::Id) -> Element<'_, Msg> {
+    let del = &state.delete;
+
     let mut memo = column![
         text("This action will completely delete your Nightwave Plaza account.")
             .size(11)
-            .font(bold_font()),
+            .font(BOLD),
         Space::new().height(4),
     ];
-    for w in WARNINGS {
-        memo = memo.push(text(*w).size(11));
+    for warning in WARNINGS {
+        memo = memo.push(text(warning).size(11));
     }
-
     let memo_panel = d3_sunken(
         container(memo)
             .style(theme::sunken_inner)
@@ -31,24 +32,20 @@ pub fn view(state: &Plaza, wid: iced::window::Id) -> Element<'_, Msg> {
             .padding(8),
     );
 
-    let confirm = checkbox(state.delete.confirm)
+    let confirm = checkbox(del.confirm)
         .label("I understand, delete my account.")
         .on_toggle(|b| Msg::DeleteAccount(DeleteMsg::Confirm(b)))
         .size(13)
         .text_size(11);
 
-    let password_input = form_input(&state.delete.current_password, |s| {
+    let password = form_input(&del.current_password, |s| {
         Msg::DeleteAccount(DeleteMsg::Password(s))
     })
     .on_submit(Msg::DeleteAccount(DeleteMsg::Submit))
     .secure(true);
 
-    let password_panel = labeled_panel("Current Password:", password_input);
-
-    let error_row = form_error(&state.delete.error);
-
     let delete_btn = submit_button(
-        state.delete.loading,
+        del.loading,
         "Deleting...",
         "Delete Account",
         Msg::DeleteAccount(DeleteMsg::Submit),
@@ -60,9 +57,9 @@ pub fn view(state: &Plaza, wid: iced::window::Id) -> Element<'_, Msg> {
         Space::new().height(8),
         confirm,
         Space::new().height(8),
-        password_panel,
+        labeled_panel("Current Password:", password),
         Space::new().height(8),
-        error_row,
+        form_error(&del.error),
         Space::new().height(4),
         action_close_row(delete_btn, wid),
     ]

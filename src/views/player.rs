@@ -1,21 +1,18 @@
-use crate::state::{Msg, Plaza, WinType};
-use crate::theme::{self, ERROR_RED};
-use crate::views::bevel_button;
+use crate::state::{Msg, Plaza, SongInfoMsg, WinType};
+use crate::theme;
+use crate::views::bevel::bevel_button;
 use crate::views::volume::volume_slider;
-use crate::views::{
-    bold_font, d3_thin_sunken, format_time, menu_bar, shaped, static_image, status_bar,
-};
-use iced::widget::text::LineHeight;
-use iced::widget::{column, container, image, mouse_area, row, text, Row, Space};
+use crate::views::{button, d3_thin_sunken, format_time, menu_bar, shaped, status_bar, Png, BOLD};
+use iced::widget::text::{LineHeight, Wrapping};
+use iced::widget::{column, container, image, mouse_area, row, text, Space};
 use iced::{Alignment, Element, Fill, Length, Padding, Pixels};
-use std::time::Instant;
 
-const VOLUME_IMG: &[u8] = include_bytes!("../assets/img/volume.png");
-const PERSON_IMG: &[u8] = include_bytes!("../assets/icons/person.png");
-const GEARS_IMG: &[u8] = include_bytes!("../assets/icons/gears.png");
-const HEART_IMG: &[u8] = include_bytes!("../assets/icons/heart.png");
-const HEART_GRAY_IMG: &[u8] = include_bytes!("../assets/icons/heart_gray.png");
-const STAR_IMG: &[u8] = include_bytes!("../assets/icons/star.png");
+static VOLUME: Png = Png::new(include_bytes!("../assets/img/volume.png"));
+static PERSON: Png = Png::new(include_bytes!("../assets/icons/person.png"));
+static GEARS: Png = Png::new(include_bytes!("../assets/icons/gears.png"));
+static HEART: Png = Png::new(include_bytes!("../assets/icons/heart.png"));
+static HEART_GRAY: Png = Png::new(include_bytes!("../assets/icons/heart_gray.png"));
+static STAR: Png = Png::new(include_bytes!("../assets/icons/star.png"));
 
 const LH11: LineHeight = LineHeight::Absolute(Pixels(11.0));
 const LH14: LineHeight = LineHeight::Absolute(Pixels(14.0));
@@ -30,13 +27,9 @@ pub fn view(state: &Plaza) -> Element<'_, Msg> {
         ("Support Us", Msg::OpenWin(WinType::Support)),
     ]);
 
-    let cover = render_cover(state);
-    let meta = render_metadata(state);
-
-    // .player-container: thin sunken border, 3px padding, margin 1px 1px 0 1px
-    let content = container(
+    let player = container(
         d3_thin_sunken(
-            container(row![cover, meta].align_y(Alignment::Center))
+            container(row![cover(state), metadata(state)].align_y(Alignment::Center))
                 .style(theme::panel)
                 .width(Fill)
                 .padding(3),
@@ -50,63 +43,45 @@ pub fn view(state: &Plaza) -> Element<'_, Msg> {
         left: 1.0,
     });
 
-    let status = render_status(state);
-
-    let mut col = column![menu, content, status];
-
-    if let Some(ref err) = state.error_msg {
-        col = col.push(render_error(err));
+    let mut col = column![menu, player, status(state)];
+    if let Some(err) = &state.error_msg {
+        col = col.push(error_bar(err));
     }
-
     col.into()
 }
 
-fn render_cover(state: &Plaza) -> Element<'_, Msg> {
-    let song = &state.status.song;
-
-    let inner: Element<Msg> = if let Some(ref h) = state.artwork_handle {
-        image(h.clone()).width(112).height(112).into()
-    } else {
-        Space::new().width(112).height(112).into()
+fn cover(state: &Plaza) -> Element<'_, Msg> {
+    let art: Element<Msg> = match &state.artwork {
+        Some(handle) => image(handle.clone()).width(112).height(112).into(),
+        None => Space::new().width(112).height(112).into(),
     };
-
-    let img = d3_thin_sunken(container(inner).style(theme::cover));
-
-    let area = mouse_area(img).interaction(iced::mouse::Interaction::Pointer);
-    if song.id.is_empty() {
+    let song_id = &state.status.song.id;
+    let area = mouse_area(d3_thin_sunken(container(art).style(theme::cover)))
+        .interaction(iced::mouse::Interaction::Pointer);
+    if song_id.is_empty() {
         area.into()
     } else {
-        area.on_press(Msg::SongInfo(crate::state::SongInfoMsg::Open(
-            song.id.clone(),
-        )))
-        .into()
+        area.on_press(Msg::SongInfo(SongInfoMsg::Open(song_id.clone())))
+            .into()
     }
 }
 
-fn render_metadata(state: &Plaza) -> Element<'_, Msg> {
+fn metadata(state: &Plaza) -> Element<'_, Msg> {
     let song = &state.status.song;
-
-    let artist = shaped(if song.artist.is_empty() {
+    let artist = if song.artist.is_empty() {
         "..."
     } else {
         &song.artist
-    })
-    .size(14)
-    .line_height(LH14)
-    .font(bold_font());
-
-    let title = shaped(&song.title).size(14).line_height(LH14);
-
-    // .player-meta: padding-left 8px (ps-sm-2)
+    };
     column![
         Space::new().height(2),
-        artist,
+        shaped(artist).size(14).line_height(LH14).font(BOLD),
         Space::new().height(8),
-        title,
+        shaped(&song.title).size(14).line_height(LH14),
         Space::new().height(12),
-        render_time_vol(state),
+        time_and_volume(state),
         Space::new().height(12),
-        render_controls(state),
+        controls(state),
     ]
     .width(Fill)
     .padding(Padding {
@@ -116,18 +91,17 @@ fn render_metadata(state: &Plaza) -> Element<'_, Msg> {
     .into()
 }
 
-fn render_time_vol(state: &Plaza) -> Element<'_, Msg> {
-    let time_str = match (
-        state.welcome_until,
-        state.volume_text.as_ref(),
-        state.volume_text_until,
-    ) {
-        (Some(until), _, _) if Instant::now() < until => "Welcome back!".to_string(),
-        (_, Some(vol), Some(until)) if Instant::now() < until => vol.clone(),
-        _ => format_time_display(state),
+fn time_and_volume(state: &Plaza) -> Element<'_, Msg> {
+    let length = state.status.song.length;
+    let time_str = match &state.time_notice {
+        Some((notice, _)) => notice.clone(),
+        None if length > 0.0 => format!(
+            "{} / {}",
+            format_time(state.song_position()),
+            format_time(length)
+        ),
+        None => "...".into(),
     };
-
-    // .text-field .player-time: thin sunken, gray bg, 14px text on a 24px line
     let time_field = d3_thin_sunken(
         container(
             text(time_str)
@@ -139,32 +113,28 @@ fn render_time_vol(state: &Plaza) -> Element<'_, Msg> {
         .width(Fill)
         .style(theme::panel),
     );
-
-    let vol_icon = image(static_image(VOLUME_IMG)).width(11).height(16);
-    let vol = volume_slider(state.volume, vol_icon, Msg::Volume);
-
+    let volume = volume_slider(
+        state.volume,
+        VOLUME.image().width(11).height(16),
+        Msg::Volume,
+    );
     row![
         container(time_field).width(Length::FillPortion(7)),
         Space::new().width(8),
-        container(vol).width(Length::FillPortion(5)),
+        container(volume).width(Length::FillPortion(5)),
     ]
-    .align_y(Alignment::Start)
     .into()
 }
 
-fn render_controls(state: &Plaza) -> Element<'_, Msg> {
+fn controls(state: &Plaza) -> Element<'_, Msg> {
     let song = &state.status.song;
-    let is_playing = state.is_playing();
-    let is_streaming = state.is_streaming();
-    let play_txt = if is_playing && !is_streaming {
-        "Loading…"
-    } else if is_playing {
-        "Stop"
-    } else {
-        "Play"
+    let play_label = match (state.player.is_playing(), state.player.is_streaming()) {
+        (true, false) => "Loading…",
+        (true, true) => "Stop",
+        (false, _) => "Play",
     };
     let play_btn = bevel_button(
-        text(play_txt)
+        text(play_label)
             .size(11)
             .line_height(LH16)
             .center()
@@ -173,20 +143,16 @@ fn render_controls(state: &Plaza) -> Element<'_, Msg> {
     .on_press(Msg::TogglePlay)
     .width(Fill);
 
-    let is_current_song = state.reaction_song_id == song.id && !song.id.is_empty();
-    let react_icon = match (is_current_song, state.reaction_rate) {
-        (true, 2) => STAR_IMG,
-        (true, 1) => HEART_IMG,
-        _ => HEART_GRAY_IMG,
+    let react_icon = match state.reaction.rate_for(&song.id) {
+        2 => &STAR,
+        1 => &HEART,
+        _ => &HEART_GRAY,
     };
-
     let react_btn = bevel_button(
         container(
             row![
-                image(static_image(react_icon)).width(16).height(16),
-                text(format!("{}", song.reactions))
-                    .size(11)
-                    .line_height(LH16),
+                react_icon.image().width(16).height(16),
+                text(song.reactions.to_string()).size(11).line_height(LH16),
             ]
             .align_y(Alignment::Center)
             .spacing(6),
@@ -196,85 +162,72 @@ fn render_controls(state: &Plaza) -> Element<'_, Msg> {
     .on_press(Msg::React)
     .width(Fill);
 
-    let left_btns = Row::new()
-        .spacing(4)
-        .push(container(play_btn).width(Length::FillPortion(7)))
-        .push(container(react_btn).width(Length::FillPortion(5)));
-
-    let user_msg = if state.user.is_some() {
-        Msg::OpenWin(WinType::UserProfile)
-    } else {
-        Msg::OpenWin(WinType::UserLogin)
+    let icon_btn = |png: &'static Png, msg| {
+        bevel_button(container(png.image().width(16).height(16)).center_x(Fill))
+            .on_press(msg)
+            .width(Fill)
     };
-    let user_btn = bevel_button(
-        container(image(static_image(PERSON_IMG)).width(16).height(16)).center_x(Fill),
-    )
-    .on_press(user_msg)
-    .width(Fill);
+    let user_win = if state.user().is_some() {
+        WinType::UserProfile
+    } else {
+        WinType::UserLogin
+    };
+    let user_btn = icon_btn(&PERSON, Msg::OpenWin(user_win));
+    let settings_btn = icon_btn(&GEARS, Msg::OpenWin(WinType::Settings));
 
-    let settings_btn =
-        bevel_button(container(image(static_image(GEARS_IMG)).width(16).height(16)).center_x(Fill))
-            .on_press(Msg::OpenWin(WinType::Settings))
-            .width(Fill);
-
-    let right_btns = Row::new()
-        .spacing(4)
-        .push(container(user_btn).width(Length::FillPortion(1)))
-        .push(container(settings_btn).width(Length::FillPortion(1)));
+    let left = row![
+        container(play_btn).width(Length::FillPortion(7)),
+        container(react_btn).width(Length::FillPortion(5)),
+    ]
+    .spacing(4);
+    let right = row![
+        container(user_btn).width(Fill),
+        container(settings_btn).width(Fill),
+    ]
+    .spacing(4);
 
     row![
-        container(left_btns).width(Length::FillPortion(7)),
+        container(left).width(Length::FillPortion(7)),
         Space::new().width(8),
-        container(right_btns).width(Length::FillPortion(5)),
+        container(right).width(Length::FillPortion(5)),
     ]
-    .align_y(Alignment::Start)
     .into()
 }
 
-fn render_status(state: &Plaza) -> Element<'_, Msg> {
-    let mut status_cells: Vec<(Element<Msg>, u16)> = vec![(
+fn status(state: &Plaza) -> Element<'_, Msg> {
+    let mut cells: Vec<(Element<Msg>, u16)> = vec![(
         text(format!("Listeners: {}", state.status.listeners))
             .size(11)
             .line_height(LH11)
             .into(),
         8,
     )];
-    if let Some(ref u) = state.user {
-        status_cells.push((
-            text(format!("Logged in as: {}", u.username))
+    if let Some(user) = state.user() {
+        cells.push((
+            text(format!("Logged in as: {}", user.username))
                 .size(11)
                 .line_height(LH11)
-                .wrapping(iced::widget::text::Wrapping::None)
+                .wrapping(Wrapping::None)
                 .into(),
             4,
         ));
     }
-    status_bar(status_cells)
+    status_bar(cells)
 }
 
-fn render_error(err: &str) -> Element<'_, Msg> {
+fn error_bar(err: &str) -> Element<'_, Msg> {
     container(
         row![
-            text(err).size(10).color(ERROR_RED),
-            Space::new().width(iced::Fill),
-            bevel_button(text("x").size(10))
+            text(err).size(10).color(theme::ERROR_RED),
+            Space::new().width(Fill),
+            button("x", Length::Shrink)
                 .on_press(Msg::DismissErr)
                 .padding(2),
         ]
-        .align_y(iced::Alignment::Center)
+        .align_y(Alignment::Center)
         .padding([2, 4]),
     )
     .style(theme::panel)
     .width(Fill)
     .into()
-}
-
-fn format_time_display(state: &Plaza) -> String {
-    let pos = state.elapsed;
-    let dur = state.status.song.length;
-    if dur > 0.0 {
-        format!("{} / {}", format_time(pos), format_time(dur))
-    } else {
-        "...".into()
-    }
 }

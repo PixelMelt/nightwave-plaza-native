@@ -1,19 +1,20 @@
+use crate::theme;
 use iced::advanced::layout::{self, Layout};
 use iced::advanced::renderer;
 use iced::advanced::widget::{tree, Tree, Widget};
 use iced::advanced::{mouse, Clipboard, Shell};
 use iced::event::Event;
-use iced::{
-    touch, Background, Border, Color, Element, Length, Padding, Rectangle, Shadow, Size,
-};
+use iced::{touch, Background, Border, Color, Element, Length, Padding, Rectangle, Shadow, Size};
 
-use crate::theme;
-
-#[derive(Clone, Copy)]
-enum BevelStyle {
-    Object,
-    TitleButton,
-    Menu,
+pub struct Bevel<'a, Message> {
+    content: Element<'a, Message>,
+    on_press: Option<Message>,
+    menu: bool,
+    width: Length,
+    height: Length,
+    padding: Padding,
+    active: bool,
+    drawn: Option<Look>,
 }
 
 #[derive(Default, Clone, Copy)]
@@ -21,29 +22,20 @@ struct State {
     is_pressed: bool,
 }
 
-pub struct Bevel<'a, Message, Theme = iced::Theme, Renderer = iced::Renderer>
-where
-    Renderer: iced::advanced::Renderer,
-{
-    content: Element<'a, Message, Theme, Renderer>,
-    on_press: Option<Message>,
-    style: BevelStyle,
-    width: Length,
-    height: Length,
-    padding: Padding,
-    active: bool,
-    status: Option<(BevelKind, bool)>,
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum Look {
+    Flat,
+    Raised,
+    Pressed,
+    MenuHover,
 }
 
-impl<'a, Message, Theme, Renderer> Bevel<'a, Message, Theme, Renderer>
-where
-    Renderer: iced::advanced::Renderer,
-{
-    fn new(content: impl Into<Element<'a, Message, Theme, Renderer>>) -> Self {
+impl<'a, Message> Bevel<'a, Message> {
+    fn new(content: impl Into<Element<'a, Message>>, menu: bool) -> Self {
         Self {
             content: content.into(),
             on_press: None,
-            style: BevelStyle::Object,
+            menu,
             width: Length::Shrink,
             height: Length::Shrink,
             padding: Padding {
@@ -53,33 +45,23 @@ where
                 left: 6.0,
             },
             active: false,
-            status: None,
+            drawn: None,
         }
     }
 
-    fn kind(&self, is_pressed: bool, is_mouse_over: bool) -> BevelKind {
-        match self.style {
-            BevelStyle::Object | BevelStyle::TitleButton => {
-                if is_pressed {
-                    BevelKind::Pressed
-                } else {
-                    BevelKind::Object
-                }
+    fn look(&self, state: &State, is_mouse_over: bool) -> Look {
+        let enabled = self.on_press.is_some();
+        if self.menu {
+            if enabled && is_mouse_over {
+                Look::MenuHover
+            } else {
+                Look::Flat
             }
-            BevelStyle::Menu => {
-                if self.on_press.is_some() && is_mouse_over {
-                    BevelKind::MenuHover
-                } else {
-                    BevelKind::None
-                }
-            }
+        } else if self.active || (enabled && state.is_pressed && is_mouse_over) {
+            Look::Pressed
+        } else {
+            Look::Raised
         }
-    }
-
-    fn visual(&self, state: &State, is_mouse_over: bool) -> (BevelKind, bool) {
-        let is_pressed =
-            (self.on_press.is_some() && state.is_pressed && is_mouse_over) || self.active;
-        (self.kind(is_pressed, is_mouse_over), is_pressed)
     }
 
     pub fn active(mut self, active: bool) -> Self {
@@ -94,11 +76,6 @@ where
 
     pub fn maybe_on_press(mut self, msg: Option<Message>) -> Self {
         self.on_press = msg;
-        self
-    }
-
-    fn style(mut self, style: BevelStyle) -> Self {
-        self.style = style;
         self
     }
 
@@ -118,12 +95,7 @@ where
     }
 }
 
-impl<'a, Message, Theme, Renderer> Widget<Message, Theme, Renderer>
-    for Bevel<'a, Message, Theme, Renderer>
-where
-    Message: Clone + 'a,
-    Renderer: 'a + iced::advanced::Renderer,
-{
+impl<'a, Message: Clone + 'a> Widget<Message, iced::Theme, iced::Renderer> for Bevel<'a, Message> {
     fn tag(&self) -> tree::Tag {
         tree::Tag::of::<State>()
     }
@@ -150,7 +122,7 @@ where
     fn layout(
         &mut self,
         tree: &mut Tree,
-        renderer: &Renderer,
+        renderer: &iced::Renderer,
         limits: &layout::Limits,
     ) -> layout::Node {
         layout::padded(limits, self.width, self.height, self.padding, |limits| {
@@ -163,8 +135,8 @@ where
     fn draw(
         &self,
         tree: &Tree,
-        renderer: &mut Renderer,
-        theme: &Theme,
+        renderer: &mut iced::Renderer,
+        theme: &iced::Theme,
         style: &renderer::Style,
         layout: Layout<'_>,
         cursor: mouse::Cursor,
@@ -172,26 +144,24 @@ where
     ) {
         let bounds = layout.bounds();
         let state = tree.state.downcast_ref::<State>();
-        let (bevel, _) = self.visual(state, cursor.is_over(bounds));
+        let look = self.look(state, cursor.is_over(bounds));
 
-        if !matches!(bevel, BevelKind::None) {
+        if look != Look::Flat {
             quad(renderer, bounds, theme::BG_GRAY);
         }
-
-        match bevel {
-            BevelKind::Object => draw_symmetric_bevel(renderer, bounds, theme::BEVEL_RAISED),
-            BevelKind::MenuHover => draw_thin_bevel(renderer, bounds, theme::THIN_MENU_HOVER),
-            BevelKind::Pressed => draw_symmetric_bevel(renderer, bounds, theme::BEVEL_PRESSED),
-            BevelKind::None => {}
+        match look {
+            Look::Raised => draw_symmetric_bevel(renderer, bounds, theme::BEVEL_RAISED),
+            Look::Pressed => draw_symmetric_bevel(renderer, bounds, theme::BEVEL_PRESSED),
+            Look::MenuHover => draw_thin_bevel(renderer, bounds, theme::THIN_MENU_HOVER),
+            Look::Flat => {}
         }
 
-        let content_layout = layout.children().next().unwrap();
         self.content.as_widget().draw(
             &tree.children[0],
             renderer,
             theme,
             style,
-            content_layout,
+            layout.children().next().unwrap(),
             cursor,
             viewport,
         );
@@ -203,7 +173,7 @@ where
         event: &Event,
         layout: Layout<'_>,
         cursor: mouse::Cursor,
-        renderer: &Renderer,
+        renderer: &iced::Renderer,
         clipboard: &mut dyn Clipboard,
         shell: &mut Shell<'_, Message>,
         viewport: &Rectangle,
@@ -219,22 +189,21 @@ where
             viewport,
         );
 
+        let state = tree.state.downcast_mut::<State>();
         if !shell.is_event_captured() {
             match event {
                 Event::Mouse(mouse::Event::ButtonPressed(mouse::Button::Left))
                 | Event::Touch(touch::Event::FingerPressed { .. }) => {
-                    if self.on_press.is_some() && cursor.is_over(layout.bounds()) {
-                        let state = tree.state.downcast_mut::<State>();
-                        state.is_pressed = true;
-                        if let Some(msg) = self.on_press.clone() {
+                    if let Some(msg) = self.on_press.clone() {
+                        if cursor.is_over(layout.bounds()) {
+                            state.is_pressed = true;
                             shell.publish(msg);
+                            shell.capture_event();
                         }
-                        shell.capture_event();
                     }
                 }
                 Event::Mouse(mouse::Event::ButtonReleased(mouse::Button::Left))
                 | Event::Touch(touch::Event::FingerLifted { .. }) => {
-                    let state = tree.state.downcast_mut::<State>();
                     if state.is_pressed {
                         state.is_pressed = false;
                         shell.capture_event();
@@ -242,17 +211,16 @@ where
                 }
                 Event::Touch(touch::Event::FingerLost { .. })
                 | Event::Mouse(mouse::Event::CursorLeft) => {
-                    tree.state.downcast_mut::<State>().is_pressed = false;
+                    state.is_pressed = false;
                 }
                 _ => {}
             }
         }
 
-        let state = tree.state.downcast_ref::<State>();
-        let current = self.visual(state, cursor.is_over(layout.bounds()));
+        let look = self.look(state, cursor.is_over(layout.bounds()));
         if let Event::Window(iced::window::Event::RedrawRequested(_)) = event {
-            self.status = Some(current);
-        } else if self.status.is_some_and(|status| status != current) {
+            self.drawn = Some(look);
+        } else if self.drawn.is_some_and(|drawn| drawn != look) {
             shell.request_redraw();
         }
     }
@@ -263,7 +231,7 @@ where
         layout: Layout<'_>,
         cursor: mouse::Cursor,
         viewport: &Rectangle,
-        renderer: &Renderer,
+        renderer: &iced::Renderer,
     ) -> mouse::Interaction {
         if self.on_press.is_some() && cursor.is_over(layout.bounds()) {
             return mouse::Interaction::Pointer;
@@ -278,19 +246,21 @@ where
     }
 }
 
-#[derive(Clone, Copy, PartialEq, Eq)]
-enum BevelKind {
-    None,
-    Object,
-    MenuHover,
-    Pressed,
+impl<'a, Message: Clone + 'a> From<Bevel<'a, Message>> for Element<'a, Message> {
+    fn from(b: Bevel<'a, Message>) -> Self {
+        Element::new(b)
+    }
 }
 
-pub(crate) fn draw_thin_bevel<R: iced::advanced::Renderer>(
-    renderer: &mut R,
-    b: Rectangle,
-    (tl, br): (Color, Color),
-) {
+pub fn bevel_button<'a, Message>(content: impl Into<Element<'a, Message>>) -> Bevel<'a, Message> {
+    Bevel::new(content, false)
+}
+
+pub fn menu_item<'a, Message>(content: impl Into<Element<'a, Message>>) -> Bevel<'a, Message> {
+    Bevel::new(content, true).padding([5, 6])
+}
+
+pub fn draw_thin_bevel(renderer: &mut iced::Renderer, b: Rectangle, (tl, br): (Color, Color)) {
     let edge = |x, y, width, height| Rectangle {
         x,
         y,
@@ -303,8 +273,8 @@ pub(crate) fn draw_thin_bevel<R: iced::advanced::Renderer>(
     quad(renderer, edge(b.x + b.width - 1.0, b.y, 1.0, b.height), br);
 }
 
-pub(crate) fn draw_symmetric_bevel<R: iced::advanced::Renderer>(
-    renderer: &mut R,
+pub fn draw_symmetric_bevel(
+    renderer: &mut iced::Renderer,
     bounds: Rectangle,
     c: theme::BevelColors,
 ) {
@@ -318,7 +288,8 @@ pub(crate) fn draw_symmetric_bevel<R: iced::advanced::Renderer>(
     draw_thin_bevel(renderer, inner, (c.tl_inner, c.br_inner));
 }
 
-pub(crate) fn quad<R: iced::advanced::Renderer>(renderer: &mut R, bounds: Rectangle, color: Color) {
+pub fn quad(renderer: &mut iced::Renderer, bounds: Rectangle, color: Color) {
+    use iced::advanced::Renderer;
     renderer.fill_quad(
         renderer::Quad {
             bounds,
@@ -328,47 +299,4 @@ pub(crate) fn quad<R: iced::advanced::Renderer>(renderer: &mut R, bounds: Rectan
         },
         Background::Color(color),
     );
-}
-
-impl<'a, Message, Theme, Renderer> From<Bevel<'a, Message, Theme, Renderer>>
-    for Element<'a, Message, Theme, Renderer>
-where
-    Message: Clone + 'a,
-    Theme: 'a,
-    Renderer: 'a + iced::advanced::Renderer,
-{
-    fn from(b: Bevel<'a, Message, Theme, Renderer>) -> Self {
-        Element::new(b)
-    }
-}
-
-pub fn bevel_button<'a, Message, Theme, Renderer>(
-    content: impl Into<Element<'a, Message, Theme, Renderer>>,
-) -> Bevel<'a, Message, Theme, Renderer>
-where
-    Renderer: iced::advanced::Renderer,
-{
-    Bevel::new(content).style(BevelStyle::Object)
-}
-
-pub fn menu_item<'a, Message, Theme, Renderer>(
-    content: impl Into<Element<'a, Message, Theme, Renderer>>,
-) -> Bevel<'a, Message, Theme, Renderer>
-where
-    Renderer: iced::advanced::Renderer,
-{
-    Bevel::new(content)
-        .style(BevelStyle::Menu)
-        .padding(Padding::from([5, 6]))
-}
-
-pub fn title_button<'a, Message, Theme, Renderer>(
-    content: impl Into<Element<'a, Message, Theme, Renderer>>,
-) -> Bevel<'a, Message, Theme, Renderer>
-where
-    Renderer: iced::advanced::Renderer,
-{
-    Bevel::new(content)
-        .style(BevelStyle::TitleButton)
-        .padding(Padding::from(1))
 }
