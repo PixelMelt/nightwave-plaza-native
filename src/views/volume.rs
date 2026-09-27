@@ -1,22 +1,22 @@
+use super::paint;
 use crate::theme;
-use crate::views::bevel::{draw_symmetric_bevel, quad};
 use iced::advanced::layout::{self, Layout};
 use iced::advanced::renderer;
-use iced::advanced::widget::{tree, Tree, Widget};
-use iced::advanced::{mouse, Clipboard, Shell};
+use iced::advanced::widget::{Tree, Widget, tree};
+use iced::advanced::{Clipboard, Shell, mouse};
 use iced::event::Event;
-use iced::{touch, Element, Length, Rectangle, Size};
+use iced::{Element, Length, Rectangle, Size, touch};
 
 const HEIGHT: f32 = 26.0;
-const LINE_Y: f32 = 10.0;
-const LINE_H: f32 = 4.0;
-const HANDLE_W: f32 = 12.0;
-const HANDLE_H: f32 = 24.0;
+const GROOVE_Y: f32 = 10.0;
+const GROOVE_HEIGHT: f32 = 4.0;
+const HANDLE_WIDTH: f32 = 12.0;
+const HANDLE_HEIGHT: f32 = 24.0;
 const HANDLE_Y: f32 = 1.0;
-const ICON_W: f32 = 11.0;
-const ICON_H: f32 = 16.0;
+const ICON_WIDTH: f32 = 11.0;
+const ICON_HEIGHT: f32 = 16.0;
 const ICON_Y: f32 = 5.0;
-const RIGHT_PAD: f32 = 18.0;
+const ICON_SPACE: f32 = 18.0;
 
 #[derive(Default, Clone, Copy)]
 struct State {
@@ -44,17 +44,22 @@ pub fn volume_slider<'a, Message>(
 }
 
 fn line_width(width: f32) -> f32 {
-    (width - RIGHT_PAD).max(HANDLE_W + 1.0)
+    (width - ICON_SPACE).max(HANDLE_WIDTH + 1.0)
 }
 
-impl<'a, Message> VolumeSlider<'a, Message> {
+fn percent_at(bounds: Rectangle, x: f32) -> f32 {
+    let travel = (line_width(bounds.width) - HANDLE_WIDTH).max(1.0);
+    ((x - bounds.x) / travel * 100.0).clamp(0.0, 100.0).round()
+}
+
+impl<Message> VolumeSlider<'_, Message> {
     fn handle_bounds(&self, bounds: Rectangle) -> Rectangle {
-        let travel = (line_width(bounds.width) - HANDLE_W).max(0.0);
+        let travel = (line_width(bounds.width) - HANDLE_WIDTH).max(0.0);
         Rectangle {
             x: bounds.x + travel * (self.value / 100.0).clamp(0.0, 1.0),
             y: bounds.y + HANDLE_Y,
-            width: HANDLE_W,
-            height: HANDLE_H,
+            width: HANDLE_WIDTH,
+            height: HANDLE_HEIGHT,
         }
     }
 
@@ -64,15 +69,14 @@ impl<'a, Message> VolumeSlider<'a, Message> {
             .is_some_and(|p| self.handle_bounds(bounds).contains(p))
     }
 
-    fn value_at(&self, bounds: Rectangle, x: f32) -> f32 {
-        let travel = (line_width(bounds.width) - HANDLE_W).max(1.0);
-        ((x - bounds.x) / travel * 100.0).clamp(0.0, 100.0).round()
-    }
-
+    #[expect(
+        clippy::float_cmp,
+        reason = "both sides are whole percentages, which f32 represents exactly"
+    )]
     fn publish_at(&self, bounds: Rectangle, x: f32, shell: &mut Shell<'_, Message>) {
-        let v = self.value_at(bounds, x);
-        if v != self.value {
-            shell.publish((self.on_change)(v));
+        let percent = percent_at(bounds, x);
+        if percent != self.value {
+            shell.publish((self.on_change)(percent));
         }
     }
 }
@@ -112,14 +116,14 @@ impl<'a, Message: 'a> Widget<Message, iced::Theme, iced::Renderer> for VolumeSli
             .height(Length::Fixed(HEIGHT))
             .resolve(Length::Fill, HEIGHT, Size::ZERO);
 
-        let icon_limits = layout::Limits::new(Size::ZERO, Size::new(ICON_W, ICON_H))
-            .width(Length::Fixed(ICON_W))
-            .height(Length::Fixed(ICON_H));
+        let icon_limits = layout::Limits::new(Size::ZERO, Size::new(ICON_WIDTH, ICON_HEIGHT))
+            .width(Length::Fixed(ICON_WIDTH))
+            .height(Length::Fixed(ICON_HEIGHT));
         let icon_node = self
             .icon
             .as_widget_mut()
             .layout(&mut tree.children[0], renderer, &icon_limits)
-            .move_to((size.width - ICON_W, ICON_Y));
+            .move_to((size.width - ICON_WIDTH, ICON_Y));
 
         layout::Node::with_children(size, vec![icon_node])
     }
@@ -135,7 +139,7 @@ impl<'a, Message: 'a> Widget<Message, iced::Theme, iced::Renderer> for VolumeSli
         viewport: &Rectangle,
     ) {
         let b = layout.bounds();
-        let line_w = line_width(b.width);
+        let line_width = line_width(b.width);
         let rect = |x, y, width, height| Rectangle {
             x,
             y,
@@ -143,42 +147,26 @@ impl<'a, Message: 'a> Widget<Message, iced::Theme, iced::Renderer> for VolumeSli
             height,
         };
 
-        quad(
-            renderer,
-            rect(b.x, b.y + LINE_Y, line_w, 1.0),
-            theme::DARK_GRAY,
+        let groove = rect(b.x, b.y + GROOVE_Y, line_width, GROOVE_HEIGHT);
+        paint::thin_bevel(renderer, groove, theme::THIN_SUNKEN);
+        let groove_inside = rect(
+            groove.x + 1.0,
+            groove.y + 1.0,
+            groove.width - 2.0,
+            groove.height - 2.0,
         );
-        quad(
-            renderer,
-            rect(b.x, b.y + LINE_Y, 1.0, LINE_H),
-            theme::DARK_GRAY,
-        );
-        quad(
-            renderer,
-            rect(b.x, b.y + LINE_Y + LINE_H - 1.0, line_w, 1.0),
-            theme::WHITE,
-        );
-        quad(
-            renderer,
-            rect(b.x + line_w - 1.0, b.y + LINE_Y, 1.0, LINE_H),
-            theme::WHITE,
-        );
-        quad(
-            renderer,
-            rect(b.x + 1.0, b.y + LINE_Y + 1.0, line_w - 2.0, LINE_H - 2.0),
-            theme::BG_GRAY,
-        );
+        paint::fill_rect(renderer, groove_inside, theme::BG_GRAY);
 
         let handle = self.handle_bounds(b);
-        quad(renderer, handle, theme::BG_GRAY);
-        draw_symmetric_bevel(renderer, handle, theme::BEVEL_RAISED);
+        paint::fill_rect(renderer, handle, theme::BG_GRAY);
+        paint::bevel(renderer, handle, theme::BEVEL_RAISED);
 
         self.icon.as_widget().draw(
             &tree.children[0],
             renderer,
             theme,
             style,
-            layout.children().next().unwrap(),
+            layout.children().next().expect("widget has one child"),
             cursor,
             viewport,
         );
@@ -198,7 +186,7 @@ impl<'a, Message: 'a> Widget<Message, iced::Theme, iced::Renderer> for VolumeSli
         self.icon.as_widget_mut().update(
             &mut tree.children[0],
             event,
-            layout.children().next().unwrap(),
+            layout.children().next().expect("widget has one child"),
             cursor,
             renderer,
             clipboard,
@@ -220,17 +208,16 @@ impl<'a, Message: 'a> Widget<Message, iced::Theme, iced::Renderer> for VolumeSli
                 }
                 Event::Mouse(mouse::Event::CursorMoved { .. })
                 | Event::Touch(touch::Event::FingerMoved { .. }) => {
-                    if state.dragging {
-                        if let Some(p) = cursor.position() {
-                            self.publish_at(bounds, p.x, shell);
-                        }
+                    if state.dragging
+                        && let Some(p) = cursor.position()
+                    {
+                        self.publish_at(bounds, p.x, shell);
                     }
                 }
                 Event::Mouse(mouse::Event::ButtonReleased(mouse::Button::Left))
-                | Event::Touch(touch::Event::FingerLifted { .. })
-                | Event::Touch(touch::Event::FingerLost { .. })
-                    if state.dragging =>
-                {
+                | Event::Touch(
+                    touch::Event::FingerLifted { .. } | touch::Event::FingerLost { .. },
+                ) if state.dragging => {
                     state.dragging = false;
                     shell.capture_event();
                 }
@@ -262,7 +249,7 @@ impl<'a, Message: 'a> Widget<Message, iced::Theme, iced::Renderer> for VolumeSli
         }
         self.icon.as_widget().mouse_interaction(
             &tree.children[0],
-            layout.children().next().unwrap(),
+            layout.children().next().expect("widget has one child"),
             cursor,
             viewport,
             renderer,

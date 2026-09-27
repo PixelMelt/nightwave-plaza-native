@@ -1,13 +1,16 @@
-use crate::state::{LoginMsg, Msg, Plaza, WinType};
-use crate::views::{
-    button, form_error, form_field_row, form_input, link_button, submit_button, Png,
+use super::widgets::{
+    Png, button, form_error, form_field_row, form_input, link_button, submit_button,
 };
-use iced::widget::{checkbox, column, container, row, text, Space};
+use crate::message::{LoginMsg, Msg};
+use crate::state::Plaza;
+use crate::window::WindowKind;
+use iced::widget::{Space, checkbox, column, container, row, text};
+use iced::window::Id;
 use iced::{Element, Fill};
 
 static KEY: Png = Png::new(include_bytes!("../assets/img/key.png"));
 
-pub fn view(state: &Plaza, wid: iced::window::Id) -> Element<'_, Msg> {
+pub fn view(state: &Plaza, wid: Id) -> Element<'_, Msg> {
     let login = &state.login;
     let key = container(KEY.image().width(45).height(48)).padding([2, 0]);
 
@@ -35,7 +38,7 @@ pub fn view(state: &Plaza, wid: iced::window::Id) -> Element<'_, Msg> {
         Space::new().height(5),
         row![Space::new().width(72), remember],
         Space::new().height(4),
-        form_error(&login.error),
+        form_error(login.error.as_deref()),
     ]
     .width(Fill);
 
@@ -48,9 +51,9 @@ pub fn view(state: &Plaza, wid: iced::window::Id) -> Element<'_, Msg> {
             76,
         ),
         Space::new().height(6),
-        button("Register", 76).on_press(Msg::OpenWin(WinType::UserRegister)),
+        button("Register", 76).on_press(Msg::OpenWindow(WindowKind::UserRegister)),
         Space::new().height(6),
-        button("Cancel", 76).on_press(Msg::CloseWin(wid)),
+        button("Cancel", 76).on_press(Msg::CloseWindow(wid)),
     ];
 
     row![

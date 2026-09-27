@@ -1,23 +1,33 @@
-use super::{close_windows_of, task};
+use super::close_windows;
 use crate::api;
 use crate::config::{self, Session};
-use crate::state::{
-    AccountMsg, DeleteMsg, LoginMsg, Msg, PasswordMsg, Plaza, ProfileEditMsg, RegisterMsg, WinType,
+use crate::message::{
+    AccountMsg, DeleteAccountMsg, LoginMsg, Msg, PasswordMsg, ProfileEditMsg, RegisterMsg,
 };
+use crate::state::{DeleteAccountForm, LoginForm, PasswordForm, Plaza, RegisterForm, SongReaction};
+use crate::window::WindowKind;
 use iced::Task;
 
-fn store_session(state: &mut Plaza, session: Option<Session>, remember: bool) {
-    if remember || session.is_none() {
-        state.config.session = session.clone();
+#[derive(Clone, Copy)]
+enum Persistence {
+    Remember,
+    Forget,
+}
+
+fn store_session(state: &mut Plaza, session: Session, persistence: Persistence) {
+    if let Persistence::Remember = persistence {
+        state.config.session = Some(session.clone());
         config::save(&state.config);
     }
-    state.session = session;
+    state.session = Some(session);
 }
 
 fn sign_out(state: &mut Plaza) {
-    store_session(state, None, false);
+    state.session = None;
+    state.config.session = None;
+    config::save(&state.config);
     state.user_stats = None;
-    state.reaction = Default::default();
+    state.reaction = SongReaction::default();
 }
 
 pub fn load_stats(state: &mut Plaza) -> Task<Msg> {
@@ -25,7 +35,7 @@ pub fn load_stats(state: &mut Plaza) -> Task<Msg> {
         return Task::none();
     };
     state.stats_loading = true;
-    task(api::get_stats(token), |r| {
+    Task::perform(api::fetch_stats(token), |r| {
         Msg::Account(AccountMsg::Stats(r))
     })
 }
@@ -35,21 +45,21 @@ pub fn update(state: &mut Plaza, msg: AccountMsg) -> Task<Msg> {
         AccountMsg::Checked(Ok(user)) => {
             if let Some(mut session) = state.session.clone() {
                 session.user = user;
-                store_session(state, Some(session), true);
+                store_session(state, session, Persistence::Remember);
             }
             Task::none()
         }
         AccountMsg::Checked(Err(e)) => {
             if e.is_unauthorized() {
                 sign_out(state);
-                state.error_msg = Some("Your session has expired. Please log in again.".into());
+                state.alert = Some("Your session has expired. Please log in again.".into());
             } else {
-                state.error_msg = Some(format!("Could not verify your session: {e}"));
+                state.alert = Some(format!("Could not verify your session: {e}"));
             }
             Task::none()
         }
         AccountMsg::Logout => match state.token() {
-            Some(token) => task(api::logout(token), |r| {
+            Some(token) => Task::perform(api::logout(token), |r| {
                 Msg::Account(AccountMsg::LoggedOut(r))
             }),
             None => update(state, AccountMsg::LoggedOut(Ok(()))),
@@ -57,15 +67,15 @@ pub fn update(state: &mut Plaza, msg: AccountMsg) -> Task<Msg> {
         AccountMsg::LoggedOut(result) => {
             sign_out(state);
             if let Err(e) = result {
-                state.error_msg = Some(e);
+                state.alert = Some(e.to_string());
             }
-            close_windows_of(state, WinType::UserProfile)
+            close_windows(state, &[WindowKind::UserProfile])
         }
         AccountMsg::Stats(result) => {
             state.stats_loading = false;
             match result {
                 Ok(stats) => state.user_stats = Some(stats),
-                Err(e) => state.error_msg = Some(e),
+                Err(e) => state.alert = Some(e.to_string()),
             }
             Task::none()
         }
@@ -73,240 +83,197 @@ pub fn update(state: &mut Plaza, msg: AccountMsg) -> Task<Msg> {
 }
 
 pub fn login(state: &mut Plaza, msg: LoginMsg) -> Task<Msg> {
-    let login = &mut state.login;
+    let form = &mut state.login;
     match msg {
-        LoginMsg::Username(s) => login.username = s,
-        LoginMsg::Password(s) => login.password = s,
-        LoginMsg::Remember(b) => login.remember = b,
+        LoginMsg::Username(s) => form.username = s,
+        LoginMsg::Password(s) => form.password = s,
+        LoginMsg::Remember(remember) => form.remember = remember,
         LoginMsg::Submit => {
-            if login.username.is_empty() || login.password.is_empty() {
-                login.error = Some("Please enter a username and password.".into());
+            if let Err(problem) = form.validate() {
+                form.error = Some(problem.into());
                 return Task::none();
             }
-            login.loading = true;
-            login.error = None;
-            return task(
-                api::login(
-                    login.username.clone(),
-                    login.password.clone(),
-                    login.remember,
-                ),
-                |r| Msg::Login(LoginMsg::Done(r)),
-            );
+            form.loading = true;
+            form.error = None;
+            let request = api::login(form.username.clone(), form.password.clone(), form.remember);
+            return Task::perform(request, |r| Msg::Login(LoginMsg::Done(r)));
         }
-        LoginMsg::Done(Ok(resp)) => {
-            let remember = login.remember;
-            state.login = Default::default();
-            store_session(
-                state,
-                Some(Session {
-                    token: resp.token,
-                    user: resp.data,
-                }),
-                remember,
-            );
-            return close_windows_of(state, WinType::UserLogin);
+        LoginMsg::Done(Ok(response)) => {
+            let persistence = if form.remember {
+                Persistence::Remember
+            } else {
+                Persistence::Forget
+            };
+            state.login = LoginForm::default();
+            let session = Session {
+                token: response.token,
+                user: response.data,
+            };
+            store_session(state, session, persistence);
+            return close_windows(state, &[WindowKind::UserLogin]);
         }
         LoginMsg::Done(Err(e)) => {
-            login.loading = false;
-            login.error = Some(e);
+            form.loading = false;
+            form.error = Some(e.to_string());
         }
     }
     Task::none()
 }
 
 pub fn register(state: &mut Plaza, msg: RegisterMsg) -> Task<Msg> {
-    let reg = &mut state.register;
+    let form = &mut state.register;
     match msg {
-        RegisterMsg::Username(s) => reg.username = s,
-        RegisterMsg::Email(s) => reg.email = s,
-        RegisterMsg::Password(s) => reg.password = s,
-        RegisterMsg::PasswordRepeat(s) => reg.password_repeat = s,
+        RegisterMsg::Username(s) => form.username = s,
+        RegisterMsg::Email(s) => form.email = s,
+        RegisterMsg::Password(s) => form.password = s,
+        RegisterMsg::PasswordRepeat(s) => form.password_repeat = s,
         RegisterMsg::Submit => {
-            let problem = if !reg
-                .username
-                .chars()
-                .all(|c| c.is_alphanumeric() || c == '-' || c == '_')
-            {
-                Some("Username may only contain letters, numbers, and underscores.")
-            } else if reg.username.len() < 4 {
-                Some("Username is too short.")
-            } else if reg.username.len() > 32 {
-                Some("Username is too long.")
-            } else if reg.password.len() < 3 {
-                Some("Password is too short.")
-            } else if reg.password != reg.password_repeat {
-                Some("Passwords do not match.")
-            } else if reg.email.is_empty() {
-                Some("Email is required.")
-            } else {
-                None
-            };
-            if let Some(problem) = problem {
-                reg.error = Some(problem.into());
+            if let Err(problem) = form.validate() {
+                form.error = Some(problem.into());
                 return Task::none();
             }
-            reg.loading = true;
-            reg.error = None;
-            return task(
-                api::register(
-                    reg.username.clone(),
-                    reg.email.clone(),
-                    reg.password.clone(),
-                ),
-                |r| Msg::Register(RegisterMsg::Done(r)),
+            form.loading = true;
+            form.error = None;
+            let request = api::register(
+                form.username.clone(),
+                form.email.clone(),
+                form.password.clone(),
             );
+            return Task::perform(request, |r| Msg::Register(RegisterMsg::Done(r)));
         }
         RegisterMsg::Done(Ok(_)) => {
-            state.register = Default::default();
-            state.error_msg = Some("Registration successful! You can now log in.".into());
-            return close_windows_of(state, WinType::UserRegister);
+            state.register = RegisterForm::default();
+            state.alert = Some("Registration successful! You can now log in.".into());
+            return close_windows(state, &[WindowKind::UserRegister]);
         }
         RegisterMsg::Done(Err(e)) => {
-            reg.loading = false;
-            reg.error = Some(e);
+            form.loading = false;
+            form.error = Some(e.to_string());
         }
     }
     Task::none()
 }
 
 pub fn profile_edit(state: &mut Plaza, msg: ProfileEditMsg) -> Task<Msg> {
-    let edit = &mut state.profile_edit;
+    let form = &mut state.profile_edit;
     match msg {
-        ProfileEditMsg::Username(s) => edit.username = s,
-        ProfileEditMsg::Email(s) => edit.email = s,
-        ProfileEditMsg::CurrentPassword(s) => edit.current_password = s,
+        ProfileEditMsg::Username(s) => form.username = s,
+        ProfileEditMsg::Email(s) => form.email = s,
+        ProfileEditMsg::CurrentPassword(s) => form.current_password = s,
         ProfileEditMsg::Submit => {
-            if edit.current_password.is_empty() {
-                edit.error = Some("Current password is required.".into());
+            if let Err(problem) = form.validate() {
+                form.error = Some(problem.into());
                 return Task::none();
             }
             let Some(token) = state.token() else {
                 return Task::none();
             };
-            let edit = &mut state.profile_edit;
-            edit.loading = true;
-            edit.error = None;
-            return task(
-                api::update_profile(
-                    token,
-                    edit.current_password.clone(),
-                    edit.username.clone(),
-                    edit.email.clone(),
-                ),
-                |r| Msg::ProfileEdit(ProfileEditMsg::Done(r)),
+            let form = &mut state.profile_edit;
+            form.loading = true;
+            form.error = None;
+            let request = api::update_profile(
+                token,
+                form.current_password.clone(),
+                form.username.clone(),
+                form.email.clone(),
             );
+            return Task::perform(request, |r| Msg::ProfileEdit(ProfileEditMsg::Done(r)));
         }
         ProfileEditMsg::Done(Ok(())) => {
-            edit.loading = false;
-            edit.current_password.clear();
-            let (username, email) = (edit.username.clone(), edit.email.clone());
+            form.loading = false;
+            form.current_password.clear();
+            let (username, email) = (form.username.clone(), form.email.clone());
             if let Some(mut session) = state.session.clone() {
                 session.user.username = username;
                 session.user.email = email;
-                let remember = state.config.session.is_some();
-                store_session(state, Some(session), remember);
+                let persistence = if state.config.session.is_some() {
+                    Persistence::Remember
+                } else {
+                    Persistence::Forget
+                };
+                store_session(state, session, persistence);
             }
-            state.error_msg = Some("Profile has been updated.".into());
-            return close_windows_of(state, WinType::UserProfileEdit);
+            state.alert = Some("Profile has been updated.".into());
+            return close_windows(state, &[WindowKind::UserProfileEdit]);
         }
         ProfileEditMsg::Done(Err(e)) => {
-            edit.loading = false;
-            edit.error = Some(e);
+            form.loading = false;
+            form.error = Some(e.to_string());
         }
     }
     Task::none()
 }
 
 pub fn password(state: &mut Plaza, msg: PasswordMsg) -> Task<Msg> {
-    let pw = &mut state.password;
+    let form = &mut state.password;
     match msg {
-        PasswordMsg::Current(s) => pw.current_password = s,
-        PasswordMsg::New(s) => pw.password = s,
-        PasswordMsg::Repeat(s) => pw.password_repeat = s,
+        PasswordMsg::Current(s) => form.current_password = s,
+        PasswordMsg::New(s) => form.password = s,
+        PasswordMsg::Repeat(s) => form.password_repeat = s,
         PasswordMsg::Submit => {
-            let problem = if pw.current_password.is_empty() {
-                Some("Current password is required.")
-            } else if pw.password.len() < 3 {
-                Some("Password is too short.")
-            } else if pw.password != pw.password_repeat {
-                Some("Passwords do not match.")
-            } else {
-                None
-            };
-            if let Some(problem) = problem {
-                pw.error = Some(problem.into());
+            if let Err(problem) = form.validate() {
+                form.error = Some(problem.into());
                 return Task::none();
             }
             let Some(token) = state.token() else {
                 return Task::none();
             };
-            let pw = &mut state.password;
-            pw.loading = true;
-            pw.error = None;
-            return task(
-                api::update_password(token, pw.current_password.clone(), pw.password.clone()),
-                |r| Msg::Password(PasswordMsg::Done(r)),
-            );
+            let form = &mut state.password;
+            form.loading = true;
+            form.error = None;
+            let request =
+                api::update_password(token, form.current_password.clone(), form.password.clone());
+            return Task::perform(request, |r| Msg::Password(PasswordMsg::Done(r)));
         }
         PasswordMsg::Done(Ok(())) => {
-            state.password = Default::default();
+            state.password = PasswordForm::default();
             sign_out(state);
-            state.error_msg = Some("Password updated. Please log in again.".into());
-            return Task::batch([
-                close_windows_of(state, WinType::UserPassword),
-                close_windows_of(state, WinType::UserProfile),
-            ]);
+            state.alert = Some("Password updated. Please log in again.".into());
+            return close_windows(state, &[WindowKind::UserPassword, WindowKind::UserProfile]);
         }
         PasswordMsg::Done(Err(e)) => {
-            pw.loading = false;
-            pw.error = Some(e);
+            form.loading = false;
+            form.error = Some(e.to_string());
         }
     }
     Task::none()
 }
 
-pub fn delete(state: &mut Plaza, msg: DeleteMsg) -> Task<Msg> {
-    let del = &mut state.delete;
+pub fn delete(state: &mut Plaza, msg: DeleteAccountMsg) -> Task<Msg> {
+    let form = &mut state.delete_account;
     match msg {
-        DeleteMsg::Password(s) => del.current_password = s,
-        DeleteMsg::Confirm(b) => del.confirm = b,
-        DeleteMsg::Submit => {
-            let problem = if !del.confirm {
-                Some("You must confirm account deletion.")
-            } else if del.current_password.is_empty() {
-                Some("Current password is required.")
-            } else {
-                None
-            };
-            if let Some(problem) = problem {
-                del.error = Some(problem.into());
+        DeleteAccountMsg::Password(s) => form.current_password = s,
+        DeleteAccountMsg::Confirm(confirmed) => form.confirmed = confirmed,
+        DeleteAccountMsg::Submit => {
+            if let Err(problem) = form.validate() {
+                form.error = Some(problem.into());
                 return Task::none();
             }
             let Some(token) = state.token() else {
                 return Task::none();
             };
-            let del = &mut state.delete;
-            del.loading = true;
-            del.error = None;
-            return task(
-                api::delete_profile(token, del.current_password.clone()),
-                |r| Msg::DeleteAccount(DeleteMsg::Done(r)),
+            let form = &mut state.delete_account;
+            form.loading = true;
+            form.error = None;
+            let request = api::delete_account(token, form.current_password.clone());
+            return Task::perform(request, |r| Msg::DeleteAccount(DeleteAccountMsg::Done(r)));
+        }
+        DeleteAccountMsg::Done(Ok(())) => {
+            state.delete_account = DeleteAccountForm::default();
+            sign_out(state);
+            state.alert = Some("Your account has been deleted.".into());
+            return close_windows(
+                state,
+                &[
+                    WindowKind::UserProfileDelete,
+                    WindowKind::UserProfileEdit,
+                    WindowKind::UserProfile,
+                ],
             );
         }
-        DeleteMsg::Done(Ok(())) => {
-            state.delete = Default::default();
-            sign_out(state);
-            state.error_msg = Some("Your account has been deleted.".into());
-            return Task::batch([
-                close_windows_of(state, WinType::UserProfileDelete),
-                close_windows_of(state, WinType::UserProfileEdit),
-                close_windows_of(state, WinType::UserProfile),
-            ]);
-        }
-        DeleteMsg::Done(Err(e)) => {
-            del.loading = false;
-            del.error = Some(e);
+        DeleteAccountMsg::Done(Err(e)) => {
+            form.loading = false;
+            form.error = Some(e.to_string());
         }
     }
     Task::none()

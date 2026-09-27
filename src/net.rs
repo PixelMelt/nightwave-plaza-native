@@ -1,4 +1,5 @@
 use futures::channel::oneshot;
+use std::fmt;
 use std::sync::LazyLock;
 use std::time::Duration;
 
@@ -14,15 +15,59 @@ pub fn agent() -> &'static ureq::Agent {
     &AGENT
 }
 
-pub fn read_body(
-    result: Result<ureq::Response, ureq::Error>,
-) -> Result<(Option<u16>, String), String> {
-    let (status, resp) = match result {
-        Ok(resp) => (None, resp),
-        Err(ureq::Error::Status(code, resp)) => (Some(code), resp),
-        Err(e) => return Err(e.to_string()),
+#[derive(Debug, Clone)]
+pub struct Error {
+    status: Option<u16>,
+    message: String,
+}
+
+impl Error {
+    pub fn http(status: u16, message: impl Into<String>) -> Self {
+        Self {
+            status: Some(status),
+            message: message.into(),
+        }
+    }
+
+    pub fn other(message: impl fmt::Display) -> Self {
+        Self {
+            status: None,
+            message: message.to_string(),
+        }
+    }
+
+    pub fn is_unauthorized(&self) -> bool {
+        matches!(self.status, Some(401 | 403))
+    }
+}
+
+impl fmt::Display for Error {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(&self.message)
+    }
+}
+
+impl std::error::Error for Error {}
+
+pub struct Body {
+    pub status: u16,
+    pub text: String,
+}
+
+impl Body {
+    pub fn is_error(&self) -> bool {
+        self.status >= 400
+    }
+}
+
+pub fn read_body(result: Result<ureq::Response, ureq::Error>) -> Result<Body, Error> {
+    let response = match result {
+        Ok(response) | Err(ureq::Error::Status(_, response)) => response,
+        Err(e) => return Err(Error::other(e)),
     };
-    Ok((status, resp.into_string().map_err(|e| e.to_string())?))
+    let status = response.status();
+    let text = response.into_string().map_err(Error::other)?;
+    Ok(Body { status, text })
 }
 
 pub async fn blocking<T: Send + 'static>(f: impl FnOnce() -> T + Send + 'static) -> T {

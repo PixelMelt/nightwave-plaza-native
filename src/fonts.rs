@@ -1,4 +1,4 @@
-use iced::advanced::graphics::text::cosmic_text::{fontdb, Fallback, FontSystem, PlatformFallback};
+use iced::advanced::graphics::text::cosmic_text::{Fallback, FontSystem, PlatformFallback, fontdb};
 use iced::advanced::graphics::text::font_system;
 use std::sync::{Arc, LazyLock};
 use unicode_script::Script;

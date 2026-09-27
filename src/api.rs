@@ -1,11 +1,13 @@
-use crate::net::{agent, blocking, read_body};
+use crate::net::{self, Error, blocking};
 use iced::widget::image;
 use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
-use std::fmt;
+use serde_json::{Value, json};
 use std::io::Read;
 
 const API: &str = "https://api.plaza.one";
+
+pub type Result<T> = std::result::Result<T, Error>;
 
 #[derive(Debug, Clone, Default, Deserialize)]
 pub struct StatusSong {
@@ -20,6 +22,12 @@ pub struct StatusSong {
     pub reactions: u32,
     #[serde(default)]
     pub position: f64,
+}
+
+impl StatusSong {
+    pub fn has_metadata(&self) -> bool {
+        !self.artist.is_empty() && !self.title.is_empty()
+    }
 }
 
 #[derive(Debug, Clone, Default, Deserialize)]
@@ -51,13 +59,14 @@ pub struct DateRange {
 #[derive(Debug, Clone, Deserialize)]
 pub struct HistoryResponse {
     pub data: Vec<HistoryEntry>,
-    pub meta: PaginatedMeta,
+    pub meta: PageMeta,
     #[serde(default)]
     pub date_range: Option<DateRange>,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub enum RatingsRange {
+    #[default]
     AllTime,
     Monthly,
     Weekly,
@@ -66,9 +75,9 @@ pub enum RatingsRange {
 impl RatingsRange {
     fn path(self) -> &'static str {
         match self {
-            RatingsRange::AllTime => "overtime",
-            RatingsRange::Monthly => "monthly",
-            RatingsRange::Weekly => "weekly",
+            Self::AllTime => "overtime",
+            Self::Monthly => "monthly",
+            Self::Weekly => "weekly",
         }
     }
 }
@@ -80,13 +89,13 @@ pub struct RatingEntry {
 }
 
 #[derive(Debug, Clone, Deserialize)]
-pub struct Paginated<T> {
+pub struct Page<T> {
     pub data: Vec<T>,
-    pub meta: PaginatedMeta,
+    pub meta: PageMeta,
 }
 
 #[derive(Debug, Clone, Deserialize)]
-pub struct PaginatedMeta {
+pub struct PageMeta {
     pub last_page: u32,
     pub total: u32,
 }
@@ -179,6 +188,32 @@ pub struct NewsArticle {
     pub created_at: u64,
 }
 
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub enum Reaction {
+    #[default]
+    None,
+    Like,
+    Love,
+}
+
+impl Reaction {
+    pub fn next(self) -> Self {
+        match self {
+            Self::None => Self::Like,
+            Self::Like => Self::Love,
+            Self::Love => Self::None,
+        }
+    }
+
+    fn code(self) -> u8 {
+        match self {
+            Self::None => 0,
+            Self::Like => 1,
+            Self::Love => 2,
+        }
+    }
+}
+
 #[derive(Deserialize)]
 struct Data<T> {
     data: T,
@@ -196,108 +231,82 @@ struct ExportLink {
 }
 
 #[derive(Deserialize)]
-struct ApiErrorBody {
+struct ErrorBody {
     #[serde(default)]
     error: Option<String>,
     #[serde(default)]
     key: Option<String>,
 }
 
-#[derive(Debug, Clone)]
-pub struct Error {
-    pub status: Option<u16>,
-    pub message: String,
-}
-
-impl Error {
-    pub fn is_unauthorized(&self) -> bool {
-        matches!(self.status, Some(401 | 403))
-    }
-}
-
-impl fmt::Display for Error {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.write_str(&self.message)
-    }
-}
-
-impl From<Error> for String {
-    fn from(e: Error) -> String {
-        e.message
-    }
-}
-
-impl From<String> for Error {
-    fn from(message: String) -> Error {
-        Error {
-            status: None,
-            message,
+async fn call(
+    method: &'static str,
+    path: String,
+    token: Option<String>,
+    body: Option<Value>,
+) -> Result<String> {
+    blocking(move || {
+        let mut request = net::agent().request(method, &format!("{API}{path}"));
+        if let Some(token) = token {
+            request = request.set("Authorization", &format!("Bearer {token}"));
         }
-    }
-}
-
-type Result<T> = std::result::Result<T, Error>;
-
-fn body_text(result: std::result::Result<ureq::Response, ureq::Error>) -> Result<String> {
-    let (status, body) = read_body(result)?;
-    let Some(code) = status else {
-        return Ok(body);
-    };
-    let message = match serde_json::from_str::<ApiErrorBody>(&body) {
-        Ok(err) => err.error.or(err.key),
-        Err(_) => (!body.is_empty()).then_some(body),
-    };
-    Err(Error {
-        status: Some(code),
-        message: message.unwrap_or_else(|| format!("HTTP {code}")),
+        let response = match body {
+            Some(body) => request.send_json(body),
+            None => request.call(),
+        };
+        let body = net::read_body(response)?;
+        if !body.is_error() {
+            return Ok(body.text);
+        }
+        let message = match serde_json::from_str::<ErrorBody>(&body.text) {
+            Ok(parsed) => parsed.error.or(parsed.key),
+            Err(_) => Some(body.text).filter(|text| !text.is_empty()),
+        };
+        Err(Error::http(
+            body.status,
+            message.unwrap_or_else(|| format!("HTTP {}", body.status)),
+        ))
     })
+    .await
 }
 
-fn parse_json<T: DeserializeOwned>(
-    result: std::result::Result<ureq::Response, ureq::Error>,
-) -> Result<T> {
-    let body = body_text(result)?;
-    serde_json::from_str::<T>(&body).map_err(|e| e.to_string().into())
+fn parse<T: DeserializeOwned>(body: &str) -> Result<T> {
+    serde_json::from_str(body).map_err(Error::other)
 }
 
-fn parse_unit(result: std::result::Result<ureq::Response, ureq::Error>) -> Result<()> {
-    body_text(result).map(|_| ())
-}
-
-fn auth(req: ureq::Request, token: &str) -> ureq::Request {
-    req.set("Authorization", &format!("Bearer {token}"))
+async fn get<T: DeserializeOwned>(path: String, token: Option<String>) -> Result<T> {
+    parse(&call("GET", path, token, None).await?)
 }
 
 pub async fn fetch_status() -> Result<Status> {
-    blocking(|| parse_json(agent().get(&format!("{API}/status")).call())).await
+    get("/status".into(), None).await
 }
 
 pub async fn fetch_history(page: u32) -> Result<HistoryResponse> {
-    blocking(move || parse_json(agent().get(&format!("{API}/v2/history?page={page}")).call())).await
+    get(format!("/v2/history?page={page}"), None).await
 }
 
-pub async fn fetch_ratings(range: RatingsRange, page: u32) -> Result<Paginated<RatingEntry>> {
-    let url = format!("{API}/v2/ratings/{}?page={page}", range.path());
-    blocking(move || parse_json(agent().get(&url).call())).await
+pub async fn fetch_ratings(range: RatingsRange, page: u32) -> Result<Page<RatingEntry>> {
+    get(format!("/v2/ratings/{}?page={page}", range.path()), None).await
 }
 
 pub async fn fetch_song(id: String) -> Result<SongResponse> {
-    blocking(move || parse_json(agent().get(&format!("{API}/v2/songs/{id}")).call())).await
+    get(format!("/v2/songs/{id}"), None).await
 }
 
-pub async fn fetch_news(page: u32) -> Result<Paginated<NewsArticle>> {
-    blocking(move || parse_json(agent().get(&format!("{API}/v2/news?page={page}")).call())).await
+pub async fn fetch_news(page: u32) -> Result<Page<NewsArticle>> {
+    get(format!("/v2/news?page={page}"), None).await
 }
 
 pub async fn fetch_artwork(url: String, max_px: u32) -> Result<image::Handle> {
     blocking(move || {
-        let resp = agent().get(&url).call().map_err(|e| e.to_string())?;
-        let mut buf = Vec::new();
-        resp.into_reader()
-            .read_to_end(&mut buf)
-            .map_err(|e| e.to_string())?;
-        let img = ::image::load_from_memory(&buf)
-            .map_err(|e| e.to_string())?
+        let response = net::agent().get(&url).call().map_err(Error::other)?;
+        let mut bytes = Vec::new();
+        response
+            .into_reader()
+            .read_to_end(&mut bytes)
+            .map_err(Error::other)?;
+        let img = ::image::load_from_memory(&bytes)
+            .map_err(Error::other)?
             .thumbnail(max_px, max_px)
             .into_rgba8();
         Ok(image::Handle::from_rgba(
@@ -310,124 +319,63 @@ pub async fn fetch_artwork(url: String, max_px: u32) -> Result<image::Handle> {
 }
 
 pub async fn login(username: String, password: String, remember: bool) -> Result<LoginResponse> {
-    blocking(move || {
-        parse_json(
-            agent()
-                .post(&format!("{API}/v2/auth/token"))
-                .send_json(serde_json::json!({
-                    "username": username,
-                    "password": password,
-                    "remember": remember,
-                })),
-        )
-    })
-    .await
+    let body = json!({ "username": username, "password": password, "remember": remember });
+    parse(&call("POST", "/v2/auth/token".into(), None, Some(body)).await?)
 }
 
 pub async fn logout(token: String) -> Result<()> {
-    blocking(move || {
-        parse_unit(auth(agent().post(&format!("{API}/v2/auth/logout")), &token).call())
-    })
-    .await
+    call("POST", "/v2/auth/logout".into(), Some(token), None).await?;
+    Ok(())
 }
 
 pub async fn register(username: String, email: String, password: String) -> Result<User> {
-    blocking(move || {
-        parse_json(
-            agent()
-                .post(&format!("{API}/v2/users"))
-                .send_json(serde_json::json!({
-                    "username": username,
-                    "email": email,
-                    "password": password,
-                    "captcha_response": "",
-                })),
-        )
-    })
-    .await
+    let body = json!({
+        "username": username,
+        "email": email,
+        "password": password,
+        "captcha_response": "",
+    });
+    parse(&call("POST", "/v2/users".into(), None, Some(body)).await?)
 }
 
-pub async fn get_me(token: String) -> Result<User> {
-    blocking(move || {
-        let me: Data<User> =
-            parse_json(auth(agent().get(&format!("{API}/v2/users/me")), &token).call())?;
-        Ok(me.data)
-    })
-    .await
+pub async fn fetch_me(token: String) -> Result<User> {
+    let me: Data<User> = get("/v2/users/me".into(), Some(token)).await?;
+    Ok(me.data)
 }
 
-pub async fn get_stats(token: String) -> Result<UserStats> {
-    blocking(move || {
-        let stats: Data<UserStats> =
-            parse_json(auth(agent().get(&format!("{API}/v2/users/me/stats")), &token).call())?;
-        Ok(stats.data)
-    })
-    .await
+pub async fn fetch_stats(token: String) -> Result<UserStats> {
+    let stats: Data<UserStats> = get("/v2/users/me/stats".into(), Some(token)).await?;
+    Ok(stats.data)
 }
 
-pub async fn react(token: String, reaction: u8) -> Result<u32> {
-    blocking(move || {
-        let resp: ReactResponse = parse_json(
-            auth(agent().post(&format!("{API}/v2/reactions")), &token)
-                .send_json(serde_json::json!({ "reaction": reaction })),
-        )?;
-        Ok(resp.reactions)
-    })
-    .await
+pub async fn react(token: String, reaction: Reaction) -> Result<u32> {
+    let body = json!({ "reaction": reaction.code() });
+    let response: ReactResponse =
+        parse(&call("POST", "/v2/reactions".into(), Some(token), Some(body)).await?)?;
+    Ok(response.reactions)
 }
 
-pub async fn fetch_favorites(token: String, page: u32) -> Result<Paginated<FavoriteEntry>> {
-    blocking(move || {
-        parse_json(
-            auth(
-                agent().get(&format!("{API}/v2/users/me/favorites?page={page}")),
-                &token,
-            )
-            .call(),
-        )
-    })
-    .await
+pub async fn fetch_favorites(token: String, page: u32) -> Result<Page<FavoriteEntry>> {
+    get(format!("/v2/users/me/favorites?page={page}"), Some(token)).await
 }
 
 pub async fn add_favorite(token: String, song_id: String) -> Result<u64> {
-    blocking(move || {
-        let added: Data<FavoriteEntry> = parse_json(
-            auth(
-                agent().post(&format!("{API}/v2/users/me/favorites")),
-                &token,
-            )
-            .send_json(serde_json::json!({ "song_id": song_id })),
-        )?;
-        Ok(added.data.id)
-    })
-    .await
+    let body = json!({ "song_id": song_id });
+    let path = "/v2/users/me/favorites".into();
+    let added: Data<FavoriteEntry> = parse(&call("POST", path, Some(token), Some(body)).await?)?;
+    Ok(added.data.id)
 }
 
 pub async fn delete_favorite(token: String, id: u64) -> Result<()> {
-    blocking(move || {
-        parse_unit(
-            auth(
-                agent().delete(&format!("{API}/v2/users/me/favorites/{id}")),
-                &token,
-            )
-            .call(),
-        )
-    })
-    .await
+    let path = format!("/v2/users/me/favorites/{id}");
+    call("DELETE", path, Some(token), None).await?;
+    Ok(())
 }
 
 pub async fn export_favorites(token: String) -> Result<String> {
-    blocking(move || {
-        let link: ExportLink = parse_json(
-            auth(
-                agent().post(&format!("{API}/v2/users/me/favorites/export")),
-                &token,
-            )
-            .call(),
-        )?;
-        Ok(link.link)
-    })
-    .await
+    let path = "/v2/users/me/favorites/export".into();
+    let export: ExportLink = parse(&call("POST", path, Some(token), None).await?)?;
+    Ok(export.link)
 }
 
 pub async fn update_profile(
@@ -436,16 +384,13 @@ pub async fn update_profile(
     username: String,
     email: String,
 ) -> Result<()> {
-    blocking(move || {
-        parse_unit(
-            auth(agent().put(&format!("{API}/v2/users/me")), &token).send_json(serde_json::json!({
-                "current_password": current_password,
-                "username": username,
-                "email": email,
-            })),
-        )
-    })
-    .await
+    let body = json!({
+        "current_password": current_password,
+        "username": username,
+        "email": email,
+    });
+    call("PUT", "/v2/users/me".into(), Some(token), Some(body)).await?;
+    Ok(())
 }
 
 pub async fn update_password(
@@ -453,28 +398,14 @@ pub async fn update_password(
     current_password: String,
     password: String,
 ) -> Result<()> {
-    blocking(move || {
-        parse_unit(
-            auth(agent().put(&format!("{API}/v2/users/me/password")), &token).send_json(
-                serde_json::json!({
-                    "current_password": current_password,
-                    "password": password,
-                }),
-            ),
-        )
-    })
-    .await
+    let body = json!({ "current_password": current_password, "password": password });
+    let path = "/v2/users/me/password".into();
+    call("PUT", path, Some(token), Some(body)).await?;
+    Ok(())
 }
 
-pub async fn delete_profile(token: String, current_password: String) -> Result<()> {
-    blocking(move || {
-        parse_unit(
-            auth(
-                agent().request("DELETE", &format!("{API}/v2/users/me")),
-                &token,
-            )
-            .send_json(serde_json::json!({ "current_password": current_password })),
-        )
-    })
-    .await
+pub async fn delete_account(token: String, current_password: String) -> Result<()> {
+    let body = json!({ "current_password": current_password });
+    call("DELETE", "/v2/users/me".into(), Some(token), Some(body)).await?;
+    Ok(())
 }

@@ -1,27 +1,28 @@
-use crate::api::{RatingEntry, RatingsRange};
-use crate::state::{Msg, Plaza, RatingsMsg};
-use crate::views::{
-    button, clickable_row, empty_panel, icon_like, loading_panel, paged_footer, shaped, song_list,
-    BOLD,
+use super::widgets::{
+    BOLD, button, empty_panel, icon_like, loading_panel, paged_footer, shaped, song_list, song_row,
 };
-use iced::widget::{column, row, text, Space};
+use crate::api::{RatingEntry, RatingsRange};
+use crate::message::{Msg, RatingsMsg};
+use crate::state::Plaza;
+use iced::widget::{Space, column, row, text};
+use iced::window::Id;
 use iced::{Element, Fill};
 
 const PAGE_SIZE: u32 = 25;
 
-pub fn view(state: &Plaza, wid: iced::window::Id) -> Element<'_, Msg> {
-    let range_btn = |label, range| {
+pub fn view(state: &Plaza, wid: Id) -> Element<'_, Msg> {
+    let range_button = |label, range| {
         button(label, Fill)
             .on_press(Msg::Ratings(RatingsMsg::Range(range)))
-            .active(state.ratings.range == range)
+            .selected(state.ratings.range == range)
             .padding([3, 10])
     };
     let ranges = row![
-        range_btn("All Time", RatingsRange::AllTime),
+        range_button("All Time", RatingsRange::AllTime),
         Space::new().width(4),
-        range_btn("Monthly", RatingsRange::Monthly),
+        range_button("Monthly", RatingsRange::Monthly),
         Space::new().width(4),
-        range_btn("Weekly", RatingsRange::Weekly),
+        range_button("Weekly", RatingsRange::Weekly),
     ]
     .width(Fill);
 
@@ -64,5 +65,5 @@ fn entry_row(entry: &RatingEntry, rank: u32) -> Element<'_, Msg> {
     ]
     .spacing(4)
     .padding([3, 4]);
-    clickable_row(content, &entry.song.id)
+    song_row(content, &entry.song.id)
 }

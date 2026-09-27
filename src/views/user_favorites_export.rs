@@ -1,10 +1,12 @@
-use crate::state::{ExportMsg, Msg, Plaza};
+use super::widgets::{button, link_button, sunken_panel};
+use crate::message::{ExportMsg, Msg};
+use crate::state::Plaza;
 use crate::theme;
-use crate::views::{button, link_button, sunken_panel};
-use iced::widget::{column, container, text, Space};
+use iced::widget::{Space, column, container, text};
+use iced::window::Id;
 use iced::{Element, Fill, Length};
 
-pub fn view(state: &Plaza, wid: iced::window::Id) -> Element<'_, Msg> {
+pub fn view(state: &Plaza, wid: Id) -> Element<'_, Msg> {
     let export = &state.export;
     let message = |s| text(s).size(11).center().width(Fill);
 
@@ -40,7 +42,7 @@ pub fn view(state: &Plaza, wid: iced::window::Id) -> Element<'_, Msg> {
     }
 
     let close = button("Close", Length::Shrink)
-        .on_press(Msg::CloseWin(wid))
+        .on_press(Msg::CloseWindow(wid))
         .padding([4, 24]);
 
     column![

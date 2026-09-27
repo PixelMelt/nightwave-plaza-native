@@ -1,14 +1,17 @@
-use crate::api::FavoriteEntry;
-use crate::state::{FavoritesMsg, Msg, Plaza, WinType};
-use crate::theme;
-use crate::views::{
-    button, clickable_row, empty_panel, format_date, link_button, loading_panel, pager_status,
-    paginate, shaped, song_list, BOLD,
+use super::widgets::{
+    BOLD, button, empty_panel, format_date, link_button, loading_panel, pager_status, paginate,
+    shaped, song_list, song_row,
 };
-use iced::widget::{column, container, image, row, text, Space};
+use crate::api::FavoriteEntry;
+use crate::message::{FavoritesMsg, Msg};
+use crate::state::Plaza;
+use crate::theme;
+use crate::window::WindowKind;
+use iced::widget::{Space, column, container, image, row, text};
+use iced::window::Id;
 use iced::{Element, Fill, Length};
 
-pub fn view(state: &Plaza, wid: iced::window::Id) -> Element<'_, Msg> {
+pub fn view(state: &Plaza, wid: Id) -> Element<'_, Msg> {
     let favs = &state.favorites;
     let list = if favs.pager.loading {
         loading_panel()
@@ -16,24 +19,24 @@ pub fn view(state: &Plaza, wid: iced::window::Id) -> Element<'_, Msg> {
         empty_panel("Your list is empty. Like a song to add it here.")
     } else {
         song_list(&favs.list, |_, entry| {
-            let deleted = favs.deleted.contains(&entry.id);
+            let deleted = favs.removed.contains(&entry.id);
             let art = entry.song.thumb_url().and_then(|url| favs.artwork.get(url));
             entry_row(entry, deleted, art)
         })
     };
 
-    let export_btn = button("Export", Length::Shrink)
-        .on_press(Msg::OpenWin(WinType::UserFavoritesExport))
+    let export_button = button("Export", Length::Shrink)
+        .on_press(Msg::OpenWindow(WindowKind::UserFavoritesExport))
         .padding([4, 12]);
-    let close_btn = button("Close", Length::Shrink)
-        .on_press(Msg::CloseWin(wid))
+    let close = button("Close", Length::Shrink)
+        .on_press(Msg::CloseWindow(wid))
         .padding([4, 12]);
     let bottom = row![
         paginate(&favs.pager, |m| Msg::Favorites(FavoritesMsg::Page(m))),
         Space::new().width(Fill),
-        export_btn,
+        export_button,
         Space::new().width(6),
-        close_btn,
+        close,
     ]
     .align_y(iced::Alignment::Center)
     .padding([4, 0]);
@@ -83,11 +86,11 @@ fn entry_row<'a>(
         )
     } else {
         (
-            clickable_row(info, &entry.song.id),
+            song_row(info, &entry.song.id),
             link_button(
                 "Remove",
                 10,
-                Some(Msg::Favorites(FavoritesMsg::Delete(entry.id))),
+                Some(Msg::Favorites(FavoritesMsg::Remove(entry.id))),
             ),
         )
     };

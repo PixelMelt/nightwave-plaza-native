@@ -1,9 +1,11 @@
-use crate::state::{DeleteMsg, Msg, Plaza};
-use crate::theme;
-use crate::views::{
-    action_close_row, d3_sunken, form_error, form_input, labeled_panel, submit_button, BOLD,
+use super::widgets::{
+    BOLD, action_close_row, form_error, form_input, labeled_panel, submit_button, sunken_frame,
 };
-use iced::widget::{checkbox, column, container, text, Space};
+use crate::message::{DeleteAccountMsg, Msg};
+use crate::state::Plaza;
+use crate::theme;
+use iced::widget::{Space, checkbox, column, container, text};
+use iced::window::Id;
 use iced::{Element, Fill};
 
 const WARNINGS: [&str; 4] = [
@@ -13,8 +15,8 @@ const WARNINGS: [&str; 4] = [
     "\u{2014} You can register again with the same username and email (if available).",
 ];
 
-pub fn view(state: &Plaza, wid: iced::window::Id) -> Element<'_, Msg> {
-    let del = &state.delete;
+pub fn view(state: &Plaza, wid: Id) -> Element<'_, Msg> {
+    let form = &state.delete_account;
 
     let mut memo = column![
         text("This action will completely delete your Nightwave Plaza account.")
@@ -25,30 +27,30 @@ pub fn view(state: &Plaza, wid: iced::window::Id) -> Element<'_, Msg> {
     for warning in WARNINGS {
         memo = memo.push(text(warning).size(11));
     }
-    let memo_panel = d3_sunken(
+    let memo_panel = sunken_frame(
         container(memo)
             .style(theme::sunken_inner)
             .width(Fill)
             .padding(8),
     );
 
-    let confirm = checkbox(del.confirm)
+    let confirm = checkbox(form.confirmed)
         .label("I understand, delete my account.")
-        .on_toggle(|b| Msg::DeleteAccount(DeleteMsg::Confirm(b)))
+        .on_toggle(|b| Msg::DeleteAccount(DeleteAccountMsg::Confirm(b)))
         .size(13)
         .text_size(11);
 
-    let password = form_input(&del.current_password, |s| {
-        Msg::DeleteAccount(DeleteMsg::Password(s))
+    let password = form_input(&form.current_password, |s| {
+        Msg::DeleteAccount(DeleteAccountMsg::Password(s))
     })
-    .on_submit(Msg::DeleteAccount(DeleteMsg::Submit))
+    .on_submit(Msg::DeleteAccount(DeleteAccountMsg::Submit))
     .secure(true);
 
-    let delete_btn = submit_button(
-        del.loading,
+    let delete_button = submit_button(
+        form.loading,
         "Deleting...",
         "Delete Account",
-        Msg::DeleteAccount(DeleteMsg::Submit),
+        Msg::DeleteAccount(DeleteAccountMsg::Submit),
         Fill,
     );
 
@@ -59,9 +61,9 @@ pub fn view(state: &Plaza, wid: iced::window::Id) -> Element<'_, Msg> {
         Space::new().height(8),
         labeled_panel("Current Password:", password),
         Space::new().height(8),
-        form_error(&del.error),
+        form_error(form.error.as_deref()),
         Space::new().height(4),
-        action_close_row(delete_btn, wid),
+        action_close_row(delete_button, wid),
     ]
     .padding(8)
     .into()

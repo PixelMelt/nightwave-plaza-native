@@ -1,15 +1,18 @@
-use crate::state::{LastfmMsg, Msg, Plaza, WinType};
+use super::widgets::{BOLD, button, close_button, group_box, link_button};
+use crate::message::{LastfmMsg, Msg};
+use crate::state::Plaza;
 use crate::theme::MUTED;
-use crate::views::{button, close_btn, group_box, link_button, BOLD};
-use iced::widget::{checkbox, column, row, text, Space};
+use crate::window::WindowKind;
+use iced::widget::{Space, checkbox, column, row, text};
+use iced::window::Id;
 use iced::{Element, Fill, Length};
 
-pub fn view(state: &Plaza, wid: iced::window::Id) -> Element<'_, Msg> {
-    let timer_btn = button("Sleep Timer...", Length::Shrink)
-        .on_press(Msg::OpenWin(WinType::PlayerTimer))
+pub fn view(state: &Plaza, wid: Id) -> Element<'_, Msg> {
+    let timer_button = button("Sleep Timer...", Length::Shrink)
+        .on_press(Msg::OpenWindow(WindowKind::PlayerTimer))
         .padding([4, 12]);
-    let bottom =
-        row![timer_btn, Space::new().width(Fill), close_btn(wid)].align_y(iced::Alignment::Center);
+    let bottom = row![timer_button, Space::new().width(Fill), close_button(wid)]
+        .align_y(iced::Alignment::Center);
 
     column![
         group_box("Last.fm Scrobbling", lastfm_body(state)),
@@ -46,7 +49,7 @@ fn lastfm_body(state: &Plaza) -> Element<'_, Msg> {
     let connect = (!busy).then_some(Msg::Lastfm(LastfmMsg::Connect));
     let mut col = column![].spacing(6).width(Fill);
 
-    if let Some(username) = lastfm.session_key.as_ref().and(lastfm.username.as_deref()) {
+    if let Some(username) = lastfm.connected_username() {
         col = col
             .push(
                 row![
@@ -58,7 +61,7 @@ fn lastfm_body(state: &Plaza) -> Element<'_, Msg> {
             .push(
                 checkbox(lastfm.enabled)
                     .label("Scrobble tracks while playing")
-                    .on_toggle(|b| Msg::Lastfm(LastfmMsg::ToggleEnabled(b)))
+                    .on_toggle(|b| Msg::Lastfm(LastfmMsg::SetEnabled(b)))
                     .size(13)
                     .text_size(11),
             )
@@ -76,7 +79,7 @@ fn lastfm_body(state: &Plaza) -> Element<'_, Msg> {
             )
             .push(
                 row![
-                    button(finish, 80).maybe_on_press((!busy).then_some(Msg::Lastfm(LastfmMsg::Finish))),
+                    button(finish, 80).on_press_maybe((!busy).then_some(Msg::Lastfm(LastfmMsg::Finish))),
                     Space::new().width(8),
                     link_button("Open page again", 11, connect),
                 ]
@@ -88,7 +91,7 @@ fn lastfm_body(state: &Plaza) -> Element<'_, Msg> {
             .push(
                 text("Connect your Last.fm account to scrobble the tracks you listen to.").size(11),
             )
-            .push(button(label, 96).maybe_on_press(connect));
+            .push(button(label, 96).on_press_maybe(connect));
     }
 
     if let Some(status) = &state.lastfm.status {

@@ -1,10 +1,11 @@
-use crate::state::{Msg, WinType};
+use super::bevel::bevel_button;
+use super::pixel;
+use super::widgets::{BOLD, Png, bevel_frame};
+use crate::message::Msg;
 use crate::theme;
-use crate::views::bevel::bevel_button;
-use crate::views::pixel;
-use crate::views::{bevel_2x, Png, BOLD};
+use crate::window::WindowKind;
 use iced::widget::text::{LineHeight, Shaping};
-use iced::widget::{column, container, mouse_area, text, Row, Space};
+use iced::widget::{Row, Space, column, container, mouse_area, text};
 use iced::window::Id;
 use iced::{Element, Fill, Pixels};
 
@@ -23,30 +24,30 @@ static CLOCK: Png = Png::new(include_bytes!("../assets/icons/clock.png"));
 static RECYCLE: Png = Png::new(include_bytes!("../assets/icons/recycle_bin_full.png"));
 static GEAR: Png = Png::new(include_bytes!("../assets/icons/settings_gear.png"));
 
-fn icon(wt: Option<WinType>) -> &'static Png {
-    match wt {
-        None | Some(WinType::UserRegister) => &BALL,
-        Some(WinType::About) => &HELP,
-        Some(WinType::History) => &CALENDAR,
-        Some(WinType::Ratings) => &CHART,
-        Some(WinType::Support) => &SMILEY,
-        Some(WinType::SongInfo) => &CD,
-        Some(WinType::UserLogin | WinType::UserPassword) => &KEYS,
-        Some(WinType::UserProfile) => &USER,
-        Some(WinType::Credits) => &INFO,
-        Some(WinType::News) => &DOC,
-        Some(WinType::UserFavorites | WinType::UserFavoritesExport) => &WORLD_STAR,
-        Some(WinType::UserProfileEdit | WinType::Settings) => &GEAR,
-        Some(WinType::UserProfileDelete) => &RECYCLE,
-        Some(WinType::PlayerTimer) => &CLOCK,
+fn icon(kind: Option<WindowKind>) -> &'static Png {
+    match kind {
+        None | Some(WindowKind::UserRegister) => &BALL,
+        Some(WindowKind::About) => &HELP,
+        Some(WindowKind::History) => &CALENDAR,
+        Some(WindowKind::Ratings) => &CHART,
+        Some(WindowKind::Support) => &SMILEY,
+        Some(WindowKind::SongInfo) => &CD,
+        Some(WindowKind::UserLogin | WindowKind::UserPassword) => &KEYS,
+        Some(WindowKind::UserProfile) => &USER,
+        Some(WindowKind::Credits) => &INFO,
+        Some(WindowKind::News) => &DOC,
+        Some(WindowKind::UserFavorites | WindowKind::UserFavoritesExport) => &WORLD_STAR,
+        Some(WindowKind::UserProfileEdit | WindowKind::Settings) => &GEAR,
+        Some(WindowKind::UserProfileDelete) => &RECYCLE,
+        Some(WindowKind::PlayerTimer) => &CLOCK,
     }
 }
 
-fn title_bar(wid: Id, wt: Option<WinType>, active: bool) -> Element<'static, Msg> {
-    let title = wt.map_or("Nightwave Plaza", WinType::title);
+fn title_bar(wid: Id, kind: Option<WindowKind>, focused: bool) -> Element<'static, Msg> {
+    let title = kind.map_or("Nightwave Plaza", WindowKind::title);
     let drag_area = mouse_area(
         Row::new()
-            .push(icon(wt).image().width(16).height(16))
+            .push(icon(kind).image().width(16).height(16))
             .push(Space::new().width(2))
             .push(
                 text(title)
@@ -59,7 +60,7 @@ fn title_bar(wid: Id, wt: Option<WinType>, active: bool) -> Element<'static, Msg
             .width(Fill)
             .height(16),
     )
-    .on_press(Msg::DragWin(wid));
+    .on_press(Msg::DragWindow(wid));
 
     let title_button = |glyph: pixel::Pixel, msg| {
         bevel_button(container(glyph).center_x(Fill).center_y(Fill))
@@ -69,8 +70,11 @@ fn title_bar(wid: Id, wt: Option<WinType>, active: bool) -> Element<'static, Msg
             .height(16)
     };
     let buttons = Row::new()
-        .push(title_button(pixel::minimize_glyph(), Msg::MinimizeWin(wid)))
-        .push(title_button(pixel::close_glyph(), Msg::CloseWin(wid)))
+        .push(title_button(
+            pixel::minimize_glyph(),
+            Msg::MinimizeWindow(wid),
+        ))
+        .push(title_button(pixel::close_glyph(), Msg::CloseWindow(wid)))
         .align_y(iced::Alignment::Center)
         .height(16);
 
@@ -82,7 +86,7 @@ fn title_bar(wid: Id, wt: Option<WinType>, active: bool) -> Element<'static, Msg
         .height(16);
 
     container(bar)
-        .style(if active {
+        .style(if focused {
             theme::title_bar_bg
         } else {
             theme::title_bar_bg_inactive
@@ -92,13 +96,13 @@ fn title_bar(wid: Id, wt: Option<WinType>, active: bool) -> Element<'static, Msg
         .into()
 }
 
-pub fn frame<'a>(
+pub fn frame(
     wid: Id,
-    wt: Option<WinType>,
-    active: bool,
-    content: Element<'a, Msg>,
-) -> Element<'a, Msg> {
-    let framed = column![title_bar(wid, wt, active), content]
+    kind: Option<WindowKind>,
+    focused: bool,
+    content: Element<'_, Msg>,
+) -> Element<'_, Msg> {
+    let framed = column![title_bar(wid, kind, focused), content]
         .spacing(1)
         .padding(1)
         .width(Fill)
@@ -108,7 +112,7 @@ pub fn frame<'a>(
         .width(Fill)
         .height(Fill)
         .style(theme::panel);
-    bevel_2x(inner, theme::BEVEL_WINDOW)
+    bevel_frame(inner, theme::BEVEL_WINDOW)
         .width(Fill)
         .height(Fill)
         .into()

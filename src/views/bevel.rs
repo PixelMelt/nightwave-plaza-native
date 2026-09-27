@@ -1,20 +1,27 @@
+use super::paint;
 use crate::theme;
 use iced::advanced::layout::{self, Layout};
 use iced::advanced::renderer;
-use iced::advanced::widget::{tree, Tree, Widget};
-use iced::advanced::{mouse, Clipboard, Shell};
+use iced::advanced::widget::{Tree, Widget, tree};
+use iced::advanced::{Clipboard, Shell, mouse};
 use iced::event::Event;
-use iced::{touch, Background, Border, Color, Element, Length, Padding, Rectangle, Shadow, Size};
+use iced::{Element, Length, Padding, Rectangle, Size, touch};
 
 pub struct Bevel<'a, Message> {
     content: Element<'a, Message>,
     on_press: Option<Message>,
-    menu: bool,
+    kind: Kind,
     width: Length,
     height: Length,
     padding: Padding,
-    active: bool,
+    selected: bool,
     drawn: Option<Look>,
+}
+
+#[derive(Clone, Copy)]
+enum Kind {
+    Button,
+    MenuItem,
 }
 
 #[derive(Default, Clone, Copy)]
@@ -31,11 +38,11 @@ enum Look {
 }
 
 impl<'a, Message> Bevel<'a, Message> {
-    fn new(content: impl Into<Element<'a, Message>>, menu: bool) -> Self {
+    fn new(content: impl Into<Element<'a, Message>>, kind: Kind) -> Self {
         Self {
             content: content.into(),
             on_press: None,
-            menu,
+            kind,
             width: Length::Shrink,
             height: Length::Shrink,
             padding: Padding {
@@ -44,28 +51,25 @@ impl<'a, Message> Bevel<'a, Message> {
                 bottom: 3.0,
                 left: 6.0,
             },
-            active: false,
+            selected: false,
             drawn: None,
         }
     }
 
-    fn look(&self, state: &State, is_mouse_over: bool) -> Look {
+    fn look(&self, state: State, is_mouse_over: bool) -> Look {
         let enabled = self.on_press.is_some();
-        if self.menu {
-            if enabled && is_mouse_over {
-                Look::MenuHover
-            } else {
-                Look::Flat
+        match self.kind {
+            Kind::MenuItem if enabled && is_mouse_over => Look::MenuHover,
+            Kind::MenuItem => Look::Flat,
+            Kind::Button if self.selected || (enabled && state.is_pressed && is_mouse_over) => {
+                Look::Pressed
             }
-        } else if self.active || (enabled && state.is_pressed && is_mouse_over) {
-            Look::Pressed
-        } else {
-            Look::Raised
+            Kind::Button => Look::Raised,
         }
     }
 
-    pub fn active(mut self, active: bool) -> Self {
-        self.active = active;
+    pub fn selected(mut self, selected: bool) -> Self {
+        self.selected = selected;
         self
     }
 
@@ -74,7 +78,7 @@ impl<'a, Message> Bevel<'a, Message> {
         self
     }
 
-    pub fn maybe_on_press(mut self, msg: Option<Message>) -> Self {
+    pub fn on_press_maybe(mut self, msg: Option<Message>) -> Self {
         self.on_press = msg;
         self
     }
@@ -144,15 +148,15 @@ impl<'a, Message: Clone + 'a> Widget<Message, iced::Theme, iced::Renderer> for B
     ) {
         let bounds = layout.bounds();
         let state = tree.state.downcast_ref::<State>();
-        let look = self.look(state, cursor.is_over(bounds));
+        let look = self.look(*state, cursor.is_over(bounds));
 
         if look != Look::Flat {
-            quad(renderer, bounds, theme::BG_GRAY);
+            paint::fill_rect(renderer, bounds, theme::BG_GRAY);
         }
         match look {
-            Look::Raised => draw_symmetric_bevel(renderer, bounds, theme::BEVEL_RAISED),
-            Look::Pressed => draw_symmetric_bevel(renderer, bounds, theme::BEVEL_PRESSED),
-            Look::MenuHover => draw_thin_bevel(renderer, bounds, theme::THIN_MENU_HOVER),
+            Look::Raised => paint::bevel(renderer, bounds, theme::BEVEL_RAISED),
+            Look::Pressed => paint::bevel(renderer, bounds, theme::BEVEL_PRESSED),
+            Look::MenuHover => paint::thin_bevel(renderer, bounds, theme::THIN_MENU_HOVER),
             Look::Flat => {}
         }
 
@@ -161,7 +165,7 @@ impl<'a, Message: Clone + 'a> Widget<Message, iced::Theme, iced::Renderer> for B
             renderer,
             theme,
             style,
-            layout.children().next().unwrap(),
+            layout.children().next().expect("widget has one child"),
             cursor,
             viewport,
         );
@@ -181,7 +185,7 @@ impl<'a, Message: Clone + 'a> Widget<Message, iced::Theme, iced::Renderer> for B
         self.content.as_widget_mut().update(
             &mut tree.children[0],
             event,
-            layout.children().next().unwrap(),
+            layout.children().next().expect("widget has one child"),
             cursor,
             renderer,
             clipboard,
@@ -194,12 +198,12 @@ impl<'a, Message: Clone + 'a> Widget<Message, iced::Theme, iced::Renderer> for B
             match event {
                 Event::Mouse(mouse::Event::ButtonPressed(mouse::Button::Left))
                 | Event::Touch(touch::Event::FingerPressed { .. }) => {
-                    if let Some(msg) = self.on_press.clone() {
-                        if cursor.is_over(layout.bounds()) {
-                            state.is_pressed = true;
-                            shell.publish(msg);
-                            shell.capture_event();
-                        }
+                    if let Some(msg) = self.on_press.clone()
+                        && cursor.is_over(layout.bounds())
+                    {
+                        state.is_pressed = true;
+                        shell.publish(msg);
+                        shell.capture_event();
                     }
                 }
                 Event::Mouse(mouse::Event::ButtonReleased(mouse::Button::Left))
@@ -217,7 +221,7 @@ impl<'a, Message: Clone + 'a> Widget<Message, iced::Theme, iced::Renderer> for B
             }
         }
 
-        let look = self.look(state, cursor.is_over(layout.bounds()));
+        let look = self.look(*state, cursor.is_over(layout.bounds()));
         if let Event::Window(iced::window::Event::RedrawRequested(_)) = event {
             self.drawn = Some(look);
         } else if self.drawn.is_some_and(|drawn| drawn != look) {
@@ -238,7 +242,7 @@ impl<'a, Message: Clone + 'a> Widget<Message, iced::Theme, iced::Renderer> for B
         }
         self.content.as_widget().mouse_interaction(
             &tree.children[0],
-            layout.children().next().unwrap(),
+            layout.children().next().expect("widget has one child"),
             cursor,
             viewport,
             renderer,
@@ -253,50 +257,9 @@ impl<'a, Message: Clone + 'a> From<Bevel<'a, Message>> for Element<'a, Message> 
 }
 
 pub fn bevel_button<'a, Message>(content: impl Into<Element<'a, Message>>) -> Bevel<'a, Message> {
-    Bevel::new(content, false)
+    Bevel::new(content, Kind::Button)
 }
 
 pub fn menu_item<'a, Message>(content: impl Into<Element<'a, Message>>) -> Bevel<'a, Message> {
-    Bevel::new(content, true).padding([5, 6])
-}
-
-pub fn draw_thin_bevel(renderer: &mut iced::Renderer, b: Rectangle, (tl, br): (Color, Color)) {
-    let edge = |x, y, width, height| Rectangle {
-        x,
-        y,
-        width,
-        height,
-    };
-    quad(renderer, edge(b.x, b.y, b.width, 1.0), tl);
-    quad(renderer, edge(b.x, b.y, 1.0, b.height), tl);
-    quad(renderer, edge(b.x, b.y + b.height - 1.0, b.width, 1.0), br);
-    quad(renderer, edge(b.x + b.width - 1.0, b.y, 1.0, b.height), br);
-}
-
-pub fn draw_symmetric_bevel(
-    renderer: &mut iced::Renderer,
-    bounds: Rectangle,
-    c: theme::BevelColors,
-) {
-    draw_thin_bevel(renderer, bounds, (c.tl_outer, c.br_outer));
-    let inner = Rectangle {
-        x: bounds.x + 1.0,
-        y: bounds.y + 1.0,
-        width: bounds.width - 2.0,
-        height: bounds.height - 2.0,
-    };
-    draw_thin_bevel(renderer, inner, (c.tl_inner, c.br_inner));
-}
-
-pub fn quad(renderer: &mut iced::Renderer, bounds: Rectangle, color: Color) {
-    use iced::advanced::Renderer;
-    renderer.fill_quad(
-        renderer::Quad {
-            bounds,
-            border: Border::default(),
-            shadow: Shadow::default(),
-            snap: false,
-        },
-        Background::Color(color),
-    );
+    Bevel::new(content, Kind::MenuItem).padding([5, 6])
 }

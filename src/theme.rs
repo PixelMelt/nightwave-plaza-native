@@ -85,14 +85,14 @@ pub fn solid_border(color: Color) -> Border {
     }
 }
 
-pub fn cover(_t: &Theme) -> container::Style {
+pub fn cover(_: &Theme) -> container::Style {
     container::Style {
         background: Some(Background::Color(COVER_BG)),
         ..base_panel()
     }
 }
 
-pub fn separator(_t: &Theme) -> container::Style {
+pub fn separator(_: &Theme) -> container::Style {
     container::Style {
         background: Some(Background::Color(DIVIDER_GRAY)),
         ..Default::default()
@@ -126,11 +126,11 @@ pub fn base_panel() -> container::Style {
     }
 }
 
-pub fn panel(_t: &Theme) -> container::Style {
+pub fn panel(_: &Theme) -> container::Style {
     base_panel()
 }
 
-pub fn title_bar_bg(_t: &Theme) -> container::Style {
+pub fn title_bar_bg(_: &Theme) -> container::Style {
     container::Style {
         background: Some(Background::Gradient(Gradient::Linear(
             iced::gradient::Linear::new(iced::Radians(std::f32::consts::FRAC_PI_2))
@@ -142,7 +142,7 @@ pub fn title_bar_bg(_t: &Theme) -> container::Style {
     }
 }
 
-pub fn title_bar_bg_inactive(_t: &Theme) -> container::Style {
+pub fn title_bar_bg_inactive(_: &Theme) -> container::Style {
     container::Style {
         background: Some(Background::Gradient(Gradient::Linear(
             iced::gradient::Linear::new(iced::Radians(std::f32::consts::FRAC_PI_2))
@@ -154,21 +154,21 @@ pub fn title_bar_bg_inactive(_t: &Theme) -> container::Style {
     }
 }
 
-pub fn sunken_inner(_t: &Theme) -> container::Style {
+pub fn sunken_inner(_: &Theme) -> container::Style {
     container::Style {
         background: Some(Background::Color(WHITE)),
         ..base_panel()
     }
 }
 
-pub fn sunken(_t: &Theme) -> container::Style {
+pub fn sunken(theme: &Theme) -> container::Style {
     container::Style {
         border: solid_border(DARK_GRAY),
-        ..sunken_inner(_t)
+        ..sunken_inner(theme)
     }
 }
 
-pub fn list_row_btn(_t: &Theme, status: button::Status) -> button::Style {
+pub fn list_row_button(_: &Theme, status: button::Status) -> button::Style {
     button::Style {
         background: matches!(status, button::Status::Hovered)
             .then_some(Background::Color(HOVER_GRAY)),
@@ -176,9 +176,9 @@ pub fn list_row_btn(_t: &Theme, status: button::Status) -> button::Style {
     }
 }
 
-pub fn scrollbar(_t: &Theme, _s: scrollable::Status) -> scrollable::Style {
+pub fn scrollbar(theme: &Theme, _: scrollable::Status) -> scrollable::Style {
     scrollable::Style {
-        container: sunken(_t),
+        container: sunken(theme),
         vertical_rail: scrollable::Rail {
             background: Some(Background::Color(BG_GRAY)),
             border: Border::default(),
@@ -206,7 +206,7 @@ pub fn scrollbar(_t: &Theme, _s: scrollable::Status) -> scrollable::Style {
     }
 }
 
-pub fn page_input(_t: &Theme, _s: text_input::Status) -> text_input::Style {
+pub fn page_input(_: &Theme, _s: text_input::Status) -> text_input::Style {
     text_input::Style {
         background: Background::Color(WHITE),
         border: solid_border(DARK_GRAY),

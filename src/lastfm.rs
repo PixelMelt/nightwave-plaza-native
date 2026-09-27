@@ -1,5 +1,5 @@
 use crate::api::StatusSong;
-use crate::net::{agent, blocking, read_body};
+use crate::net::{self, Error, blocking};
 use chrono::Utc;
 use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
@@ -10,6 +10,9 @@ const API_SECRET: &str = "91a2c65df39ea28a7f305f7b35242e17";
 
 const API_ROOT: &str = "https://ws.audioscrobbler.com/2.0/";
 const AUTH_URL: &str = "https://www.last.fm/api/auth/";
+
+const MIN_TRACK_SECS: f64 = 30.0;
+const MAX_THRESHOLD_SECS: f64 = 240.0;
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct LastfmConfig {
@@ -22,11 +25,21 @@ impl LastfmConfig {
     pub fn active_session_key(&self) -> Option<&str> {
         self.session_key.as_deref().filter(|_| self.enabled)
     }
+
+    pub fn connected_username(&self) -> Option<&str> {
+        self.session_key.as_ref().and(self.username.as_deref())
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct Session {
+    pub username: String,
+    pub key: String,
 }
 
 pub struct Scrobble {
     pub song: StatusSong,
-    start_unix: Option<u64>,
+    started_at_unix: Option<u64>,
     played_secs: f64,
     playing_since: Option<Instant>,
 }
@@ -35,7 +48,7 @@ impl Scrobble {
     pub fn new(song: StatusSong) -> Self {
         Self {
             song,
-            start_unix: None,
+            started_at_unix: None,
             played_secs: 0.0,
             playing_since: None,
         }
@@ -43,8 +56,8 @@ impl Scrobble {
 
     pub fn set_playing(&mut self, playing: bool, now: Instant) {
         if playing {
-            self.start_unix
-                .get_or_insert_with(|| Utc::now().timestamp() as u64);
+            self.started_at_unix
+                .get_or_insert_with(|| Utc::now().timestamp().unsigned_abs());
             self.playing_since.get_or_insert(now);
         } else if let Some(since) = self.playing_since.take() {
             self.played_secs += now.duration_since(since).as_secs_f64();
@@ -52,45 +65,36 @@ impl Scrobble {
     }
 
     pub fn due(&self, now: Instant) -> Option<u64> {
-        let start = self.start_unix?;
-        if !has_metadata(&self.song) {
+        let started_at = self.started_at_unix?;
+        if !self.song.has_metadata() {
             return None;
         }
         let length = self.song.length;
-        if length > 0.0 && length < 30.0 {
+        if length > 0.0 && length < MIN_TRACK_SECS {
             return None;
         }
         let threshold = if length > 0.0 {
-            (length / 2.0).min(240.0)
+            (length / 2.0).min(MAX_THRESHOLD_SECS)
         } else {
-            30.0
+            MIN_TRACK_SECS
         };
-        let played = self.played_secs
-            + self
-                .playing_since
-                .map_or(0.0, |since| now.duration_since(since).as_secs_f64());
-        (played >= threshold).then_some(start)
+        let current_stretch = self
+            .playing_since
+            .map_or(0.0, |since| now.duration_since(since).as_secs_f64());
+        (self.played_secs + current_stretch >= threshold).then_some(started_at)
     }
-}
-
-pub fn has_metadata(song: &StatusSong) -> bool {
-    !song.artist.is_empty() && !song.title.is_empty()
 }
 
 fn sign(params: &[(&str, &str)]) -> String {
-    let mut sorted: Vec<&(&str, &str)> = params.iter().filter(|(k, _)| *k != "format").collect();
-    sorted.sort_by(|a, b| a.0.cmp(b.0));
-    let mut buf = String::new();
-    for (k, v) in sorted {
-        buf.push_str(k);
-        buf.push_str(v);
-    }
+    let mut sorted: Vec<_> = params.iter().filter(|(k, _)| *k != "format").collect();
+    sorted.sort_by_key(|(k, _)| *k);
+    let mut buf: String = sorted.into_iter().flat_map(|(k, v)| [*k, *v]).collect();
     buf.push_str(API_SECRET);
     format!("{:x}", md5::compute(buf))
 }
 
 #[derive(Deserialize)]
-struct LfmError {
+struct ErrorBody {
     #[serde(default)]
     error: i32,
     #[serde(default)]
@@ -98,50 +102,55 @@ struct LfmError {
 }
 
 #[derive(Deserialize)]
-struct TokenResp {
+struct TokenResponse {
     token: String,
 }
 
 #[derive(Deserialize)]
-struct SessionResp {
-    session: SessionInner,
+struct SessionResponse {
+    session: SessionBody,
 }
 
 #[derive(Deserialize)]
-struct SessionInner {
+struct SessionBody {
     name: String,
     key: String,
 }
 
-fn parse<T: DeserializeOwned>(result: Result<ureq::Response, ureq::Error>) -> Result<T, String> {
-    let (_, body) = read_body(result)?;
-    if let Ok(err) = serde_json::from_str::<LfmError>(&body) {
-        if err.error != 0 {
-            return Err(if err.message.is_empty() {
-                format!("Last.fm error {}", err.error)
-            } else {
-                err.message
-            });
-        }
+fn parse<T: DeserializeOwned>(result: Result<ureq::Response, ureq::Error>) -> Result<T, Error> {
+    let body = net::read_body(result)?;
+    if let Ok(err) = serde_json::from_str::<ErrorBody>(&body.text)
+        && err.error != 0
+    {
+        let message = if err.message.is_empty() {
+            format!("Last.fm error {}", err.error)
+        } else {
+            err.message
+        };
+        return Err(Error::http(body.status, message));
     }
-    serde_json::from_str::<T>(&body).map_err(|e| e.to_string())
+    serde_json::from_str(&body.text).map_err(Error::other)
 }
 
-fn get_signed<T: DeserializeOwned>(params: &[(&str, &str)]) -> Result<T, String> {
+fn get_signed<T: DeserializeOwned>(params: &[(&str, &str)]) -> Result<T, Error> {
     let sig = sign(params);
-    let mut req = agent().get(API_ROOT);
-    for (k, v) in params {
-        req = req.query(k, v);
-    }
-    parse(req.query("api_sig", &sig).query("format", "json").call())
+    let request = params
+        .iter()
+        .fold(net::agent().get(API_ROOT), |req, (k, v)| req.query(k, v));
+    parse(
+        request
+            .query("api_sig", &sig)
+            .query("format", "json")
+            .call(),
+    )
 }
 
-fn post_signed(params: Vec<(&str, &str)>) -> Result<(), String> {
+fn post_signed(params: Vec<(&str, &str)>) -> Result<(), Error> {
     let sig = sign(&params);
     let mut form: Vec<(&str, &str)> = params;
-    form.push(("api_sig", sig.as_str()));
+    form.push(("api_sig", &sig));
     form.push(("format", "json"));
-    let _: serde_json::Value = parse(agent().post(API_ROOT).send_form(&form))?;
+    parse::<serde_json::Value>(net::agent().post(API_ROOT).send_form(&form))?;
     Ok(())
 }
 
@@ -159,10 +168,11 @@ fn track_params<'a>(method: &'a str, sk: &'a str, song: &'a StatusSong) -> Vec<(
     params
 }
 
-pub async fn get_token() -> Result<String, String> {
+pub async fn fetch_token() -> Result<String, Error> {
     blocking(|| {
-        let parsed: TokenResp = get_signed(&[("method", "auth.getToken"), ("api_key", API_KEY)])?;
-        Ok(parsed.token)
+        let response: TokenResponse =
+            get_signed(&[("method", "auth.getToken"), ("api_key", API_KEY)])?;
+        Ok(response.token)
     })
     .await
 }
@@ -171,27 +181,30 @@ pub fn auth_url(token: &str) -> String {
     format!("{AUTH_URL}?api_key={API_KEY}&token={token}")
 }
 
-pub async fn get_session(token: String) -> Result<(String, String), String> {
+pub async fn fetch_session(token: String) -> Result<Session, Error> {
     blocking(move || {
-        let parsed: SessionResp = get_signed(&[
+        let response: SessionResponse = get_signed(&[
             ("method", "auth.getSession"),
             ("api_key", API_KEY),
             ("token", token.as_str()),
         ])?;
-        Ok((parsed.session.name, parsed.session.key))
+        Ok(Session {
+            username: response.session.name,
+            key: response.session.key,
+        })
     })
     .await
 }
 
-pub async fn update_now_playing(sk: String, song: StatusSong) -> Result<(), String> {
+pub async fn update_now_playing(sk: String, song: StatusSong) -> Result<(), Error> {
     blocking(move || post_signed(track_params("track.updateNowPlaying", &sk, &song))).await
 }
 
-pub async fn scrobble(sk: String, song: StatusSong, timestamp: u64) -> Result<(), String> {
+pub async fn scrobble(sk: String, song: StatusSong, started_at_unix: u64) -> Result<(), Error> {
     blocking(move || {
-        let ts = timestamp.to_string();
+        let timestamp = started_at_unix.to_string();
         let mut params = track_params("track.scrobble", &sk, &song);
-        params.push(("timestamp", ts.as_str()));
+        params.push(("timestamp", &timestamp));
         post_signed(params)
     })
     .await

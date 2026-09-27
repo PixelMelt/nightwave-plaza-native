@@ -1,13 +1,15 @@
-use crate::api::HistoryEntry;
-use crate::state::{HistoryMsg, Msg, Plaza};
-use crate::views::{
-    clickable_row, empty_panel, format_date, format_timestamp_day, format_timestamp_time,
-    link_button, loading_panel, paged_footer, shaped, song_list, BOLD,
+use super::widgets::{
+    BOLD, empty_panel, format_date, format_day, format_time_of_day, link_button, loading_panel,
+    paged_footer, shaped, song_list, song_row,
 };
-use iced::widget::{column, row, text, Space};
+use crate::api::HistoryEntry;
+use crate::message::{HistoryMsg, Msg};
+use crate::state::Plaza;
+use iced::widget::{Space, column, row, text};
+use iced::window::Id;
 use iced::{Element, Fill};
 
-pub fn view(state: &Plaza, wid: iced::window::Id) -> Element<'_, Msg> {
+pub fn view(state: &Plaza, wid: Id) -> Element<'_, Msg> {
     let header: Element<Msg> = match state.history.date_range {
         Some(range) => row![
             text(format!(
@@ -59,8 +61,8 @@ fn entry_row(entry: &HistoryEntry) -> Element<'_, Msg> {
         .spacing(1)
         .width(Fill),
         column![
-            text(format_timestamp_day(entry.played_at)).size(10),
-            text(format_timestamp_time(entry.played_at)).size(10),
+            text(format_day(entry.played_at)).size(10),
+            text(format_time_of_day(entry.played_at)).size(10),
         ]
         .width(78)
         .align_x(iced::Alignment::End),
@@ -68,5 +70,5 @@ fn entry_row(entry: &HistoryEntry) -> Element<'_, Msg> {
     ]
     .spacing(4)
     .padding([3, 4]);
-    clickable_row(content, &entry.song.id)
+    song_row(content, &entry.song.id)
 }

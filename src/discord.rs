@@ -1,6 +1,6 @@
 use crate::api::StatusSong;
 use chrono::Utc;
-use discord_rich_presence::{activity, DiscordIpc, DiscordIpcClient};
+use discord_rich_presence::{DiscordIpc, DiscordIpcClient, activity};
 use serde::{Deserialize, Serialize};
 use std::sync::mpsc::{self, Receiver, Sender};
 
@@ -29,7 +29,7 @@ pub struct Discord {
 impl Discord {
     pub fn spawn() -> Self {
         let (tx, rx) = mpsc::channel();
-        std::thread::spawn(move || worker(rx));
+        std::thread::spawn(move || worker(&rx));
         Self { tx }
     }
 
@@ -46,7 +46,7 @@ impl Discord {
     }
 }
 
-fn worker(rx: Receiver<Option<Presence>>) {
+fn worker(rx: &Receiver<Option<Presence>>) {
     let mut client = DiscordIpcClient::new(CLIENT_ID);
     let mut connected = false;
     while let Ok(mut presence) = rx.recv() {

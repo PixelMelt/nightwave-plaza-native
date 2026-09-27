@@ -1,7 +1,9 @@
-use crate::state::{Msg, WinType};
-use crate::views::{button, link_button, status_bar, sunken_panel, Png, BOLD};
+use super::widgets::{BOLD, CellWidth, Png, button, link_button, status_bar, sunken_panel};
+use crate::message::Msg;
+use crate::window::WindowKind;
 use iced::widget::text::LineHeight;
-use iced::widget::{column, row, text, Space};
+use iced::widget::{Space, column, row, text};
+use iced::window::Id;
 use iced::{Element, Fill, Font, Length};
 
 static PC: Png = Png::new(include_bytes!("../assets/img/pc.png"));
@@ -29,7 +31,7 @@ fn line(label: &'static str) -> iced::widget::Text<'static> {
     text(label).size(12).line_height(LH)
 }
 
-pub fn view(wid: iced::window::Id) -> Element<'static, Msg> {
+pub fn view(wid: Id) -> Element<'static, Msg> {
     let title_col = column![
         text("Nightwave Plaza")
             .size(14)
@@ -92,18 +94,18 @@ pub fn view(wid: iced::window::Id) -> Element<'static, Msg> {
 
     let wide = |label, msg| button(label, Length::Shrink).on_press(msg).padding([4, 24]);
     let bottom = row![
-        wide("Credits", Msg::OpenWin(WinType::Credits)),
+        wide("Credits", Msg::OpenWindow(WindowKind::Credits)),
         Space::new().width(8),
-        wide("News", Msg::OpenWin(WinType::News)),
+        wide("News", Msg::OpenWindow(WindowKind::News)),
         Space::new().width(Fill),
-        wide("Close", Msg::CloseWin(wid)),
+        wide("Close", Msg::CloseWindow(wid)),
     ];
 
     let status = status_bar(vec![(
         text(format!("Version: {}", env!("CARGO_PKG_VERSION")))
             .size(10)
             .into(),
-        1,
+        CellWidth::Portion(1),
     )]);
 
     column![

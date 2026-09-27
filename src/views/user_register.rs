@@ -1,66 +1,68 @@
-use crate::state::{Msg, Plaza, RegisterMsg};
-use crate::theme;
-use crate::views::{
-    button, d3_sunken, form_error, form_field_row, form_input, submit_button, BOLD,
+use super::widgets::{
+    BOLD, button, form_error, form_field_row, form_input, submit_button, sunken_frame,
 };
-use iced::widget::{column, container, row, text, Space};
+use crate::message::{Msg, RegisterMsg};
+use crate::state::Plaza;
+use crate::theme;
+use iced::widget::{Space, column, container, row, text};
+use iced::window::Id;
 use iced::{Element, Fill};
 
-pub fn view(state: &Plaza, wid: iced::window::Id) -> Element<'_, Msg> {
-    let reg = &state.register;
+pub fn view(state: &Plaza, wid: Id) -> Element<'_, Msg> {
+    let form = &state.register;
     let field =
         |value, msg: fn(String) -> RegisterMsg| form_input(value, move |s| Msg::Register(msg(s)));
 
-    let form = column![
+    let fields = column![
         form_field_row(
             "Username:",
             120,
-            field(&reg.username, RegisterMsg::Username)
+            field(&form.username, RegisterMsg::Username)
         ),
         Space::new().height(4),
         form_field_row(
             "Password:",
             120,
-            field(&reg.password, RegisterMsg::Password).secure(true)
+            field(&form.password, RegisterMsg::Password).secure(true)
         ),
         Space::new().height(4),
         form_field_row(
             "Repeat Password:",
             120,
-            field(&reg.password_repeat, RegisterMsg::PasswordRepeat).secure(true)
+            field(&form.password_repeat, RegisterMsg::PasswordRepeat).secure(true)
         ),
         Space::new().height(4),
         form_field_row(
             "Email:",
             120,
-            field(&reg.email, RegisterMsg::Email).on_submit(Msg::Register(RegisterMsg::Submit))
+            field(&form.email, RegisterMsg::Email).on_submit(Msg::Register(RegisterMsg::Submit))
         ),
     ];
 
-    let register_btn = submit_button(
-        reg.loading,
+    let register_button = submit_button(
+        form.loading,
         "Loading...",
         "Register",
         Msg::Register(RegisterMsg::Submit),
         90,
     );
-    let cancel_btn = button("Cancel", 90).on_press(Msg::CloseWin(wid));
-    let bottom = row![register_btn, Space::new().width(Fill), cancel_btn].padding([4, 0]);
+    let cancel_button = button("Cancel", 90).on_press(Msg::CloseWindow(wid));
+    let bottom = row![register_button, Space::new().width(Fill), cancel_button].padding([4, 0]);
 
     let content = column![
         text("User Information:").size(11).font(BOLD),
         Space::new().height(4),
         text("Please complete all fields to create your account.").size(11),
         Space::new().height(8),
-        form,
+        fields,
         Space::new().height(6),
-        form_error(&reg.error),
+        form_error(form.error.as_deref()),
         Space::new().height(4),
         bottom,
     ]
     .padding(8);
 
-    let panel = d3_sunken(
+    let panel = sunken_frame(
         container(content)
             .style(theme::panel)
             .width(Fill)

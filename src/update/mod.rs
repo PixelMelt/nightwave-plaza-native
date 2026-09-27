@@ -2,50 +2,52 @@ mod account;
 mod lists;
 mod playback;
 mod settings;
+mod song_info;
 
-use crate::state::{Msg, Plaza, WinType};
-use iced::window::Id;
-use iced::Task;
-use std::future::Future;
+use crate::api;
+use crate::message::Msg;
+use crate::platform;
+use crate::state::{DeleteAccountForm, ExportState, PasswordForm, Plaza, ProfileEditForm};
+use crate::window::WindowKind;
+use iced::widget::image;
+use iced::{Task, window};
 
 pub use playback::fetch_status;
 
-fn task<T, E>(
-    fut: impl Future<Output = Result<T, E>> + Send + 'static,
-    wrap: impl Fn(Result<T, String>) -> Msg + Send + 'static,
-) -> Task<Msg>
-where
-    T: Send + 'static,
-    E: Into<String> + Send + 'static,
-{
-    Task::perform(fut, move |r| wrap(r.map_err(Into::into)))
-}
+const COVER_PX: u32 = 256;
+const THUMB_PX: u32 = 128;
 
 pub fn update(state: &mut Plaza, msg: Msg) -> Task<Msg> {
     match msg {
         Msg::Refresh => {
-            crate::heap::trim();
+            platform::trim_heap();
             fetch_status()
         }
         Msg::Status(result) => playback::status(state, result),
         Msg::Tick => playback::tick(state),
         Msg::TogglePlay => playback::toggle(state),
         Msg::StreamChanged => Task::none(),
-        Msg::Media(event) => playback::media(state, event),
-        Msg::Volume(v) => playback::volume(state, v),
+        Msg::Media(event) => playback::media(state, &event),
+        Msg::Volume(volume) => {
+            playback::set_volume(state, volume);
+            Task::none()
+        }
         Msg::Artwork(result) => {
-            state.artwork = playback::artwork(result);
+            state.artwork = artwork_or_log(result);
             Task::none()
         }
         Msg::React => playback::react(state),
-        Msg::Reacted(reaction, result) => playback::reacted(state, reaction, result),
+        Msg::Reacted(reaction, result) => {
+            playback::reacted(state, reaction, result);
+            Task::none()
+        }
 
         Msg::History(msg) => lists::history(state, msg),
         Msg::Ratings(msg) => lists::ratings(state, msg),
         Msg::News(msg) => lists::news(state, msg),
         Msg::Favorites(msg) => lists::favorites(state, msg),
         Msg::Export(msg) => lists::export(state, msg),
-        Msg::SongInfo(msg) => lists::song_info(state, msg),
+        Msg::SongInfo(msg) => song_info::update(state, msg),
         Msg::Account(msg) => account::update(state, msg),
         Msg::Login(msg) => account::login(state, msg),
         Msg::Register(msg) => account::register(state, msg),
@@ -53,33 +55,41 @@ pub fn update(state: &mut Plaza, msg: Msg) -> Task<Msg> {
         Msg::Password(msg) => account::password(state, msg),
         Msg::DeleteAccount(msg) => account::delete(state, msg),
         Msg::Lastfm(msg) => settings::lastfm(state, msg),
-        Msg::DiscordEnabled(enabled) => settings::discord(state, enabled),
-        Msg::Timer(msg) => settings::timer(state, msg),
+        Msg::DiscordEnabled(enabled) => {
+            settings::set_discord_enabled(state, enabled);
+            Task::none()
+        }
+        Msg::Timer(msg) => {
+            settings::timer(state, msg);
+            Task::none()
+        }
 
-        Msg::OpenWin(wt) => open(state, wt),
-        Msg::CloseWin(id) => iced::window::close(id),
-        Msg::WinClosed(id) => {
+        Msg::OpenWindow(kind) => open_window(state, kind),
+        Msg::CloseWindow(id) => window::close(id),
+        Msg::WindowClosed(id) => {
             if id == state.main_window {
-                quit();
+                std::process::exit(0);
             }
-            state.child_windows.remove(&id);
+            state.windows.remove(&id);
             if state.focused == Some(id) {
                 state.focused = None;
             }
             Task::none()
         }
-        Msg::WinFocus(id, focused) => {
-            if focused {
-                state.focused = Some(id);
-            } else if state.focused == Some(id) {
+        Msg::WindowFocused(id) => {
+            state.focused = Some(id);
+            Task::none()
+        }
+        Msg::WindowUnfocused(id) => {
+            if state.focused == Some(id) {
                 state.focused = None;
             }
             Task::none()
         }
-        Msg::WinResized(id, size) => {
-            let label = match state.child_windows.get(&id) {
-                Some(wt) => format!("WinType::{wt:?}"),
-                None => "Main".to_string(),
+        Msg::WindowResized(id, size) => {
+            let label = match state.windows.get(&id) {
+                Some(kind) => format!("Self::{kind:?}"),
+                None => "Main".into(),
             };
             eprintln!(
                 "[winsize] {label} => ({:.1}, {:.1}),",
@@ -87,56 +97,53 @@ pub fn update(state: &mut Plaza, msg: Msg) -> Task<Msg> {
             );
             Task::none()
         }
-        Msg::MinimizeWin(id) => iced::window::minimize(id, true),
-        Msg::DragWin(id) => iced::window::drag(id),
-        Msg::SpaceToggle(id) if id == state.main_window => playback::toggle(state),
-        Msg::SpaceToggle(_) => Task::none(),
+        Msg::MinimizeWindow(id) => window::minimize(id, true),
+        Msg::DragWindow(id) => window::drag(id),
+        Msg::SpacePressed(id) => {
+            if id == state.main_window {
+                playback::toggle(state)
+            } else {
+                Task::none()
+            }
+        }
         Msg::OpenUrl(url) => {
-            open_url(&url);
+            platform::open_url(&url);
             Task::none()
         }
-        Msg::DismissErr => {
-            state.error_msg = None;
+        Msg::DismissAlert => {
+            state.alert = None;
             Task::none()
         }
     }
 }
 
-pub fn open(state: &mut Plaza, wt: WinType) -> Task<Msg> {
-    if let Some(id) = state.window_of(wt) {
-        return iced::window::gain_focus(id);
+pub fn open_window(state: &mut Plaza, kind: WindowKind) -> Task<Msg> {
+    if let Some(id) = state.window_of(kind) {
+        return window::gain_focus(id);
     }
-    let (id, opened) = iced::window::open(crate::window_settings(wt.size(), wt.resizable()));
-    state.child_windows.insert(id, wt);
+    let (id, opened) = window::open(kind.settings());
+    state.windows.insert(id, kind);
 
-    let prepare = match wt {
-        WinType::History if state.history.list.is_empty() => lists::load_history(state, 1),
-        WinType::Ratings if state.ratings.list.is_empty() => lists::load_ratings(state, 1),
-        WinType::News if state.news.list.is_empty() => lists::load_news(state, 1),
-        WinType::UserFavorites => lists::load_favorites(state, 1),
-        WinType::UserProfile => account::load_stats(state),
-        WinType::UserFavoritesExport => {
-            state.export = Default::default();
+    let prepare = match kind {
+        WindowKind::History if state.history.list.is_empty() => lists::load_history(state, 1),
+        WindowKind::Ratings if state.ratings.list.is_empty() => lists::load_ratings(state, 1),
+        WindowKind::News if state.news.list.is_empty() => lists::load_news(state, 1),
+        WindowKind::UserFavorites => lists::load_favorites(state, 1),
+        WindowKind::UserProfile => account::load_stats(state),
+        WindowKind::UserFavoritesExport => {
+            state.export = ExportState::default();
             Task::none()
         }
-        WinType::UserProfileEdit => {
-            let (username, email) = state
-                .user()
-                .map(|u| (u.username.clone(), u.email.clone()))
-                .unwrap_or_default();
-            state.profile_edit = crate::state::ProfileEditState {
-                username,
-                email,
-                ..Default::default()
-            };
+        WindowKind::UserProfileEdit => {
+            state.profile_edit = ProfileEditForm::for_user(state.user());
             Task::none()
         }
-        WinType::UserPassword => {
-            state.password = Default::default();
+        WindowKind::UserPassword => {
+            state.password = PasswordForm::default();
             Task::none()
         }
-        WinType::UserProfileDelete => {
-            state.delete = Default::default();
+        WindowKind::UserProfileDelete => {
+            state.delete_account = DeleteAccountForm::default();
             Task::none()
         }
         _ => Task::none(),
@@ -144,31 +151,18 @@ pub fn open(state: &mut Plaza, wt: WinType) -> Task<Msg> {
     Task::batch([opened.discard(), prepare])
 }
 
-fn close_windows_of(state: &Plaza, wt: WinType) -> Task<Msg> {
-    let ids: Vec<Id> = state
-        .child_windows
+fn close_windows(state: &Plaza, kinds: &[WindowKind]) -> Task<Msg> {
+    let ids: Vec<_> = state
+        .windows
         .iter()
-        .filter(|(_, &t)| t == wt)
+        .filter(|&(_, kind)| kinds.contains(kind))
         .map(|(&id, _)| id)
         .collect();
-    Task::batch(ids.into_iter().map(iced::window::close))
+    Task::batch(ids.into_iter().map(window::close))
 }
 
-fn open_url(url: &str) {
-    #[cfg(target_os = "macos")]
-    let result = std::process::Command::new("open").arg(url).spawn();
-    #[cfg(target_os = "windows")]
-    let result = std::process::Command::new("cmd")
-        .args(["/C", "start", "", url])
-        .spawn();
-    #[cfg(not(any(target_os = "macos", target_os = "windows")))]
-    let result = std::process::Command::new("xdg-open").arg(url).spawn();
-
-    if let Err(e) = result {
-        eprintln!("Failed to open URL {url}: {e}");
-    }
-}
-
-fn quit() -> ! {
-    std::process::exit(0)
+fn artwork_or_log(result: api::Result<image::Handle>) -> Option<image::Handle> {
+    result
+        .map_err(|e| eprintln!("Artwork download failed: {e}"))
+        .ok()
 }

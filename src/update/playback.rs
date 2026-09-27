@@ -1,28 +1,25 @@
-use super::task;
+use super::COVER_PX;
 use crate::api::{self, Status};
 use crate::lastfm::{self, Scrobble};
-use crate::state::{Msg, Plaza, Reaction, NOTICE_DURATION};
-use iced::widget::image;
+use crate::message::Msg;
+use crate::state::{Notice, Plaza, SongReaction};
 use iced::Task;
 use souvlaki::MediaControlEvent;
 use std::time::Instant;
 
-const COVER_PX: u32 = 256;
-
 pub fn fetch_status() -> Task<Msg> {
-    task(api::fetch_status(), Msg::Status)
+    Task::perform(api::fetch_status(), Msg::Status)
 }
 
-pub fn status(state: &mut Plaza, result: Result<Status, String>) -> Task<Msg> {
+pub fn status(state: &mut Plaza, result: api::Result<Status>) -> Task<Msg> {
     let status = match result {
         Ok(status) => status,
         Err(e) => {
-            state.error_msg = Some(e);
+            state.alert = Some(e.to_string());
             return Task::none();
         }
     };
     let now = Instant::now();
-    let playing = state.player.is_playing();
     let song_changed = state
         .scrobble
         .as_ref()
@@ -30,16 +27,17 @@ pub fn status(state: &mut Plaza, result: Result<Status, String>) -> Task<Msg> {
     let mut tasks = Vec::new();
 
     if song_changed {
-        if let Some(old) = state.scrobble.take() {
-            tasks.push(scrobble_task(state, &old, now));
+        if let Some(previous) = state.scrobble.take() {
+            tasks.push(scrobble(state, &previous, now));
         }
         state.scrobble = Some(Scrobble::new(status.song.clone()));
     }
-    if let Some(scrobble) = state.scrobble.as_mut() {
+    let playing = state.player.is_playing();
+    if let Some(scrobble) = &mut state.scrobble {
         scrobble.set_playing(playing, now);
     }
 
-    let artwork = status
+    let new_artwork = status
         .song
         .artwork_src
         .as_deref()
@@ -47,33 +45,26 @@ pub fn status(state: &mut Plaza, result: Result<Status, String>) -> Task<Msg> {
         .map(str::to_owned);
     state.status = status;
     state.status_at = now;
-    state.player.update_metadata(&state.status.song);
-    if song_changed && playing {
-        tasks.push(now_playing_task(state));
+    state.media.set_song(&state.status.song);
+    if song_changed {
+        tasks.push(announce_now_playing(state));
     }
-    discord_update(state);
+    sync_discord(state);
 
-    if let Some(url) = artwork {
-        state.artwork_url = url.clone();
-        tasks.push(task(api::fetch_artwork(url, COVER_PX), Msg::Artwork));
+    if let Some(url) = new_artwork {
+        state.artwork_url.clone_from(&url);
+        tasks.push(Task::perform(
+            api::fetch_artwork(url, COVER_PX),
+            Msg::Artwork,
+        ));
     }
     Task::batch(tasks)
 }
 
-pub fn artwork(result: Result<image::Handle, String>) -> Option<image::Handle> {
-    result
-        .map_err(|e| eprintln!("Artwork download failed: {e}"))
-        .ok()
-}
-
 pub fn tick(state: &mut Plaza) -> Task<Msg> {
     let now = Instant::now();
-    if state
-        .time_notice
-        .as_ref()
-        .is_some_and(|(_, until)| now >= *until)
-    {
-        state.time_notice = None;
+    if state.notice.as_ref().is_some_and(|n| now >= n.until) {
+        state.notice = None;
     }
     if state.timer.until.is_some_and(|until| now >= until) {
         state.timer.until = None;
@@ -87,7 +78,7 @@ pub fn toggle(state: &mut Plaza) -> Task<Msg> {
     set_playing(state, playing)
 }
 
-pub fn media(state: &mut Plaza, event: MediaControlEvent) -> Task<Msg> {
+pub fn media(state: &mut Plaza, event: &MediaControlEvent) -> Task<Msg> {
     match event {
         MediaControlEvent::Toggle => toggle(state),
         MediaControlEvent::Play => set_playing(state, true),
@@ -97,41 +88,38 @@ pub fn media(state: &mut Plaza, event: MediaControlEvent) -> Task<Msg> {
 }
 
 pub fn set_playing(state: &mut Plaza, playing: bool) -> Task<Msg> {
-    let was_playing = state.player.is_playing();
+    let started = playing && !state.player.is_playing();
     if playing {
         state.player.play();
     } else {
         state.player.stop();
     }
-    sync_playback(state, playing && !was_playing)
-}
-
-pub fn sync_playback(state: &mut Plaza, started: bool) -> Task<Msg> {
-    let playing = state.player.is_playing();
-    if let Some(scrobble) = state.scrobble.as_mut() {
-        scrobble.set_playing(playing, Instant::now());
-    }
-    discord_update(state);
+    state.media.set_playing(playing);
+    sync_integrations(state);
     if started {
-        now_playing_task(state)
+        announce_now_playing(state)
     } else {
         Task::none()
     }
 }
 
-pub fn volume(state: &mut Plaza, volume: f32) -> Task<Msg> {
-    state.volume = volume;
-    state.player.set_volume(volume / 100.0);
-    state.time_notice = Some((
-        format!("Volume: {}%", volume as u32),
-        Instant::now() + NOTICE_DURATION,
-    ));
-    Task::none()
+pub fn sync_integrations(state: &mut Plaza) {
+    let playing = state.player.is_playing();
+    if let Some(scrobble) = &mut state.scrobble {
+        scrobble.set_playing(playing, Instant::now());
+    }
+    sync_discord(state);
+}
+
+pub fn set_volume(state: &mut Plaza, percent: f32) {
+    state.volume = percent;
+    state.player.set_volume(percent / 100.0);
+    state.notice = Some(Notice::new(format!("Volume: {}%", percent as u32)));
 }
 
 pub fn react(state: &mut Plaza) -> Task<Msg> {
     let Some(token) = state.token() else {
-        state.error_msg =
+        state.alert =
             Some("Please sign in to your Nightwave Plaza account to access this feature.".into());
         return Task::none();
     };
@@ -139,17 +127,16 @@ pub fn react(state: &mut Plaza) -> Task<Msg> {
     if song_id.is_empty() {
         return Task::none();
     }
-    let reaction = Reaction {
-        rate: (state.reaction.rate_for(&song_id) + 1) % 3,
+    let reaction = SongReaction {
+        reaction: state.reaction.for_song(&song_id).next(),
         song_id,
     };
-    let rate = reaction.rate;
-    task(api::react(token, rate), move |r| {
-        Msg::Reacted(reaction.clone(), r)
+    Task::perform(api::react(token, reaction.reaction), move |result| {
+        Msg::Reacted(reaction, result)
     })
 }
 
-pub fn reacted(state: &mut Plaza, reaction: Reaction, result: Result<u32, String>) -> Task<Msg> {
+pub fn reacted(state: &mut Plaza, reaction: SongReaction, result: api::Result<u32>) {
     match result {
         Ok(count) => {
             if state.status.song.id == reaction.song_id {
@@ -157,12 +144,11 @@ pub fn reacted(state: &mut Plaza, reaction: Reaction, result: Result<u32, String
             }
             state.reaction = reaction;
         }
-        Err(e) => state.error_msg = Some(e),
+        Err(e) => state.alert = Some(e.to_string()),
     }
-    Task::none()
 }
 
-pub fn discord_update(state: &Plaza) {
+pub fn sync_discord(state: &Plaza) {
     let song = &state.status.song;
     if state.config.discord.enabled && state.player.is_playing() && !song.title.is_empty() {
         state.discord.set(song);
@@ -171,33 +157,33 @@ pub fn discord_update(state: &Plaza) {
     }
 }
 
-fn now_playing_task(state: &Plaza) -> Task<Msg> {
+pub fn announce_now_playing(state: &Plaza) -> Task<Msg> {
     let song = &state.status.song;
-    let Some(sk) = state.config.lastfm.active_session_key() else {
+    let Some(session_key) = state.config.lastfm.active_session_key() else {
         return Task::none();
     };
-    if !lastfm::has_metadata(song) {
+    if !state.player.is_playing() || !song.has_metadata() {
         return Task::none();
     }
-    let (sk, song) = (sk.to_owned(), song.clone());
+    let (session_key, song) = (session_key.to_owned(), song.clone());
     Task::future(async move {
-        if let Err(e) = lastfm::update_now_playing(sk, song).await {
+        if let Err(e) = lastfm::update_now_playing(session_key, song).await {
             eprintln!("Last.fm now playing failed: {e}");
         }
     })
     .discard()
 }
 
-fn scrobble_task(state: &Plaza, scrobble: &Scrobble, now: Instant) -> Task<Msg> {
-    let Some(sk) = state.config.lastfm.active_session_key() else {
+fn scrobble(state: &Plaza, scrobble: &Scrobble, now: Instant) -> Task<Msg> {
+    let Some(session_key) = state.config.lastfm.active_session_key() else {
         return Task::none();
     };
-    let Some(start) = scrobble.due(now) else {
+    let Some(started_at) = scrobble.due(now) else {
         return Task::none();
     };
-    let (sk, song) = (sk.to_owned(), scrobble.song.clone());
+    let (session_key, song) = (session_key.to_owned(), scrobble.song.clone());
     Task::future(async move {
-        if let Err(e) = lastfm::scrobble(sk, song, start).await {
+        if let Err(e) = lastfm::scrobble(session_key, song, started_at).await {
             eprintln!("Last.fm scrobble failed: {e}");
         }
     })

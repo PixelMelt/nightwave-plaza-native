@@ -1,15 +1,18 @@
-use crate::state::{AccountMsg, Msg, Plaza, WinType};
+use super::widgets::{BOLD, Png, button, format_date, group_box, menu_bar, sunken_panel};
+use crate::message::{AccountMsg, Msg};
+use crate::state::Plaza;
 use crate::theme;
-use crate::views::{button, format_date, group_box, menu_bar, sunken_panel, Png, BOLD};
-use iced::widget::{column, container, row, text, Space};
+use crate::window::WindowKind;
+use iced::widget::{Space, column, container, row, text};
+use iced::window::Id;
 use iced::{Element, Fill, Length};
 
 static USER_CARD: Png = Png::new(include_bytes!("../assets/img/user_card.png"));
 
-pub fn view(state: &Plaza, wid: iced::window::Id) -> Element<'_, Msg> {
+pub fn view(state: &Plaza, wid: Id) -> Element<'_, Msg> {
     let menu = menu_bar([
-        ("Edit Profile", Msg::OpenWin(WinType::UserProfileEdit)),
-        ("Change Password", Msg::OpenWin(WinType::UserPassword)),
+        ("Edit Profile", Msg::OpenWindow(WindowKind::UserProfileEdit)),
+        ("Change Password", Msg::OpenWindow(WindowKind::UserPassword)),
         ("Log Out", Msg::Account(AccountMsg::Logout)),
     ]);
 
@@ -19,13 +22,13 @@ pub fn view(state: &Plaza, wid: iced::window::Id) -> Element<'_, Msg> {
         container(account_box(state)).width(Fill),
     ];
 
-    let favorites_btn = button("My Favorites", Length::Shrink)
-        .on_press(Msg::OpenWin(WinType::UserFavorites))
+    let favorites_button = button("My Favorites", Length::Shrink)
+        .on_press(Msg::OpenWindow(WindowKind::UserFavorites))
         .padding([4, 12]);
     let bottom = row![
-        favorites_btn,
+        favorites_button,
         Space::new().width(Fill),
-        button("Close", 88).on_press(Msg::CloseWin(wid)),
+        button("Close", 88).on_press(Msg::CloseWindow(wid)),
     ]
     .align_y(iced::Alignment::Center);
 

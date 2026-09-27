@@ -1,31 +1,33 @@
-use crate::state::{Msg, PasswordMsg, Plaza};
-use crate::views::{action_close_row, form_error, form_input, submit_button, sunken_panel};
-use iced::widget::{column, text, Space};
+use super::widgets::{action_close_row, form_error, form_input, submit_button, sunken_panel};
+use crate::message::{Msg, PasswordMsg};
+use crate::state::Plaza;
+use iced::widget::{Space, column, text};
+use iced::window::Id;
 use iced::{Element, Fill};
 
-pub fn view(state: &Plaza, wid: iced::window::Id) -> Element<'_, Msg> {
-    let pw = &state.password;
-    let form = column![
+pub fn view(state: &Plaza, wid: Id) -> Element<'_, Msg> {
+    let form = &state.password;
+    let fields = column![
         text("Current Password:").size(11),
-        form_input(&pw.current_password, |s| Msg::Password(
+        form_input(&form.current_password, |s| Msg::Password(
             PasswordMsg::Current(s)
         ))
         .secure(true),
         Space::new().height(6),
         text("New Password:").size(11),
-        form_input(&pw.password, |s| Msg::Password(PasswordMsg::New(s))).secure(true),
+        form_input(&form.password, |s| Msg::Password(PasswordMsg::New(s))).secure(true),
         Space::new().height(6),
         text("Repeat Password:").size(11),
-        form_input(&pw.password_repeat, |s| Msg::Password(PasswordMsg::Repeat(
-            s
-        )))
+        form_input(&form.password_repeat, |s| Msg::Password(
+            PasswordMsg::Repeat(s)
+        ))
         .on_submit(Msg::Password(PasswordMsg::Submit))
         .secure(true),
     ]
     .spacing(2);
 
-    let change_btn = submit_button(
-        pw.loading,
+    let change_button = submit_button(
+        form.loading,
         "Saving...",
         "Change",
         Msg::Password(PasswordMsg::Submit),
@@ -33,11 +35,11 @@ pub fn view(state: &Plaza, wid: iced::window::Id) -> Element<'_, Msg> {
     );
 
     column![
-        sunken_panel(form),
+        sunken_panel(fields),
         Space::new().height(8),
-        form_error(&pw.error),
+        form_error(form.error.as_deref()),
         Space::new().height(4),
-        action_close_row(change_btn, wid),
+        action_close_row(change_button, wid),
     ]
     .padding(8)
     .into()

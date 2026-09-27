@@ -1,10 +1,10 @@
+use super::paint::fill_rect;
 use crate::theme;
-use crate::views::bevel::quad;
 use iced::advanced::layout::{self, Layout};
 use iced::advanced::mouse;
 use iced::advanced::renderer;
 use iced::advanced::widget::{Tree, Widget};
-use iced::{Color, Element, Length, Rectangle, Size};
+use iced::{Color, Element, Length, Rectangle, Renderer, Size, Theme};
 
 enum Glyph {
     Close,
@@ -42,20 +42,7 @@ pub fn dashed_line(color: Color) -> Pixel {
     }
 }
 
-fn dot(renderer: &mut iced::Renderer, x: f32, y: f32, width: f32, height: f32, color: Color) {
-    quad(
-        renderer,
-        Rectangle {
-            x,
-            y,
-            width,
-            height,
-        },
-        color,
-    );
-}
-
-impl<Message> Widget<Message, iced::Theme, iced::Renderer> for Pixel {
+impl<Message> Widget<Message, Theme, Renderer> for Pixel {
     fn size(&self) -> Size<Length> {
         Size {
             width: self.width,
@@ -66,7 +53,7 @@ impl<Message> Widget<Message, iced::Theme, iced::Renderer> for Pixel {
     fn layout(
         &mut self,
         _tree: &mut Tree,
-        _renderer: &iced::Renderer,
+        _renderer: &Renderer,
         limits: &layout::Limits,
     ) -> layout::Node {
         layout::atomic(limits, self.width, self.height)
@@ -75,41 +62,45 @@ impl<Message> Widget<Message, iced::Theme, iced::Renderer> for Pixel {
     fn draw(
         &self,
         _tree: &Tree,
-        renderer: &mut iced::Renderer,
-        _theme: &iced::Theme,
+        renderer: &mut Renderer,
+        _theme: &Theme,
         _style: &renderer::Style,
         layout: Layout<'_>,
         _cursor: mouse::Cursor,
         _viewport: &Rectangle,
     ) {
         let b = layout.bounds();
+        let rect = |x, y, width, height| Rectangle {
+            x,
+            y,
+            width,
+            height,
+        };
         match self.glyph {
             Glyph::Close => {
-                for i in 0..7 {
-                    let o = i as f32;
-                    dot(
+                for i in 0..7u8 {
+                    let offset = f32::from(i);
+                    let dot_y = b.y + 1.0 + offset;
+                    fill_rect(
                         renderer,
-                        b.x + 1.0 + o,
-                        b.y + 1.0 + o,
-                        1.0,
-                        1.0,
+                        rect(b.x + 1.0 + offset, dot_y, 1.0, 1.0),
                         theme::BLACK,
                     );
-                    dot(
+                    fill_rect(
                         renderer,
-                        b.x + 7.0 - o,
-                        b.y + 1.0 + o,
-                        1.0,
-                        1.0,
+                        rect(b.x + 7.0 - offset, dot_y, 1.0, 1.0),
                         theme::BLACK,
                     );
                 }
             }
-            Glyph::Minimize => dot(renderer, b.x + 1.0, b.y + 7.0, 6.0, 2.0, theme::BLACK),
+            Glyph::Minimize => {
+                fill_rect(renderer, rect(b.x + 1.0, b.y + 7.0, 6.0, 2.0), theme::BLACK);
+            }
             Glyph::DashedLine(color) => {
+                let right = b.x + b.width;
                 let mut x = b.x;
-                while x < b.x + b.width {
-                    dot(renderer, x, b.y, 2.0f32.min(b.x + b.width - x), 1.0, color);
+                while x < right {
+                    fill_rect(renderer, rect(x, b.y, (right - x).min(2.0), 1.0), color);
                     x += 5.0;
                 }
             }
@@ -117,8 +108,8 @@ impl<Message> Widget<Message, iced::Theme, iced::Renderer> for Pixel {
     }
 }
 
-impl<'a, Message> From<Pixel> for Element<'a, Message> {
-    fn from(p: Pixel) -> Self {
-        Element::new(p)
+impl<Message> From<Pixel> for Element<'_, Message> {
+    fn from(pixel: Pixel) -> Self {
+        Element::new(pixel)
     }
 }

@@ -1,10 +1,15 @@
-use crate::state::{Msg, Plaza, SongInfoMsg, WinType};
+use super::bevel::bevel_button;
+use super::volume::volume_slider;
+use super::widgets::{
+    BOLD, CellWidth, Png, button, format_duration, menu_bar, shaped, status_bar, thin_sunken_frame,
+};
+use crate::api::Reaction;
+use crate::message::{Msg, SongInfoMsg};
+use crate::state::Plaza;
 use crate::theme;
-use crate::views::bevel::bevel_button;
-use crate::views::volume::volume_slider;
-use crate::views::{button, d3_thin_sunken, format_time, menu_bar, shaped, status_bar, Png, BOLD};
+use crate::window::WindowKind;
 use iced::widget::text::{LineHeight, Wrapping};
-use iced::widget::{column, container, image, mouse_area, row, text, Space};
+use iced::widget::{Space, column, container, image, mouse_area, row, text};
 use iced::{Alignment, Element, Fill, Length, Padding, Pixels};
 
 static VOLUME: Png = Png::new(include_bytes!("../assets/img/volume.png"));
@@ -21,14 +26,14 @@ const LH24: LineHeight = LineHeight::Absolute(Pixels(24.0));
 
 pub fn view(state: &Plaza) -> Element<'_, Msg> {
     let menu = menu_bar([
-        ("About", Msg::OpenWin(WinType::About)),
-        ("Play History", Msg::OpenWin(WinType::History)),
-        ("Ratings", Msg::OpenWin(WinType::Ratings)),
-        ("Support Us", Msg::OpenWin(WinType::Support)),
+        ("About", Msg::OpenWindow(WindowKind::About)),
+        ("Play History", Msg::OpenWindow(WindowKind::History)),
+        ("Ratings", Msg::OpenWindow(WindowKind::Ratings)),
+        ("Support Us", Msg::OpenWindow(WindowKind::Support)),
     ]);
 
     let player = container(
-        d3_thin_sunken(
+        thin_sunken_frame(
             container(row![cover(state), metadata(state)].align_y(Alignment::Center))
                 .style(theme::panel)
                 .width(Fill)
@@ -44,8 +49,8 @@ pub fn view(state: &Plaza) -> Element<'_, Msg> {
     });
 
     let mut col = column![menu, player, status(state)];
-    if let Some(err) = &state.error_msg {
-        col = col.push(error_bar(err));
+    if let Some(alert) = &state.alert {
+        col = col.push(alert_bar(alert));
     }
     col.into()
 }
@@ -56,7 +61,7 @@ fn cover(state: &Plaza) -> Element<'_, Msg> {
         None => Space::new().width(112).height(112).into(),
     };
     let song_id = &state.status.song.id;
-    let area = mouse_area(d3_thin_sunken(container(art).style(theme::cover)))
+    let area = mouse_area(thin_sunken_frame(container(art).style(theme::cover)))
         .interaction(iced::mouse::Interaction::Pointer);
     if song_id.is_empty() {
         area.into()
@@ -93,16 +98,16 @@ fn metadata(state: &Plaza) -> Element<'_, Msg> {
 
 fn time_and_volume(state: &Plaza) -> Element<'_, Msg> {
     let length = state.status.song.length;
-    let time_str = match &state.time_notice {
-        Some((notice, _)) => notice.clone(),
+    let time_str = match &state.notice {
+        Some(notice) => notice.text.clone(),
         None if length > 0.0 => format!(
             "{} / {}",
-            format_time(state.song_position()),
-            format_time(length)
+            format_duration(state.song_position()),
+            format_duration(length)
         ),
         None => "...".into(),
     };
-    let time_field = d3_thin_sunken(
+    let time_field = thin_sunken_frame(
         container(
             text(time_str)
                 .size(14)
@@ -133,7 +138,7 @@ fn controls(state: &Plaza) -> Element<'_, Msg> {
         (true, true) => "Stop",
         (false, _) => "Play",
     };
-    let play_btn = bevel_button(
+    let play_button = bevel_button(
         text(play_label)
             .size(11)
             .line_height(LH16)
@@ -143,12 +148,12 @@ fn controls(state: &Plaza) -> Element<'_, Msg> {
     .on_press(Msg::TogglePlay)
     .width(Fill);
 
-    let react_icon = match state.reaction.rate_for(&song.id) {
-        2 => &STAR,
-        1 => &HEART,
-        _ => &HEART_GRAY,
+    let react_icon = match state.reaction.for_song(&song.id) {
+        Reaction::Love => &STAR,
+        Reaction::Like => &HEART,
+        Reaction::None => &HEART_GRAY,
     };
-    let react_btn = bevel_button(
+    let react_button = bevel_button(
         container(
             row![
                 react_icon.image().width(16).height(16),
@@ -162,27 +167,27 @@ fn controls(state: &Plaza) -> Element<'_, Msg> {
     .on_press(Msg::React)
     .width(Fill);
 
-    let icon_btn = |png: &'static Png, msg| {
+    let icon_button = |png: &'static Png, msg| {
         bevel_button(container(png.image().width(16).height(16)).center_x(Fill))
             .on_press(msg)
             .width(Fill)
     };
     let user_win = if state.user().is_some() {
-        WinType::UserProfile
+        WindowKind::UserProfile
     } else {
-        WinType::UserLogin
+        WindowKind::UserLogin
     };
-    let user_btn = icon_btn(&PERSON, Msg::OpenWin(user_win));
-    let settings_btn = icon_btn(&GEARS, Msg::OpenWin(WinType::Settings));
+    let user_button = icon_button(&PERSON, Msg::OpenWindow(user_win));
+    let settings_button = icon_button(&GEARS, Msg::OpenWindow(WindowKind::Settings));
 
     let left = row![
-        container(play_btn).width(Length::FillPortion(7)),
-        container(react_btn).width(Length::FillPortion(5)),
+        container(play_button).width(Length::FillPortion(7)),
+        container(react_button).width(Length::FillPortion(5)),
     ]
     .spacing(4);
     let right = row![
-        container(user_btn).width(Fill),
-        container(settings_btn).width(Fill),
+        container(user_button).width(Fill),
+        container(settings_button).width(Fill),
     ]
     .spacing(4);
 
@@ -195,12 +200,12 @@ fn controls(state: &Plaza) -> Element<'_, Msg> {
 }
 
 fn status(state: &Plaza) -> Element<'_, Msg> {
-    let mut cells: Vec<(Element<Msg>, u16)> = vec![(
+    let mut cells: Vec<(Element<Msg>, CellWidth)> = vec![(
         text(format!("Listeners: {}", state.status.listeners))
             .size(11)
             .line_height(LH11)
             .into(),
-        8,
+        CellWidth::Portion(8),
     )];
     if let Some(user) = state.user() {
         cells.push((
@@ -209,19 +214,19 @@ fn status(state: &Plaza) -> Element<'_, Msg> {
                 .line_height(LH11)
                 .wrapping(Wrapping::None)
                 .into(),
-            4,
+            CellWidth::Portion(4),
         ));
     }
     status_bar(cells)
 }
 
-fn error_bar(err: &str) -> Element<'_, Msg> {
+fn alert_bar(message: &str) -> Element<'_, Msg> {
     container(
         row![
-            text(err).size(10).color(theme::ERROR_RED),
+            text(message).size(10).color(theme::ERROR_RED),
             Space::new().width(Fill),
             button("x", Length::Shrink)
-                .on_press(Msg::DismissErr)
+                .on_press(Msg::DismissAlert)
                 .padding(2),
         ]
         .align_y(Alignment::Center)
