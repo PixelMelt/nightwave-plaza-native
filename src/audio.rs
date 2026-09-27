@@ -2,18 +2,16 @@ use crate::api::StatusSong;
 use crate::state::Msg;
 use chrono::Utc;
 use futures::channel::mpsc::UnboundedSender;
-use rodio::cpal::traits::{DeviceTrait, HostTrait};
-use rodio::cpal::DeviceId;
-use rodio::mixer::MixerSource;
-use rodio::{
-    buffer::SamplesBuffer, ChannelCount, Decoder, DeviceSinkBuilder, MixerDeviceSink, Player,
-    Sample, SampleRate, Source,
+use rodio::cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
+use rodio::cpal::{
+    self, BufferSize, DeviceId, FromSample, SampleFormat, SizedSample, StreamConfig,
 };
+use rodio::source::UniformSourceIterator;
+use rodio::{ChannelCount, Decoder, SampleRate, Source};
 use souvlaki::{MediaControls, MediaMetadata, MediaPlayback, MediaPosition};
 use std::collections::VecDeque;
 use std::io::{self, Read, Seek, SeekFrom};
-use std::num::NonZero;
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 use std::sync::{Arc, Condvar, Mutex};
 use std::time::{Duration, Instant};
 
@@ -26,11 +24,11 @@ const CHUNK: Duration = Duration::from_millis(250);
 const QUEUE_AHEAD: usize = 3;
 
 const RECONNECT_DELAY: Duration = Duration::from_secs(2);
-const DEVICE_POLL: Duration = Duration::from_secs(2);
+const DEVICE_POLL: Duration = Duration::from_secs(5);
 const DEVICE_BUFFER: Duration = Duration::from_millis(200);
 
-const MIX_CHANNELS: ChannelCount = NonZero::new(2).unwrap();
-const MIX_RATE: SampleRate = NonZero::new(44100).unwrap();
+const MIX_CHANNELS: u16 = 2;
+const MIX_RATE: u32 = 44100;
 
 pub struct AudioPlayer {
     shared: Arc<Shared>,
@@ -39,11 +37,11 @@ pub struct AudioPlayer {
 }
 
 struct Shared {
-    player: Player,
-    relay: Arc<Mutex<Option<MixerSource>>>,
+    feed: Mutex<VecDeque<f32>>,
+    volume: AtomicU32,
     playing: AtomicBool,
     streaming: AtomicBool,
-    device_lost: Arc<AtomicBool>,
+    device_lost: AtomicBool,
     wake: Condvar,
     wake_lock: Mutex<()>,
     events: UnboundedSender<Msg>,
@@ -51,15 +49,12 @@ struct Shared {
 
 impl AudioPlayer {
     pub fn new(events: UnboundedSender<Msg>) -> Self {
-        let (mixer, relay) = rodio::mixer::mixer(MIX_CHANNELS, MIX_RATE);
-        let player = Player::connect_new(&mixer);
-
         let shared = Arc::new(Shared {
-            player,
-            relay: Arc::new(Mutex::new(Some(relay))),
+            feed: Mutex::new(VecDeque::new()),
+            volume: AtomicU32::new(1.0f32.to_bits()),
             playing: AtomicBool::new(true),
             streaming: AtomicBool::new(false),
-            device_lost: Arc::new(AtomicBool::new(false)),
+            device_lost: AtomicBool::new(false),
             wake: Condvar::new(),
             wake_lock: Mutex::new(()),
             events: events.clone(),
@@ -89,7 +84,9 @@ impl AudioPlayer {
     }
 
     pub fn set_volume(&self, vol: f32) {
-        self.shared.player.set_volume(vol.clamp(0.0, 1.0));
+        self.shared
+            .volume
+            .store(vol.clamp(0.0, 1.0).to_bits(), Ordering::Relaxed);
     }
 
     pub fn play(&mut self) {
@@ -97,7 +94,6 @@ impl AudioPlayer {
         if self.shared.playing.swap(true, Ordering::Relaxed) {
             return;
         }
-        self.shared.player.play();
         self.shared.wake.notify_all();
         drop(guard);
         self.emit_playback();
@@ -107,7 +103,7 @@ impl AudioPlayer {
         if !self.shared.playing.swap(false, Ordering::Relaxed) {
             return;
         }
-        self.shared.player.clear();
+        self.shared.clear();
         self.emit_playback();
     }
 
@@ -147,6 +143,25 @@ impl Shared {
             let _ = self.events.unbounded_send(Msg::StreamChanged);
         }
     }
+
+    fn queued(&self) -> usize {
+        self.feed.lock().unwrap().len()
+    }
+
+    fn clear(&self) {
+        self.feed.lock().unwrap().clear();
+    }
+
+    fn render<T: SizedSample + FromSample<f32>>(&self, out: &mut [T]) {
+        let volume = f32::from_bits(self.volume.load(Ordering::Relaxed));
+        let mut feed = self.feed.lock().unwrap();
+        let n = out.len().min(feed.len());
+        for (o, s) in out.iter_mut().zip(feed.drain(..n)) {
+            *o = T::from_sample(s * volume);
+        }
+        drop(feed);
+        out[n..].fill(T::EQUILIBRIUM);
+    }
 }
 
 fn opt_str(s: &str) -> Option<&str> {
@@ -167,47 +182,11 @@ fn build_controls(tx: UnboundedSender<Msg>) -> Result<MediaControls, souvlaki::E
     Ok(controls)
 }
 
-struct Relay {
-    slot: Arc<Mutex<Option<MixerSource>>>,
-    source: Option<MixerSource>,
-}
-
-impl Iterator for Relay {
-    type Item = Sample;
-
-    fn next(&mut self) -> Option<Sample> {
-        Some(self.source.as_mut().and_then(|s| s.next()).unwrap_or(0.0))
-    }
-}
-
-impl Drop for Relay {
-    fn drop(&mut self) {
-        if let Some(source) = self.source.take() {
-            *self.slot.lock().unwrap() = Some(source);
-        }
-    }
-}
-
-impl Source for Relay {
-    fn current_span_len(&self) -> Option<usize> {
-        None
-    }
-
-    fn channels(&self) -> ChannelCount {
-        MIX_CHANNELS
-    }
-
-    fn sample_rate(&self) -> SampleRate {
-        MIX_RATE
-    }
-
-    fn total_duration(&self) -> Option<Duration> {
-        None
-    }
-}
+type Format = (ChannelCount, SampleRate);
 
 struct Output {
-    _sink: MixerDeviceSink,
+    _stream: cpal::Stream,
+    format: Format,
     device: Option<DeviceId>,
     checked: Instant,
 }
@@ -215,97 +194,106 @@ struct Output {
 type BoxError = Box<dyn std::error::Error + Send + Sync>;
 
 fn default_device_id() -> Option<DeviceId> {
-    rodio::cpal::default_host()
-        .default_output_device()?
-        .id()
-        .ok()
+    cpal::default_host().default_output_device()?.id().ok()
 }
 
-fn open_sink(
-    device: &rodio::cpal::Device,
-    lost: &Arc<AtomicBool>,
-    rate: Option<SampleRate>,
-) -> Result<MixerDeviceSink, BoxError> {
-    let lost = lost.clone();
-    let mut builder = DeviceSinkBuilder::from_device(device.clone())?;
-    if let Some(rate) = rate {
-        let frames = rate.get() * DEVICE_BUFFER.as_millis() as u32 / 1000;
-        builder = builder
-            .with_sample_rate(rate)
-            .with_channels(MIX_CHANNELS)
-            .with_buffer_size(rodio::cpal::BufferSize::Fixed(frames));
-    }
-    let mut sink = builder
-        .with_error_callback(move |e| {
+fn build_stream<T: SizedSample + FromSample<f32>>(
+    device: &cpal::Device,
+    config: &StreamConfig,
+    shared: &Arc<Shared>,
+) -> Result<cpal::Stream, cpal::BuildStreamError> {
+    let feed = shared.clone();
+    let lost = shared.clone();
+    device.build_output_stream::<T, _, _>(
+        config,
+        move |out, _| feed.render(out),
+        move |e| {
             eprintln!("Audio device error: {e}");
-            lost.store(true, Ordering::Relaxed);
-        })
-        .open_stream()?;
-    sink.log_on_drop(false);
-    Ok(sink)
+            lost.device_lost.store(true, Ordering::Relaxed);
+        },
+        None,
+    )
 }
 
-fn open_output(shared: &Shared) -> Result<Output, BoxError> {
-    let host = rodio::cpal::default_host();
+fn open_stream(
+    device: &cpal::Device,
+    shared: &Arc<Shared>,
+    rate: Option<u32>,
+) -> Result<(cpal::Stream, Format), BoxError> {
+    let default = device.default_output_config()?;
+    let mut config = default.config();
+    if let Some(rate) = rate {
+        config.sample_rate = rate;
+        config.channels = MIX_CHANNELS;
+        config.buffer_size = BufferSize::Fixed(rate * DEVICE_BUFFER.as_millis() as u32 / 1000);
+    }
+    let format = (
+        ChannelCount::new(config.channels).ok_or("device has no channels")?,
+        SampleRate::new(config.sample_rate).ok_or("device has no sample rate")?,
+    );
+
+    macro_rules! build {
+        ($($variant:ident => $ty:ty),+) => {
+            match default.sample_format() {
+                $(SampleFormat::$variant => build_stream::<$ty>(device, &config, shared)?,)+
+                other => return Err(format!("unsupported sample format {other}").into()),
+            }
+        };
+    }
+    let stream = build!(
+        F32 => f32, F64 => f64,
+        I8 => i8, I16 => i16, I24 => cpal::I24, I32 => i32, I64 => i64,
+        U8 => u8, U16 => u16, U24 => cpal::U24, U32 => u32, U64 => u64
+    );
+    stream.play()?;
+    Ok((stream, format))
+}
+
+fn open_output(shared: &Arc<Shared>) -> Result<Output, BoxError> {
+    let host = cpal::default_host();
     let device = host
         .default_output_device()
         .ok_or("no audio output device")?;
     let id = device.id().ok();
 
-    let open = |device: rodio::cpal::Device| -> Result<MixerDeviceSink, BoxError> {
-        let lost = &shared.device_lost;
-        let default_rate = device
-            .default_output_config()
-            .ok()
-            .and_then(|c| SampleRate::new(c.sample_rate()));
-        open_sink(&device, lost, Some(MIX_RATE))
-            .or_else(|_| open_sink(&device, lost, default_rate))
-            .or_else(|_| open_sink(&device, lost, None))
+    let open = |device: cpal::Device| -> Result<(cpal::Stream, Format), BoxError> {
+        let default_rate = device.default_output_config().ok().map(|c| c.sample_rate());
+        open_stream(&device, shared, Some(MIX_RATE))
+            .or_else(|_| open_stream(&device, shared, default_rate))
+            .or_else(|_| open_stream(&device, shared, None))
     };
 
-    let sink = open(device).or_else(|err| {
+    let (stream, format) = open(device).or_else(|err| {
         host.output_devices()
             .ok()
             .and_then(|devices| devices.filter_map(|d| open(d).ok()).next())
             .ok_or(err)
     })?;
 
-    let source = shared
-        .relay
-        .lock()
-        .unwrap()
-        .take()
-        .ok_or("previous audio output is still shutting down")?;
-    sink.mixer().add(Relay {
-        slot: shared.relay.clone(),
-        source: Some(source),
-    });
-
     Ok(Output {
-        _sink: sink,
+        _stream: stream,
+        format,
         device: id,
         checked: Instant::now(),
     })
 }
 
-fn ensure_output(output: &mut Option<Output>, shared: &Shared) -> Result<(), BoxError> {
+fn ensure_output(output: &mut Option<Output>, shared: &Arc<Shared>) -> Result<Format, BoxError> {
     if let Some(out) = output.as_mut() {
         let lost = shared.device_lost.swap(false, Ordering::Relaxed);
         if !lost && out.checked.elapsed() < DEVICE_POLL {
-            return Ok(());
+            return Ok(out.format);
         }
         if !lost && default_device_id() == out.device {
             out.checked = Instant::now();
-            return Ok(());
+            return Ok(out.format);
         }
         *output = None;
         let reopened = open_output(shared)?;
         eprintln!("Audio output reopened on {:?}", reopened.device);
-        *output = Some(reopened);
-        return Ok(());
+        return Ok(output.insert(reopened).format);
     }
-    *output = Some(open_output(shared)?);
-    Ok(())
+    Ok(output.insert(open_output(shared)?).format)
 }
 
 fn stream_forever(shared: Arc<Shared>) {
@@ -315,6 +303,7 @@ fn stream_forever(shared: Arc<Shared>) {
             let mut guard = shared.wake_lock.lock().unwrap();
             if !shared.playing.load(Ordering::Relaxed) {
                 output = None;
+                shared.clear();
             }
             while !shared.playing.load(Ordering::Relaxed) {
                 guard = shared.wake.wait(guard).unwrap();
@@ -330,7 +319,7 @@ fn stream_forever(shared: Arc<Shared>) {
     }
 }
 
-fn stream_once(shared: &Shared, output: &mut Option<Output>) -> Result<(), BoxError> {
+fn stream_once(shared: &Arc<Shared>, output: &mut Option<Output>) -> Result<(), BoxError> {
     ensure_output(output, shared)?;
 
     let resp = crate::net::agent()
@@ -355,28 +344,46 @@ fn stream_once(shared: &Shared, output: &mut Option<Output>) -> Result<(), BoxEr
     }
 
     let decoder = Decoder::new_mp3(reader)?;
-    let channels = decoder.channels();
-    let sample_rate = decoder.sample_rate();
-    let per_sec = sample_rate.get() as usize * channels.get() as usize;
-    let chunk_len = (per_sec * CHUNK.as_millis() as usize / 1000).max(1);
+    let format = ensure_output(output, shared)?;
+    if (decoder.channels(), decoder.sample_rate()) == format {
+        pump(shared, output, format, decoder)
+    } else {
+        pump(
+            shared,
+            output,
+            format,
+            UniformSourceIterator::new(decoder, format.0, format.1),
+        )
+    }
+}
+
+fn pump(
+    shared: &Arc<Shared>,
+    output: &mut Option<Output>,
+    format: Format,
+    samples: impl Iterator<Item = f32>,
+) -> Result<(), BoxError> {
+    let channels = format.0.get() as usize;
+    let frames = (format.1.get() as usize * CHUNK.as_millis() as usize / 1000).max(1);
+    let chunk_len = frames * channels;
     let mut buf: Vec<f32> = Vec::with_capacity(chunk_len);
 
-    for sample in decoder {
+    for sample in samples {
         buf.push(sample);
         if buf.len() < chunk_len {
             continue;
         }
-        while shared.player.len() >= QUEUE_AHEAD && shared.playing.load(Ordering::Relaxed) {
+        while shared.queued() >= chunk_len * QUEUE_AHEAD && shared.playing.load(Ordering::Relaxed) {
             std::thread::sleep(CHUNK);
         }
         if !shared.playing.load(Ordering::Relaxed) {
             return Ok(());
         }
-        ensure_output(output, shared)?;
-        let chunk = std::mem::replace(&mut buf, Vec::with_capacity(chunk_len));
-        shared
-            .player
-            .append(SamplesBuffer::new(channels, sample_rate, chunk));
+        if ensure_output(output, shared)? != format {
+            shared.clear();
+            return Err("audio output format changed".into());
+        }
+        shared.feed.lock().unwrap().extend(buf.drain(..));
         shared.set_streaming(true);
     }
 
