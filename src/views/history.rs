@@ -3,7 +3,7 @@ use super::widgets::{
     paged_footer, shaped, song_list, song_row,
 };
 use crate::api::HistoryEntry;
-use crate::message::{HistoryMsg, Msg};
+use crate::message::{HistoryMsg, Msg, Prefetch};
 use crate::state::Plaza;
 use iced::widget::{Space, column, row, text};
 use iced::window::Id;
@@ -43,9 +43,12 @@ pub fn view(state: &Plaza, wid: Id) -> Element<'_, Msg> {
         header,
         list,
         Space::new().height(4),
-        paged_footer(wid, &state.history.pager, |m| Msg::History(
-            HistoryMsg::Page(m)
-        )),
+        paged_footer(
+            wid,
+            &state.history.pager,
+            |m| Msg::History(HistoryMsg::Page(m)),
+            Prefetch::History,
+        ),
     ]
     .padding(4)
     .height(Fill)
@@ -70,5 +73,5 @@ fn entry_row(entry: &HistoryEntry) -> Element<'_, Msg> {
     ]
     .spacing(4)
     .padding([3, 4]);
-    song_row(content, &entry.song.id)
+    song_row(content, &entry.song.id, entry.song.artwork_src.as_deref())
 }

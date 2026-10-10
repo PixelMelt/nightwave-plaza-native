@@ -6,6 +6,7 @@
 mod api;
 mod article;
 mod audio;
+mod cache;
 mod config;
 mod discord;
 mod fonts;
@@ -22,7 +23,7 @@ mod window;
 
 use iced::keyboard::{self, key};
 use iced::{Event, Font, Subscription, Task, event};
-use message::{AccountMsg, Msg};
+use message::{AccountMsg, Msg, PrefetchMsg};
 use state::Plaza;
 use std::sync::LazyLock;
 use std::time::Duration;
@@ -107,6 +108,11 @@ fn subscription(state: &Plaza) -> Subscription<Msg> {
     let clock_visible = state.is_main_focused() && (playing || state.notice.is_some());
     if clock_visible || state.timer.until.is_some() {
         subscriptions.push(iced::time::every(Duration::from_secs(1)).map(|_| Msg::Tick));
+    }
+    if state.hover.is_some() {
+        subscriptions.push(
+            iced::time::every(update::HOVER_POLL).map(|_| Msg::Prefetch(PrefetchMsg::Settle)),
+        );
     }
     if *window::DEV_MODE {
         subscriptions

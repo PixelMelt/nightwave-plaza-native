@@ -1,6 +1,6 @@
 use super::bevel::{Bevel, bevel_button, menu_item};
 use super::pixel;
-use crate::message::{Msg, PageMsg, SongInfoMsg};
+use crate::message::{Msg, PageMsg, Prefetch, PrefetchMsg, SongInfoMsg, SongPreview};
 use crate::state::Pager;
 use crate::theme;
 use chrono::{Local, TimeZone};
@@ -204,9 +204,15 @@ fn menu_bar_item(label: &str, msg: Msg) -> Element<'_, Msg> {
         text(first).size(11),
         container(Space::new().width(7).height(1)).style(theme::fill(theme::BLACK)),
     ];
-    menu_item(row![underlined, text(chars.as_str()).size(11)])
-        .on_press(msg)
-        .into()
+    let target = match &msg {
+        Msg::OpenWindow(kind) => Some(Prefetch::Window(*kind)),
+        _ => None,
+    };
+    let item = menu_item(row![underlined, text(chars.as_str()).size(11)]).on_press(msg);
+    match target {
+        Some(target) => preload(item, target),
+        None => item.into(),
+    }
 }
 
 pub fn menu_bar(items: impl IntoIterator<Item = (&'static str, Msg)>) -> Element<'static, Msg> {
@@ -337,17 +343,31 @@ pub fn labeled_panel<'a>(label: &'a str, field: impl Into<Element<'a, Msg>>) -> 
     sunken_panel(column![text(label).size(11), field.into()].spacing(2))
 }
 
-pub fn song_row<'a>(content: impl Into<Element<'a, Msg>>, song_id: &str) -> Element<'a, Msg> {
+pub fn preload<'a>(content: impl Into<Element<'a, Msg>>, target: Prefetch) -> Element<'a, Msg> {
+    mouse_area(content)
+        .on_enter(Msg::Prefetch(PrefetchMsg::Hover(target)))
+        .into()
+}
+
+pub fn song_row<'a>(
+    content: impl Into<Element<'a, Msg>>,
+    song_id: &str,
+    artwork: Option<&str>,
+) -> Element<'a, Msg> {
     let content = content.into();
     if song_id.is_empty() {
         return content;
     }
-    iced::widget::button(content)
+    let row = iced::widget::button(content)
         .on_press(Msg::SongInfo(SongInfoMsg::Open(song_id.into())))
         .style(theme::list_row_button)
         .padding(0)
-        .width(Fill)
-        .into()
+        .width(Fill);
+    let preview = SongPreview {
+        id: song_id.into(),
+        artwork: artwork.map(Into::into),
+    };
+    preload(row, Prefetch::Song(preview))
 }
 
 pub fn song_list<'a, T>(
@@ -364,20 +384,29 @@ pub fn song_list<'a, T>(
     scroll_panel(list)
 }
 
-pub fn paginate<'a>(pager: &'a Pager, msg: impl Fn(PageMsg) -> Msg + 'a) -> Element<'a, Msg> {
+pub fn paginate<'a>(
+    pager: &'a Pager,
+    msg: impl Fn(PageMsg) -> Msg + 'a,
+    preview: impl Fn(u32) -> Prefetch,
+) -> Element<'a, Msg> {
     let (page, pages) = (pager.page, pager.pages);
     if pages <= 1 {
         return Space::new().width(0).into();
     }
-    let prev = (page > 1 && !pager.loading).then(|| msg(PageMsg::Go(page - 1)));
-    let next = (page < pages && !pager.loading).then(|| msg(PageMsg::Go(page + 1)));
+    let prev = (page > 1 && !pager.loading).then_some(page - 1);
+    let next = (page < pages && !pager.loading).then_some(page + 1);
     let submit = msg(PageMsg::Submit);
-    let arrow = |glyph, on_press| {
-        bevel_button(icon(glyph).size(13).center().width(Fill))
-            .on_press_maybe(on_press)
+    let arrow = |glyph, target: Option<u32>| {
+        let button = bevel_button(icon(glyph).size(13).center().width(Fill))
+            .on_press_maybe(target.map(|page| msg(PageMsg::Go(page))))
             .width(33)
-            .padding([1, 0])
+            .padding([1, 0]);
+        match target {
+            Some(page) => preload(button, preview(page)),
+            None => button.into(),
+        }
     };
+    let (prev, next) = (arrow(IC_LEFT_HAND, prev), arrow(IC_RIGHT_HAND, next));
     let page_field = text_input("", &pager.input)
         .on_input(move |s| msg(PageMsg::Input(s)))
         .on_submit(submit)
@@ -386,14 +415,10 @@ pub fn paginate<'a>(pager: &'a Pager, msg: impl Fn(PageMsg) -> Msg + 'a) -> Elem
         .style(theme::page_input)
         .padding(2);
 
-    row![
-        arrow(IC_LEFT_HAND, prev),
-        sunken_frame(page_field),
-        arrow(IC_RIGHT_HAND, next),
-    ]
-    .align_y(Alignment::Center)
-    .width(100)
-    .into()
+    row![prev, sunken_frame(page_field), next]
+        .align_y(Alignment::Center)
+        .width(100)
+        .into()
 }
 
 pub fn pager_status<'a>(pager: &Pager) -> Element<'a, Msg> {
@@ -413,9 +438,10 @@ pub fn paged_footer<'a>(
     wid: Id,
     pager: &'a Pager,
     msg: impl Fn(PageMsg) -> Msg + 'a,
+    preview: impl Fn(u32) -> Prefetch,
 ) -> Element<'a, Msg> {
     let controls = row![
-        paginate(pager, msg),
+        paginate(pager, msg, preview),
         Space::new().width(Fill),
         close_button(wid),
     ]

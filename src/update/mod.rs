@@ -1,21 +1,18 @@
 mod account;
 mod lists;
 mod playback;
+mod prefetch;
 mod settings;
 mod song_info;
 
-use crate::api;
 use crate::message::Msg;
 use crate::platform;
 use crate::state::{DeleteAccountForm, ExportState, PasswordForm, Plaza, ProfileEditForm};
 use crate::window::{MessageIcon, WindowKind, message_box_size, settings};
-use iced::widget::image;
 use iced::{Task, window};
 
 pub use playback::fetch_status;
-
-const COVER_PX: u32 = 256;
-const THUMB_PX: u32 = 128;
+pub use prefetch::HOVER_POLL;
 
 pub fn update(state: &mut Plaza, msg: Msg) -> Task<Msg> {
     match msg {
@@ -30,10 +27,6 @@ pub fn update(state: &mut Plaza, msg: Msg) -> Task<Msg> {
         Msg::Media(event) => playback::media(state, &event),
         Msg::Volume(volume) => {
             playback::set_volume(state, volume);
-            Task::none()
-        }
-        Msg::Artwork(result) => {
-            state.artwork = artwork_or_log(result);
             Task::none()
         }
         Msg::React => playback::react(state),
@@ -60,6 +53,7 @@ pub fn update(state: &mut Plaza, msg: Msg) -> Task<Msg> {
             settings::timer(state, msg);
             Task::none()
         }
+        Msg::Prefetch(msg) => prefetch::update(state, msg),
 
         Msg::OpenWindow(kind) => open_window(state, kind),
         Msg::CloseWindow(id) => window::close(id),
@@ -123,7 +117,7 @@ pub fn open_window(state: &mut Plaza, kind: WindowKind) -> Task<Msg> {
         WindowKind::Ratings if state.ratings.list.is_empty() => lists::load_ratings(state, 1),
         WindowKind::News if state.news.list.is_empty() => lists::load_news(state, 1),
         WindowKind::UserFavorites => lists::load_favorites(state, 1),
-        WindowKind::UserProfile => account::load_stats(state),
+        WindowKind::UserProfile => account::refresh_stats(state),
         WindowKind::UserFavoritesExport => {
             state.export = ExportState::default();
             Task::none()
@@ -182,10 +176,4 @@ fn close_windows(state: &Plaza, kinds: &[WindowKind]) -> Task<Msg> {
         .map(|(&id, _)| id)
         .collect();
     Task::batch(ids.into_iter().map(window::close))
-}
-
-fn artwork_or_log(result: api::Result<image::Handle>) -> Option<image::Handle> {
-    result
-        .map_err(|e| eprintln!("Artwork download failed: {e}"))
-        .ok()
 }

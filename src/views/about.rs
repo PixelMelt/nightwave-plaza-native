@@ -1,5 +1,7 @@
-use super::widgets::{BOLD, CellWidth, Png, button, link_button, status_bar, sunken_panel};
-use crate::message::Msg;
+use super::widgets::{
+    BOLD, CellWidth, Png, button, link_button, preload, status_bar, sunken_panel,
+};
+use crate::message::{Msg, Prefetch};
 use crate::window::WindowKind;
 use iced::widget::text::LineHeight;
 use iced::widget::{Space, column, row, text};
@@ -96,7 +98,10 @@ pub fn view(wid: Id) -> Element<'static, Msg> {
     let bottom = row![
         wide("Credits", Msg::OpenWindow(WindowKind::Credits)),
         Space::new().width(8),
-        wide("News", Msg::OpenWindow(WindowKind::News)),
+        preload(
+            wide("News", Msg::OpenWindow(WindowKind::News)),
+            Prefetch::Window(WindowKind::News)
+        ),
         Space::new().width(Fill),
         wide("Close", Msg::CloseWindow(wid)),
     ];

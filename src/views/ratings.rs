@@ -1,9 +1,10 @@
 use super::widgets::{
-    BOLD, button, empty_panel, icon_like, loading_panel, paged_footer, shaped, song_list, song_row,
+    BOLD, button, empty_panel, icon_like, loading_panel, paged_footer, preload, shaped, song_list,
+    song_row,
 };
 use crate::api::{RatingEntry, RatingsRange};
-use crate::message::{Msg, RatingsMsg};
-use crate::state::Plaza;
+use crate::message::{Msg, Prefetch, RatingsMsg};
+use crate::state::{Plaza, RatingsPage};
 use iced::widget::{Space, column, row, text};
 use iced::window::Id;
 use iced::{Element, Fill};
@@ -11,11 +12,13 @@ use iced::{Element, Fill};
 const PAGE_SIZE: u32 = 25;
 
 pub fn view(state: &Plaza, wid: Id) -> Element<'_, Msg> {
+    let current = state.ratings.range;
     let range_button = |label, range| {
-        button(label, Fill)
+        let button = button(label, Fill)
             .on_press(Msg::Ratings(RatingsMsg::Range(range)))
-            .selected(state.ratings.range == range)
-            .padding([3, 10])
+            .selected(current == range)
+            .padding([3, 10]);
+        preload(button, Prefetch::Ratings(RatingsPage { range, page: 1 }))
     };
     let ranges = row![
         range_button("All Time", RatingsRange::AllTime),
@@ -42,9 +45,15 @@ pub fn view(state: &Plaza, wid: Id) -> Element<'_, Msg> {
         Space::new().height(2),
         list,
         Space::new().height(4),
-        paged_footer(wid, &state.ratings.pager, |m| Msg::Ratings(
-            RatingsMsg::Page(m)
-        )),
+        paged_footer(
+            wid,
+            &state.ratings.pager,
+            |m| Msg::Ratings(RatingsMsg::Page(m)),
+            move |page| Prefetch::Ratings(RatingsPage {
+                range: current,
+                page
+            }),
+        ),
     ]
     .padding(4)
     .height(Fill)
@@ -65,5 +74,5 @@ fn entry_row(entry: &RatingEntry, rank: u32) -> Element<'_, Msg> {
     ]
     .spacing(4)
     .padding([3, 4]);
-    song_row(content, &entry.song.id)
+    song_row(content, &entry.song.id, entry.song.artwork_src.as_deref())
 }

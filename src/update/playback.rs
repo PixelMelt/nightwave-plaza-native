@@ -1,8 +1,8 @@
-use super::{COVER_PX, show_error, show_info};
+use super::{prefetch, show_error, show_info};
 use crate::api::{self, Status};
 use crate::lastfm::{self, Scrobble};
 use crate::message::Msg;
-use crate::state::{Notice, Plaza, SongReaction};
+use crate::state::{ArtworkSize, Notice, Plaza, SongReaction};
 use iced::Task;
 use souvlaki::MediaControlEvent;
 use std::time::Instant;
@@ -59,10 +59,10 @@ pub fn status(state: &mut Plaza, result: api::Result<Status>) -> Task<Msg> {
 
     if let Some(url) = new_artwork {
         state.artwork_url.clone_from(&url);
-        tasks.push(Task::perform(
-            api::fetch_artwork(url, COVER_PX),
-            Msg::Artwork,
-        ));
+        match state.cache.covers.get(&url) {
+            Some(handle) => state.artwork = Some(handle),
+            None => tasks.push(prefetch::artwork(state, ArtworkSize::Cover, url)),
+        }
     }
     Task::batch(tasks)
 }
@@ -150,6 +150,7 @@ pub fn reacted(state: &mut Plaza, reaction: SongReaction, result: api::Result<u3
                 state.status.song.reactions = count;
             }
             state.reaction = reaction;
+            state.stats_at = None;
             Task::none()
         }
         Err(e) => show_error(state, e.to_string()),

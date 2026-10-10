@@ -42,6 +42,8 @@ pub struct BasicSong {
     pub id: String,
     pub artist: String,
     pub title: String,
+    #[serde(default)]
+    pub artwork_src: Option<String>,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -109,6 +111,12 @@ pub struct SongData {
     pub title: String,
     pub length: f64,
     pub artwork_src: Option<String>,
+}
+
+impl SongData {
+    pub fn artwork_url(&self) -> Option<&str> {
+        self.artwork_src.as_deref().filter(|s| !s.is_empty())
+    }
 }
 
 #[derive(Debug, Clone, Deserialize)]

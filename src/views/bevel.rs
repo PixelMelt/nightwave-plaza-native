@@ -207,11 +207,11 @@ impl<'a, Message: Clone + 'a> Widget<Message, iced::Theme, iced::Renderer> for B
                     }
                 }
                 Event::Mouse(mouse::Event::ButtonReleased(mouse::Button::Left))
-                | Event::Touch(touch::Event::FingerLifted { .. }) => {
-                    if state.is_pressed {
-                        state.is_pressed = false;
-                        shell.capture_event();
-                    }
+                | Event::Touch(touch::Event::FingerLifted { .. })
+                    if state.is_pressed =>
+                {
+                    state.is_pressed = false;
+                    shell.capture_event();
                 }
                 Event::Touch(touch::Event::FingerLost { .. })
                 | Event::Mouse(mouse::Event::CursorLeft) => {

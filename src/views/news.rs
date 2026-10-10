@@ -2,7 +2,7 @@ use super::widgets::{
     BOLD, close_button, empty_panel, format_date, loading_panel, paginate, scroll_panel, separator,
 };
 use crate::article::{Article, Block};
-use crate::message::{Msg, NewsMsg};
+use crate::message::{Msg, NewsMsg, Prefetch};
 use crate::state::Plaza;
 use crate::theme::MUTED;
 use iced::widget::{Column, Space, column, rich_text, row, span, text};
@@ -26,7 +26,11 @@ pub fn view(state: &Plaza, wid: Id) -> Element<'_, Msg> {
     };
 
     let bottom = row![
-        paginate(&state.news.pager, |m| Msg::News(NewsMsg::Page(m))),
+        paginate(
+            &state.news.pager,
+            |m| Msg::News(NewsMsg::Page(m)),
+            Prefetch::News
+        ),
         Space::new().width(Fill),
         close_button(wid),
     ]

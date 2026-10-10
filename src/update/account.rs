@@ -4,9 +4,12 @@ use crate::config::{self, Session};
 use crate::message::{
     AccountMsg, DeleteAccountMsg, LoginMsg, Msg, PasswordMsg, ProfileEditMsg, RegisterMsg,
 };
-use crate::state::{DeleteAccountForm, LoginForm, PasswordForm, Plaza, RegisterForm, SongReaction};
+use crate::state::{
+    DeleteAccountForm, FavoritesState, LoginForm, PasswordForm, Plaza, RegisterForm, SongReaction,
+};
 use crate::window::WindowKind;
 use iced::Task;
+use std::time::Instant;
 
 #[derive(Clone, Copy)]
 enum Persistence {
@@ -27,13 +30,18 @@ fn sign_out(state: &mut Plaza) {
     state.config.session = None;
     config::save(&state.config);
     state.user_stats = None;
+    state.stats_at = None;
+    state.favorites = FavoritesState::default();
     state.reaction = SongReaction::default();
 }
 
-pub fn load_stats(state: &mut Plaza) -> Task<Msg> {
+pub fn refresh_stats(state: &mut Plaza) -> Task<Msg> {
     let Some(token) = state.token() else {
         return Task::none();
     };
+    if state.stats_fresh() {
+        return Task::none();
+    }
     state.stats_loading = true;
     Task::perform(api::fetch_stats(token), |r| {
         Msg::Account(AccountMsg::Stats(r))
@@ -76,6 +84,7 @@ pub fn update(state: &mut Plaza, msg: AccountMsg) -> Task<Msg> {
             match result {
                 Ok(stats) => {
                     state.user_stats = Some(stats);
+                    state.stats_at = Some(Instant::now());
                     Task::none()
                 }
                 Err(e) => show_error(state, e.to_string()),

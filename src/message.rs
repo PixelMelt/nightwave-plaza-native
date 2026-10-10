@@ -1,7 +1,7 @@
 use crate::api::{self, RatingsRange, Status, User};
 use crate::lastfm;
 use crate::net;
-use crate::state::SongReaction;
+use crate::state::{ArtworkSize, RatingsPage, SongReaction};
 use crate::window::WindowKind;
 use iced::widget::image;
 use iced::window::Id;
@@ -19,7 +19,6 @@ pub enum Msg {
     )]
     Media(souvlaki::MediaControlEvent),
     Volume(f32),
-    Artwork(api::Result<image::Handle>),
     React,
     Reacted(SongReaction, api::Result<u32>),
 
@@ -38,6 +37,7 @@ pub enum Msg {
     Lastfm(LastfmMsg),
     DiscordEnabled(bool),
     Timer(TimerMsg),
+    Prefetch(PrefetchMsg),
 
     OpenWindow(WindowKind),
     CloseWindow(Id),
@@ -53,6 +53,30 @@ pub enum Msg {
 }
 
 #[derive(Debug, Clone)]
+pub struct SongPreview {
+    pub id: String,
+    pub artwork: Option<String>,
+}
+
+#[derive(Debug, Clone)]
+pub enum Prefetch {
+    Song(SongPreview),
+    Window(WindowKind),
+    History(u32),
+    Ratings(RatingsPage),
+    News(u32),
+    Favorites(u32),
+}
+
+#[derive(Debug, Clone)]
+pub enum PrefetchMsg {
+    Hover(Prefetch),
+    Settle,
+    Song(String, api::Result<api::SongResponse>),
+    Artwork(ArtworkSize, String, api::Result<image::Handle>),
+}
+
+#[derive(Debug, Clone)]
 pub enum PageMsg {
     Go(u32),
     Input(String),
@@ -61,28 +85,26 @@ pub enum PageMsg {
 
 #[derive(Debug, Clone)]
 pub enum HistoryMsg {
-    Loaded(api::Result<api::HistoryResponse>),
+    Loaded(u32, api::Result<api::HistoryResponse>),
     Page(PageMsg),
 }
 
 #[derive(Debug, Clone)]
 pub enum RatingsMsg {
-    Loaded(api::Result<api::Page<api::RatingEntry>>),
+    Loaded(RatingsPage, api::Result<api::Page<api::RatingEntry>>),
     Page(PageMsg),
     Range(RatingsRange),
 }
 
 #[derive(Debug, Clone)]
 pub enum NewsMsg {
-    Loaded(api::Result<api::Page<api::NewsArticle>>),
+    Loaded(u32, api::Result<api::Page<api::NewsArticle>>),
     Page(PageMsg),
 }
 
 #[derive(Debug, Clone)]
 pub enum SongInfoMsg {
     Open(String),
-    Loaded(api::Result<api::SongResponse>),
-    Artwork(api::Result<image::Handle>),
     ToggleFavorite,
     FavoriteAdded(api::Result<u64>),
     FavoriteRemoved(api::Result<()>),
@@ -90,8 +112,7 @@ pub enum SongInfoMsg {
 
 #[derive(Debug, Clone)]
 pub enum FavoritesMsg {
-    Loaded(api::Result<api::Page<api::FavoriteEntry>>),
-    Artwork(String, api::Result<image::Handle>),
+    Loaded(u32, api::Result<api::Page<api::FavoriteEntry>>),
     Page(PageMsg),
     Remove(u64),
     Removed(u64, api::Result<()>),

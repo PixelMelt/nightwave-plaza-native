@@ -3,7 +3,7 @@ use super::widgets::{
     shaped, song_list, song_row,
 };
 use crate::api::FavoriteEntry;
-use crate::message::{FavoritesMsg, Msg};
+use crate::message::{FavoritesMsg, Msg, Prefetch};
 use crate::state::Plaza;
 use crate::theme;
 use crate::window::WindowKind;
@@ -32,7 +32,11 @@ pub fn view(state: &Plaza, wid: Id) -> Element<'_, Msg> {
         .on_press(Msg::CloseWindow(wid))
         .padding([4, 12]);
     let bottom = row![
-        paginate(&favs.pager, |m| Msg::Favorites(FavoritesMsg::Page(m))),
+        paginate(
+            &favs.pager,
+            |m| Msg::Favorites(FavoritesMsg::Page(m)),
+            Prefetch::Favorites
+        ),
         Space::new().width(Fill),
         export_button,
         Space::new().width(6),
@@ -86,7 +90,7 @@ fn entry_row<'a>(
         )
     } else {
         (
-            song_row(info, &entry.song.id),
+            song_row(info, &entry.song.id, entry.song.artwork_src.as_deref()),
             link_button(
                 "Remove",
                 10,

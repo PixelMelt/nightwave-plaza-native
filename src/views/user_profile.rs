@@ -1,5 +1,5 @@
-use super::widgets::{BOLD, Png, button, format_date, group_box, menu_bar, sunken_panel};
-use crate::message::{AccountMsg, Msg};
+use super::widgets::{BOLD, Png, button, format_date, group_box, menu_bar, preload, sunken_panel};
+use crate::message::{AccountMsg, Msg, Prefetch};
 use crate::state::Plaza;
 use crate::theme;
 use crate::window::WindowKind;
@@ -22,9 +22,12 @@ pub fn view(state: &Plaza, wid: Id) -> Element<'_, Msg> {
         container(account_box(state)).width(Fill),
     ];
 
-    let favorites_button = button("My Favorites", Length::Shrink)
-        .on_press(Msg::OpenWindow(WindowKind::UserFavorites))
-        .padding([4, 12]);
+    let favorites_button = preload(
+        button("My Favorites", Length::Shrink)
+            .on_press(Msg::OpenWindow(WindowKind::UserFavorites))
+            .padding([4, 12]),
+        Prefetch::Window(WindowKind::UserFavorites),
+    );
     let bottom = row![
         favorites_button,
         Space::new().width(Fill),

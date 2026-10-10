@@ -170,8 +170,10 @@ pub fn sunken(theme: &Theme) -> container::Style {
 
 pub fn list_row_button(_: &Theme, status: button::Status) -> button::Style {
     button::Style {
-        background: matches!(status, button::Status::Hovered)
-            .then_some(Background::Color(HOVER_GRAY)),
+        background: Some(Background::Color(match status {
+            button::Status::Hovered => HOVER_GRAY,
+            _ => Color::TRANSPARENT,
+        })),
         ..flat_button(BLACK)
     }
 }

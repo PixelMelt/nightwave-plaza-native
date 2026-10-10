@@ -1,10 +1,10 @@
 use super::bevel::bevel_button;
 use super::volume::volume_slider;
 use super::widgets::{
-    BOLD, CellWidth, Png, format_duration, menu_bar, shaped, status_bar, thin_sunken_frame,
+    BOLD, CellWidth, Png, format_duration, menu_bar, preload, shaped, status_bar, thin_sunken_frame,
 };
 use crate::api::Reaction;
-use crate::message::{Msg, SongInfoMsg};
+use crate::message::{Msg, Prefetch, PrefetchMsg, SongInfoMsg, SongPreview};
 use crate::state::Plaza;
 use crate::theme;
 use crate::window::WindowKind;
@@ -56,15 +56,19 @@ fn cover(state: &Plaza) -> Element<'_, Msg> {
         Some(handle) => image(handle.clone()).width(112).height(112).into(),
         None => Space::new().width(112).height(112).into(),
     };
-    let song_id = &state.status.song.id;
+    let song = &state.status.song;
     let area = mouse_area(thin_sunken_frame(container(art).style(theme::cover)))
         .interaction(iced::mouse::Interaction::Pointer);
-    if song_id.is_empty() {
-        area.into()
-    } else {
-        area.on_press(Msg::SongInfo(SongInfoMsg::Open(song_id.clone())))
-            .into()
+    if song.id.is_empty() {
+        return area.into();
     }
+    let preview = SongPreview {
+        id: song.id.clone(),
+        artwork: song.artwork_src.clone(),
+    };
+    area.on_press(Msg::SongInfo(SongInfoMsg::Open(song.id.clone())))
+        .on_enter(Msg::Prefetch(PrefetchMsg::Hover(Prefetch::Song(preview))))
+        .into()
 }
 
 fn metadata(state: &Plaza) -> Element<'_, Msg> {
@@ -173,7 +177,10 @@ fn controls(state: &Plaza) -> Element<'_, Msg> {
     } else {
         WindowKind::UserLogin
     };
-    let user_button = icon_button(&PERSON, Msg::OpenWindow(user_win));
+    let user_button = preload(
+        icon_button(&PERSON, Msg::OpenWindow(user_win)),
+        Prefetch::Window(user_win),
+    );
     let settings_button = icon_button(&GEARS, Msg::OpenWindow(WindowKind::Settings));
 
     let left = row![
