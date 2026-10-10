@@ -9,6 +9,8 @@ const BUNDLED: [&[u8]; 3] = [
     include_bytes!("assets/fonts/icons.ttf"),
 ];
 
+pub const DEFAULT_FAMILY: &str = "Tahoma";
+
 const CJK_FAMILIES: &[&str] = &[
     "Noto Sans CJK JP",
     "Source Han Sans JP",
@@ -68,5 +70,6 @@ pub fn install() {
     for bytes in BUNDLED {
         db.load_font_source(fontdb::Source::Binary(Arc::new(bytes)));
     }
+    db.set_sans_serif_family(DEFAULT_FAMILY);
     *raw = FontSystem::new_with_locale_and_db_and_fallback(locale, db, CjkFallback);
 }

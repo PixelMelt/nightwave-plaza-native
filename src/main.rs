@@ -37,7 +37,7 @@ fn main() -> iced::Result {
         .title(title)
         .subscription(subscription)
         .theme(|_: &Plaza, _| theme::app_theme())
-        .default_font(Font::with_name("Tahoma"))
+        .default_font(Font::with_name(fonts::DEFAULT_FAMILY))
         .run()
 }
 

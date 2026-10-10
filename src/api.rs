@@ -228,6 +228,11 @@ struct Data<T> {
 }
 
 #[derive(Deserialize)]
+struct Created {
+    id: u64,
+}
+
+#[derive(Deserialize)]
 struct ReactResponse {
     reactions: u32,
 }
@@ -370,7 +375,7 @@ pub async fn fetch_favorites(token: String, page: u32) -> Result<Page<FavoriteEn
 pub async fn add_favorite(token: String, song_id: String) -> Result<u64> {
     let body = json!({ "song_id": song_id });
     let path = "/v2/users/me/favorites".into();
-    let added: Data<FavoriteEntry> = parse(&call("POST", path, Some(token), Some(body)).await?)?;
+    let added: Data<Created> = parse(&call("POST", path, Some(token), Some(body)).await?)?;
     Ok(added.data.id)
 }
 
@@ -416,4 +421,16 @@ pub async fn delete_account(token: String, current_password: String) -> Result<(
     let body = json!({ "current_password": current_password });
     call("DELETE", "/v2/users/me".into(), Some(token), Some(body)).await?;
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{Created, Data, parse};
+
+    #[test]
+    fn added_favorite_tolerates_numeric_song_id() {
+        let body = r#"{"data":{"id":2304570,"song":{"id":2298,"artist":"x"},"created_at":1}}"#;
+        let added: Data<Created> = parse(body).expect("favorite response parses");
+        assert_eq!(added.data.id, 2_304_570);
+    }
 }
