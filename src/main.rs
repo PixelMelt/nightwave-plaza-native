@@ -47,8 +47,8 @@ fn boot() -> (Plaza, Task<Msg>) {
     let state = Plaza::new(main_window, config::load(), events_tx);
 
     let check_session = match state.token() {
-        Some(token) => Task::perform(api::fetch_me(token), |r| {
-            Msg::Account(AccountMsg::Checked(r))
+        Some(token) => Task::perform(api::fetch_me(token.clone()), move |r| {
+            Msg::Account(AccountMsg::Checked(token, r))
         }),
         None => Task::none(),
     };

@@ -33,8 +33,8 @@ impl Discord {
         Self { tx }
     }
 
-    pub fn set(&self, song: &StatusSong) {
-        let start_unix = Utc::now().timestamp() - song.position.max(0.0) as i64;
+    pub fn set(&self, song: &StatusSong, position: f64) {
+        let start_unix = Utc::now().timestamp() - position.max(0.0) as i64;
         let _ = self.tx.send(Some(Presence {
             song: song.clone(),
             start_unix,

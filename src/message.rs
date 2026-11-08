@@ -50,6 +50,7 @@ pub enum Msg {
     SpacePressed(Id),
     DismissPressed(Id),
     OpenUrl(String),
+    Exit,
 }
 
 #[derive(Debug, Clone)]
@@ -106,13 +107,13 @@ pub enum NewsMsg {
 pub enum SongInfoMsg {
     Open(String),
     ToggleFavorite,
-    FavoriteAdded(api::Result<u64>),
-    FavoriteRemoved(api::Result<()>),
+    FavoriteAdded(String, api::Result<u64>),
+    FavoriteRemoved(String, api::Result<()>),
 }
 
 #[derive(Debug, Clone)]
 pub enum FavoritesMsg {
-    Loaded(u32, api::Result<api::Page<api::FavoriteEntry>>),
+    Loaded(String, u32, api::Result<api::Page<api::FavoriteEntry>>),
     Page(PageMsg),
     Remove(u64),
     Removed(u64, api::Result<()>),
@@ -126,10 +127,11 @@ pub enum ExportMsg {
 
 #[derive(Debug, Clone)]
 pub enum AccountMsg {
-    Checked(api::Result<User>),
+    Checked(String, api::Result<User>),
+    Expired(String),
     Logout,
     LoggedOut(api::Result<()>),
-    Stats(api::Result<api::UserStats>),
+    Stats(String, api::Result<api::UserStats>),
 }
 
 #[derive(Debug, Clone)]
@@ -152,12 +154,19 @@ pub enum RegisterMsg {
 }
 
 #[derive(Debug, Clone)]
+pub struct ProfileUpdate {
+    pub token: String,
+    pub username: String,
+    pub email: String,
+}
+
+#[derive(Debug, Clone)]
 pub enum ProfileEditMsg {
     Username(String),
     Email(String),
     CurrentPassword(String),
     Submit,
-    Done(api::Result<()>),
+    Done(ProfileUpdate, api::Result<()>),
 }
 
 #[derive(Debug, Clone)]
@@ -184,6 +193,7 @@ pub enum LastfmMsg {
     Token(Result<String, net::Error>),
     Finish,
     Session(Result<lastfm::Session, net::Error>),
+    Submitted(String, Result<(), net::Error>),
     Disconnect,
 }
 

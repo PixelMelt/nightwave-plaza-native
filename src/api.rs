@@ -1,26 +1,60 @@
 use crate::net::{self, Error, blocking};
 use iced::widget::image;
 use serde::de::DeserializeOwned;
-use serde::{Deserialize, Serialize};
+use serde::{Deserialize, Deserializer, Serialize};
 use serde_json::{Value, json};
 use std::io::Read;
 
 const API: &str = "https://api.plaza.one";
+const MAX_SONG_SECS: f64 = 86_400.0;
+const MAX_ARTWORK_BYTES: u64 = 16 * 1024 * 1024;
 
 pub type Result<T> = std::result::Result<T, Error>;
+
+fn nullable<'de, D, T>(deserializer: D) -> std::result::Result<T, D::Error>
+where
+    D: Deserializer<'de>,
+    T: Default + Deserialize<'de>,
+{
+    Ok(Option::<T>::deserialize(deserializer)?.unwrap_or_default())
+}
+
+fn song_seconds<'de, D: Deserializer<'de>>(deserializer: D) -> std::result::Result<f64, D::Error> {
+    let seconds: f64 = nullable(deserializer)?;
+    Ok(seconds.clamp(0.0, MAX_SONG_SECS))
+}
+
+#[derive(Deserialize)]
+#[serde(untagged)]
+enum Count {
+    Number(u32),
+    Text(String),
+}
+
+fn count<'de, D: Deserializer<'de>>(deserializer: D) -> std::result::Result<u32, D::Error> {
+    Ok(match Option::<Count>::deserialize(deserializer)? {
+        Some(Count::Number(count)) => count,
+        Some(Count::Text(text)) => text.parse().unwrap_or_default(),
+        None => 0,
+    })
+}
 
 #[derive(Debug, Clone, Default, Deserialize)]
 pub struct StatusSong {
     #[serde(default)]
     pub id: String,
+    #[serde(default, deserialize_with = "nullable")]
     pub artist: String,
+    #[serde(default, deserialize_with = "nullable")]
     pub album: String,
+    #[serde(default, deserialize_with = "nullable")]
     pub title: String,
+    #[serde(default, deserialize_with = "song_seconds")]
     pub length: f64,
     pub artwork_src: Option<String>,
     #[serde(default)]
     pub reactions: u32,
-    #[serde(default)]
+    #[serde(default, deserialize_with = "song_seconds")]
     pub position: f64,
 }
 
@@ -40,7 +74,9 @@ pub struct Status {
 pub struct BasicSong {
     #[serde(default)]
     pub id: String,
+    #[serde(default, deserialize_with = "nullable")]
     pub artist: String,
+    #[serde(default, deserialize_with = "nullable")]
     pub title: String,
     #[serde(default)]
     pub artwork_src: Option<String>,
@@ -106,9 +142,13 @@ pub struct PageMeta {
 pub struct SongData {
     #[serde(default)]
     pub id: String,
+    #[serde(default, deserialize_with = "nullable")]
     pub artist: String,
+    #[serde(default, deserialize_with = "nullable")]
     pub album: String,
+    #[serde(default, deserialize_with = "nullable")]
     pub title: String,
+    #[serde(default, deserialize_with = "song_seconds")]
     pub length: f64,
     pub artwork_src: Option<String>,
 }
@@ -121,16 +161,24 @@ impl SongData {
 
 #[derive(Debug, Clone, Deserialize)]
 pub struct SongStats {
-    #[serde(default)]
+    #[serde(default, deserialize_with = "count")]
     pub likes: u32,
     #[serde(default)]
     pub first_played_at: Option<u64>,
 }
 
 #[derive(Debug, Clone, Deserialize)]
+pub struct SongUser {
+    #[serde(default)]
+    pub favorite_id: Option<u64>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
 pub struct SongResponse {
     pub data: SongData,
     pub stats: SongStats,
+    #[serde(default)]
+    pub current_user: Option<SongUser>,
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
@@ -159,9 +207,9 @@ pub struct UserStats {
 pub struct FavoriteSong {
     #[serde(default)]
     pub id: String,
-    #[serde(default)]
+    #[serde(default, deserialize_with = "nullable")]
     pub artist: String,
-    #[serde(default)]
+    #[serde(default, deserialize_with = "nullable")]
     pub title: String,
     #[serde(default)]
     pub artwork_src: Option<String>,
@@ -188,9 +236,9 @@ pub struct FavoriteEntry {
 
 #[derive(Debug, Clone, Deserialize)]
 pub struct NewsArticle {
-    #[serde(default)]
+    #[serde(default, deserialize_with = "nullable")]
     pub text: String,
-    #[serde(default)]
+    #[serde(default, deserialize_with = "nullable")]
     pub author: String,
     #[serde(default)]
     pub created_at: u64,
@@ -258,7 +306,7 @@ async fn call(
     body: Option<Value>,
 ) -> Result<String> {
     blocking(move || {
-        let mut request = net::agent().request(method, &format!("{API}{path}"));
+        let mut request = net::request(method, &format!("{API}{path}"));
         if let Some(token) = token {
             request = request.set("Authorization", &format!("Bearer {token}"));
         }
@@ -270,10 +318,9 @@ async fn call(
         if !body.is_error() {
             return Ok(body.text);
         }
-        let message = match serde_json::from_str::<ErrorBody>(&body.text) {
-            Ok(parsed) => parsed.error.or(parsed.key),
-            Err(_) => Some(body.text).filter(|text| !text.is_empty()),
-        };
+        let message = serde_json::from_str::<ErrorBody>(&body.text)
+            .ok()
+            .and_then(|parsed| parsed.error.or(parsed.key));
         Err(Error::http(
             body.status,
             message.unwrap_or_else(|| format!("HTTP {}", body.status)),
@@ -302,8 +349,8 @@ pub async fn fetch_ratings(range: RatingsRange, page: u32) -> Result<Page<Rating
     get(format!("/v2/ratings/{}?page={page}", range.path()), None).await
 }
 
-pub async fn fetch_song(id: String) -> Result<SongResponse> {
-    get(format!("/v2/songs/{id}"), None).await
+pub async fn fetch_song(id: String, token: Option<String>) -> Result<SongResponse> {
+    get(format!("/v2/songs/{id}"), token).await
 }
 
 pub async fn fetch_news(page: u32) -> Result<Page<NewsArticle>> {
@@ -312,10 +359,11 @@ pub async fn fetch_news(page: u32) -> Result<Page<NewsArticle>> {
 
 pub async fn fetch_artwork(url: String, max_px: u32) -> Result<image::Handle> {
     blocking(move || {
-        let response = net::agent().get(&url).call().map_err(Error::other)?;
+        let response = net::request("GET", &url).call().map_err(Error::other)?;
         let mut bytes = Vec::new();
         response
             .into_reader()
+            .take(MAX_ARTWORK_BYTES)
             .read_to_end(&mut bytes)
             .map_err(Error::other)?;
         let img = ::image::load_from_memory(&bytes)
@@ -425,12 +473,57 @@ pub async fn delete_account(token: String, current_password: String) -> Result<(
 
 #[cfg(test)]
 mod tests {
-    use super::{Created, Data, parse};
+    use super::*;
 
     #[test]
     fn added_favorite_tolerates_numeric_song_id() {
         let body = r#"{"data":{"id":2304570,"song":{"id":2298,"artist":"x"},"created_at":1}}"#;
         let added: Data<Created> = parse(body).expect("favorite response parses");
         assert_eq!(added.data.id, 2_304_570);
+    }
+
+    #[test]
+    fn null_album_does_not_reject_the_song() {
+        let status: Status =
+            parse(r#"{"song":{"artist":"a","album":null,"title":"t","length":180},"listeners":1}"#)
+                .expect("status parses");
+        assert!(status.song.album.is_empty());
+        assert_eq!(status.song.title, "t");
+    }
+
+    #[test]
+    fn hostile_timing_is_clamped() {
+        let status: Status = parse(
+            r#"{"song":{"artist":"a","album":"b","title":"t","length":1e300,"position":-5},"listeners":1}"#,
+        )
+        .expect("status parses");
+        assert!((status.song.length - MAX_SONG_SECS).abs() < f64::EPSILON);
+        assert!(status.song.position.abs() < f64::EPSILON);
+    }
+
+    #[test]
+    fn null_author_keeps_the_rest_of_the_page() {
+        let page: Page<NewsArticle> = parse(
+            r#"{"data":[{"text":"good"},{"text":"bad","author":null}],"meta":{"last_page":1,"total":2}}"#,
+        )
+        .expect("page parses");
+        assert_eq!(page.data.len(), 2);
+    }
+
+    #[test]
+    fn likes_accept_numbers_and_numeric_strings() {
+        let number: SongStats = parse(r#"{"likes":21}"#).expect("number parses");
+        let text: SongStats = parse(r#"{"likes":"4"}"#).expect("string parses");
+        assert_eq!(number.likes, 21);
+        assert_eq!(text.likes, 4);
+    }
+
+    #[test]
+    fn song_exposes_the_favorite_of_the_current_user() {
+        let song: SongResponse = parse(
+            r#"{"data":{"artist":"a","album":null,"title":"t","length":1},"stats":{},"current_user":{"favorite_id":7}}"#,
+        )
+        .expect("song parses");
+        assert_eq!(song.current_user.and_then(|user| user.favorite_id), Some(7));
     }
 }

@@ -92,6 +92,7 @@ fn artwork_loaded(
             state.cache.artwork(size).fail(&url);
             if size == ArtworkSize::Cover && url == state.artwork_url {
                 state.artwork = None;
+                state.artwork_url.clear();
             }
             return;
         }

@@ -16,14 +16,14 @@ pub use prefetch::HOVER_POLL;
 
 pub fn update(state: &mut Plaza, msg: Msg) -> Task<Msg> {
     match msg {
-        Msg::Refresh => {
-            platform::trim_heap();
-            fetch_status()
-        }
+        Msg::Refresh => playback::refresh(state),
         Msg::Status(result) => playback::status(state, result),
         Msg::Tick => playback::tick(state),
         Msg::TogglePlay => playback::toggle(state),
-        Msg::StreamChanged => Task::none(),
+        Msg::StreamChanged => {
+            playback::sync_scrobble(state);
+            Task::none()
+        }
         Msg::Media(event) => playback::media(state, &event),
         Msg::Volume(volume) => {
             playback::set_volume(state, volume);
@@ -59,7 +59,7 @@ pub fn update(state: &mut Plaza, msg: Msg) -> Task<Msg> {
         Msg::CloseWindow(id) => window::close(id),
         Msg::WindowClosed(id) => {
             if id == state.main_window {
-                std::process::exit(0);
+                return playback::shutdown(state);
             }
             state.windows.remove(&id);
             if state.focused == Some(id) {
@@ -102,6 +102,7 @@ pub fn update(state: &mut Plaza, msg: Msg) -> Task<Msg> {
             platform::open_url(&url);
             Task::none()
         }
+        Msg::Exit => std::process::exit(0),
     }
 }
 

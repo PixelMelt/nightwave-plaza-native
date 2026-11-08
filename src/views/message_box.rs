@@ -1,8 +1,10 @@
 use super::widgets::{Png, button};
 use crate::message::Msg;
 use crate::state::Plaza;
+use crate::theme;
 use crate::window::MessageIcon;
-use iced::widget::{Space, column, container, row, text};
+use iced::widget::text::Wrapping;
+use iced::widget::{Space, column, container, row, scrollable, text};
 use iced::window::Id;
 use iced::{Alignment, Element, Fill};
 
@@ -20,10 +22,14 @@ pub fn view(state: &Plaza, icon: MessageIcon, wid: Id) -> Element<'_, Msg> {
     let body = row![
         image.image().width(ICON_SIZE).height(ICON_SIZE),
         Space::new().width(12),
-        container(text(message).size(11))
-            .align_y(Alignment::Center)
-            .height(Fill)
-            .width(Fill),
+        container(
+            scrollable(text(message).size(11).wrapping(Wrapping::WordOrGlyph))
+                .width(Fill)
+                .style(theme::plain_scrollbar),
+        )
+        .align_y(Alignment::Center)
+        .height(Fill)
+        .width(Fill),
     ]
     .height(Fill);
     column![

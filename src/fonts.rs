@@ -13,9 +13,15 @@ pub const DEFAULT_FAMILY: &str = "Tahoma";
 
 const CJK_FAMILIES: &[&str] = &[
     "Noto Sans CJK JP",
+    "Noto Serif CJK JP",
     "Source Han Sans JP",
+    "IPAGothic",
+    "IPAexGothic",
+    "VL Gothic",
+    "TakaoGothic",
     "Droid Sans Fallback",
     "WenQuanYi Micro Hei",
+    "WenQuanYi Zen Hei",
     "Yu Gothic UI",
     "Meiryo",
     "MS Gothic",

@@ -1,4 +1,6 @@
-use super::widgets::{BOLD, Png, button, format_date, group_box, menu_bar, preload, sunken_panel};
+use super::widgets::{
+    BOLD, Png, button, format_date, group_box, menu_bar, preload, single_line, sunken_panel,
+};
 use crate::message::{AccountMsg, Msg, Prefetch};
 use crate::state::Plaza;
 use crate::theme;
@@ -57,9 +59,9 @@ fn user_card(state: &Plaza) -> Element<'_, Msg> {
         container(USER_CARD.image().width(32).height(32)).center_y(Fill),
         Space::new().width(8),
         column![
-            text(username).size(14).font(BOLD),
+            single_line(text(username).size(14).font(BOLD)),
             Space::new().height(4),
-            text(email).size(11).color(theme::DISABLED),
+            single_line(text(email).size(11).color(theme::DISABLED)),
         ],
     ]
     .align_y(iced::Alignment::Center);

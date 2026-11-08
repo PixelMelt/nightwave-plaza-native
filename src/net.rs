@@ -3,6 +3,9 @@ use std::fmt;
 use std::sync::LazyLock;
 use std::time::Duration;
 
+const REQUEST_TIMEOUT: Duration = Duration::from_secs(30);
+const UNAUTHORIZED: u16 = 401;
+
 static AGENT: LazyLock<ureq::Agent> = LazyLock::new(|| {
     ureq::AgentBuilder::new()
         .timeout_connect(Duration::from_secs(10))
@@ -13,6 +16,10 @@ static AGENT: LazyLock<ureq::Agent> = LazyLock::new(|| {
 
 pub fn agent() -> &'static ureq::Agent {
     &AGENT
+}
+
+pub fn request(method: &str, url: &str) -> ureq::Request {
+    AGENT.request(method, url).timeout(REQUEST_TIMEOUT)
 }
 
 #[derive(Debug, Clone)]
@@ -29,6 +36,10 @@ impl Error {
         }
     }
 
+    pub fn unauthorized(message: impl Into<String>) -> Self {
+        Self::http(UNAUTHORIZED, message)
+    }
+
     pub fn other(message: impl fmt::Display) -> Self {
         Self {
             status: None,
@@ -36,8 +47,21 @@ impl Error {
         }
     }
 
+    pub fn transport(transport: &ureq::Transport) -> Self {
+        let mut message = transport.kind().to_string();
+        if let Some(detail) = transport.message() {
+            message.push_str(": ");
+            message.push_str(detail);
+        }
+        if let Some(source) = std::error::Error::source(transport) {
+            message.push_str(": ");
+            message.push_str(&source.to_string());
+        }
+        Self::other(message)
+    }
+
     pub fn is_unauthorized(&self) -> bool {
-        matches!(self.status, Some(401 | 403))
+        self.status == Some(UNAUTHORIZED)
     }
 }
 
@@ -63,7 +87,7 @@ impl Body {
 pub fn read_body(result: Result<ureq::Response, ureq::Error>) -> Result<Body, Error> {
     let response = match result {
         Ok(response) | Err(ureq::Error::Status(_, response)) => response,
-        Err(e) => return Err(Error::other(e)),
+        Err(ureq::Error::Transport(transport)) => return Err(Error::transport(&transport)),
     };
     let status = response.status();
     let text = response.into_string().map_err(Error::other)?;

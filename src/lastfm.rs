@@ -11,6 +11,8 @@ const API_SECRET: &str = "91a2c65df39ea28a7f305f7b35242e17";
 const API_ROOT: &str = "https://ws.audioscrobbler.com/2.0/";
 const AUTH_URL: &str = "https://www.last.fm/api/auth/";
 
+const INVALID_SESSION_KEY: i32 = 9;
+
 const MIN_TRACK_SECS: f64 = 30.0;
 const MAX_THRESHOLD_SECS: f64 = 240.0;
 
@@ -127,7 +129,11 @@ fn parse<T: DeserializeOwned>(result: Result<ureq::Response, ureq::Error>) -> Re
         } else {
             err.message
         };
-        return Err(Error::http(body.status, message));
+        return Err(if err.error == INVALID_SESSION_KEY {
+            Error::unauthorized(message)
+        } else {
+            Error::other(message)
+        });
     }
     serde_json::from_str(&body.text).map_err(Error::other)
 }
@@ -136,7 +142,7 @@ fn get_signed<T: DeserializeOwned>(params: &[(&str, &str)]) -> Result<T, Error> 
     let sig = sign(params);
     let request = params
         .iter()
-        .fold(net::agent().get(API_ROOT), |req, (k, v)| req.query(k, v));
+        .fold(net::request("GET", API_ROOT), |req, (k, v)| req.query(k, v));
     parse(
         request
             .query("api_sig", &sig)
@@ -150,7 +156,7 @@ fn post_signed(params: Vec<(&str, &str)>) -> Result<(), Error> {
     let mut form: Vec<(&str, &str)> = params;
     form.push(("api_sig", &sig));
     form.push(("format", "json"));
-    parse::<serde_json::Value>(net::agent().post(API_ROOT).send_form(&form))?;
+    parse::<serde_json::Value>(net::request("POST", API_ROOT).send_form(&form))?;
     Ok(())
 }
 

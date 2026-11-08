@@ -1,7 +1,8 @@
 use super::bevel::bevel_button;
 use super::volume::volume_slider;
 use super::widgets::{
-    BOLD, CellWidth, Png, format_duration, menu_bar, preload, shaped, status_bar, thin_sunken_frame,
+    BOLD, CellWidth, Png, format_duration, menu_bar, preload, shaped, single_line, status_bar,
+    thin_sunken_frame,
 };
 use crate::api::Reaction;
 use crate::message::{Msg, Prefetch, PrefetchMsg, SongInfoMsg, SongPreview};
@@ -80,9 +81,9 @@ fn metadata(state: &Plaza) -> Element<'_, Msg> {
     };
     column![
         Space::new().height(2),
-        shaped(artist).size(14).line_height(LH14).font(BOLD),
+        single_line(shaped(artist).size(14).line_height(LH14).font(BOLD)),
         Space::new().height(8),
-        shaped(&song.title).size(14).line_height(LH14),
+        single_line(shaped(&song.title).size(14).line_height(LH14)),
         Space::new().height(12),
         time_and_volume(state),
         Space::new().height(12),

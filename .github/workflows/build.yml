@@ -132,7 +132,7 @@ jobs:
             host_gid=$(stat -c %g /build)
             trap "chown -R $host_uid:$host_gid /build" EXIT
             pacman -Sy --noconfirm --needed archlinux-keyring
-            pacman -Su --noconfirm --needed base-devel rust alsa-lib dbus pkgconf
+            pacman -Su --noconfirm --needed base-devel rust alsa-lib dbus libx11 libxcursor libxi libxkbcommon-x11 pkgconf
             useradd -m builder
             chown -R builder:builder /build
             sudo -u builder bash -c "cd /build/dist && makepkg -f --noconfirm"

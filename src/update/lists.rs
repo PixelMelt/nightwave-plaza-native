@@ -1,7 +1,8 @@
+use super::account::authed;
 use super::{prefetch, show_error};
 use crate::api;
 use crate::message::{ExportMsg, FavoritesMsg, HistoryMsg, Msg, NewsMsg, RatingsMsg};
-use crate::state::{Ahead, ArtworkSize, ExportState, Plaza, RatingsPage};
+use crate::state::{Ahead, ArtworkSize, ExportState, Pager, Plaza, RatingsPage};
 use crate::window::WindowKind;
 use iced::Task;
 use std::collections::HashMap;
@@ -110,7 +111,6 @@ pub fn load_favorites(state: &mut Plaza, page: u32) -> Task<Msg> {
     let Some(token) = state.token() else {
         return Task::none();
     };
-    state.favorites.removed.clear();
     state.favorites.pager.start_loading(page);
     match state.favorites.ahead.take(&page) {
         Ahead::Ready(response) => show_favorites(state, response),
@@ -132,13 +132,16 @@ pub fn prefetch_favorites(state: &mut Plaza, page: u32) -> Task<Msg> {
 }
 
 fn fetch_favorites(token: String, page: u32) -> Task<Msg> {
-    Task::perform(api::fetch_favorites(token, page), move |r| {
-        Msg::Favorites(FavoritesMsg::Loaded(page, r))
-    })
+    authed(
+        token.clone(),
+        move |token| api::fetch_favorites(token, page),
+        move |r| Msg::Favorites(FavoritesMsg::Loaded(token, page, r)),
+    )
 }
 
 fn show_favorites(state: &mut Plaza, response: api::Page<api::FavoriteEntry>) -> Task<Msg> {
     state.favorites.pager.finish_loading(&response.meta);
+    state.favorites.removed.clear();
     let mut artwork = HashMap::new();
     let mut fetches = Vec::new();
     for url in response.data.iter().filter_map(|f| f.song.thumb_url()) {
@@ -173,7 +176,7 @@ pub fn history(state: &mut Plaza, msg: HistoryMsg) -> Task<Msg> {
             Task::none()
         }
         HistoryMsg::Loaded(_, Err(e)) => {
-            state.history.pager.loading = false;
+            state.history.pager.fail_loading();
             show_error(state, e.to_string())
         }
         HistoryMsg::Page(msg) => match state.history.pager.apply(msg) {
@@ -196,7 +199,7 @@ pub fn ratings(state: &mut Plaza, msg: RatingsMsg) -> Task<Msg> {
             Task::none()
         }
         RatingsMsg::Loaded(_, Err(e)) => {
-            state.ratings.pager.loading = false;
+            state.ratings.pager.fail_loading();
             show_error(state, e.to_string())
         }
         RatingsMsg::Page(msg) => match state.ratings.pager.apply(msg) {
@@ -206,6 +209,7 @@ pub fn ratings(state: &mut Plaza, msg: RatingsMsg) -> Task<Msg> {
         RatingsMsg::Range(range) => {
             state.ratings.range = range;
             state.ratings.list.clear();
+            state.ratings.pager = Pager::default();
             load_ratings(state, 1)
         }
     }
@@ -222,7 +226,7 @@ pub fn news(state: &mut Plaza, msg: NewsMsg) -> Task<Msg> {
             Task::none()
         }
         NewsMsg::Loaded(_, Err(e)) => {
-            state.news.pager.loading = false;
+            state.news.pager.fail_loading();
             show_error(state, e.to_string())
         }
         NewsMsg::Page(msg) => match state.news.pager.apply(msg) {
@@ -233,9 +237,14 @@ pub fn news(state: &mut Plaza, msg: NewsMsg) -> Task<Msg> {
 }
 
 pub fn favorites(state: &mut Plaza, msg: FavoritesMsg) -> Task<Msg> {
+    if let FavoritesMsg::Loaded(token, _, _) = &msg
+        && !state.has_token(token)
+    {
+        return Task::none();
+    }
     let favorites = &mut state.favorites;
     match msg {
-        FavoritesMsg::Loaded(page, result) if !favorites.pager.awaits(page) => {
+        FavoritesMsg::Loaded(_, page, result) if !favorites.pager.awaits(page) => {
             let thumbs = favorites
                 .ahead
                 .fill(&page, result)
@@ -249,9 +258,9 @@ pub fn favorites(state: &mut Plaza, msg: FavoritesMsg) -> Task<Msg> {
                 .unwrap_or_default();
             prefetch_thumbs(state, thumbs)
         }
-        FavoritesMsg::Loaded(_, Ok(response)) => show_favorites(state, response),
-        FavoritesMsg::Loaded(_, Err(e)) => {
-            favorites.pager.loading = false;
+        FavoritesMsg::Loaded(_, _, Ok(response)) => show_favorites(state, response),
+        FavoritesMsg::Loaded(_, _, Err(e)) => {
+            favorites.pager.fail_loading();
             show_error(state, e.to_string())
         }
         FavoritesMsg::Page(msg) => match favorites.pager.apply(msg) {
@@ -259,25 +268,37 @@ pub fn favorites(state: &mut Plaza, msg: FavoritesMsg) -> Task<Msg> {
             None => Task::none(),
         },
         FavoritesMsg::Remove(id) => {
+            if favorites.removed.contains(&id) {
+                return Task::none();
+            }
             let Some(token) = state.token() else {
                 return Task::none();
             };
-            Task::perform(api::delete_favorite(token, id), move |r| {
-                Msg::Favorites(FavoritesMsg::Removed(id, r))
-            })
+            state.favorites.removed.push(id);
+            authed(
+                token,
+                move |token| api::delete_favorite(token, id),
+                move |r| Msg::Favorites(FavoritesMsg::Removed(id, r)),
+            )
         }
         FavoritesMsg::Removed(id, Ok(())) => {
             if !favorites.removed.contains(&id) {
                 favorites.removed.push(id);
             }
             favorites.ahead.clear();
+            if let Some(entry) = favorites.list.iter().find(|entry| entry.id == id) {
+                state.cache.songs.remove(&entry.song.id);
+            }
             state.stats_at = None;
             if state.song_info.favorite_id == Some(id) {
                 state.song_info.favorite_id = None;
             }
             Task::none()
         }
-        FavoritesMsg::Removed(_, Err(e)) => show_error(state, e.to_string()),
+        FavoritesMsg::Removed(id, Err(e)) => {
+            favorites.removed.retain(|&removed| removed != id);
+            show_error(state, e.to_string())
+        }
     }
 }
 
@@ -291,7 +312,7 @@ pub fn export(state: &mut Plaza, msg: ExportMsg) -> Task<Msg> {
                 loading: true,
                 ..ExportState::default()
             };
-            Task::perform(api::export_favorites(token), |r| {
+            authed(token, api::export_favorites, |r| {
                 Msg::Export(ExportMsg::Done(r))
             })
         }

@@ -6,19 +6,10 @@ use crate::window::WindowKind;
 use iced::widget::text::LineHeight;
 use iced::widget::{Space, column, row, text};
 use iced::window::Id;
-use iced::{Element, Fill, Font, Length};
+use iced::{Element, Fill, Length};
 
 static PC: Png = Png::new(include_bytes!("../assets/img/pc.png"));
 
-const BOLD_ITALIC: Font = Font {
-    weight: iced::font::Weight::Bold,
-    style: iced::font::Style::Italic,
-    ..Font::DEFAULT
-};
-const ITALIC: Font = Font {
-    style: iced::font::Style::Italic,
-    ..Font::DEFAULT
-};
 const LH: LineHeight = LineHeight::Relative(1.5);
 
 fn link(label: &'static str, url: &'static str) -> Element<'static, Msg> {
@@ -37,13 +28,12 @@ pub fn view(wid: Id) -> Element<'static, Msg> {
     let title_col = column![
         text("Nightwave Plaza")
             .size(14)
-            .font(BOLD_ITALIC)
+            .font(BOLD)
             .center()
             .width(Fill),
         Space::new().height(4),
         text("Welcome to the 24/7 online vaporwave and future funk radio station.")
             .size(12)
-            .font(ITALIC)
             .line_height(LH)
             .center()
             .width(Fill),

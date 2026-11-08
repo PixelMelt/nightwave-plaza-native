@@ -208,6 +208,13 @@ pub fn scrollbar(theme: &Theme, _: scrollable::Status) -> scrollable::Style {
     }
 }
 
+pub fn plain_scrollbar(theme: &Theme, status: scrollable::Status) -> scrollable::Style {
+    scrollable::Style {
+        container: container::Style::default(),
+        ..scrollbar(theme, status)
+    }
+}
+
 pub fn page_input(_: &Theme, _s: text_input::Status) -> text_input::Style {
     text_input::Style {
         background: Background::Color(WHITE),

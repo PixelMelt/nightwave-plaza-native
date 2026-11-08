@@ -1,9 +1,11 @@
-use super::{lock, wait};
+use super::{lock, wait, wait_timeout};
 use std::collections::VecDeque;
 use std::io::{self, Read, Seek, SeekFrom};
 use std::sync::{Arc, Condvar, Mutex};
+use std::time::Duration;
 
-const CAPACITY: usize = 512 * 1024;
+pub const CAPACITY: usize = 512 * 1024;
+const CANCEL_POLL: Duration = Duration::from_millis(100);
 
 #[derive(Default)]
 struct Shared {
@@ -71,10 +73,13 @@ impl PipeWriter {
 }
 
 impl PipeReader {
-    pub fn wait_for(&self, bytes: usize) -> bool {
+    pub fn wait_for(&self, bytes: usize, cancelled: impl Fn() -> bool) -> bool {
         let mut state = lock(&self.shared.state);
         while state.buf.len() < bytes && !state.finished {
-            state = wait(&self.shared.changed, state);
+            if cancelled() {
+                return false;
+            }
+            state = wait_timeout(&self.shared.changed, state, CANCEL_POLL);
         }
         state.buf.len() >= bytes
     }
@@ -127,5 +132,31 @@ impl Drop for PipeReader {
     fn drop(&mut self) {
         lock(&self.shared.state).reader_gone = true;
         self.shared.changed.notify_all();
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::io::Cursor;
+    use std::time::Instant;
+
+    #[test]
+    fn wait_for_notices_a_cancel_that_arrives_while_waiting() {
+        let (_writer, reader) = pipe();
+        let started = Instant::now();
+        assert!(!reader.wait_for(1, || started.elapsed() >= CANCEL_POLL));
+    }
+
+    #[test]
+    fn wait_for_succeeds_at_capacity() {
+        let (writer, reader) = pipe();
+        let source = Cursor::new(vec![0u8; CAPACITY * 2]);
+        let producer = std::thread::spawn(move || writer.fill_from(source));
+        assert!(reader.wait_for(CAPACITY, || false));
+        drop(reader);
+        producer
+            .join()
+            .expect("producer exits once the reader is gone");
     }
 }

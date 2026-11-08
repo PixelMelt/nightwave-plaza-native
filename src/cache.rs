@@ -53,6 +53,16 @@ impl<V: Clone> Cache<V> {
         self.pending.remove(key);
     }
 
+    pub fn remove(&mut self, key: &str) {
+        self.entries.remove(key);
+        self.pending.remove(key);
+    }
+
+    pub fn clear(&mut self) {
+        self.entries.clear();
+        self.pending.clear();
+    }
+
     pub fn insert(&mut self, key: String, value: V) {
         self.pending.remove(&key);
         self.clock += 1;
@@ -106,6 +116,18 @@ mod tests {
         assert_eq!(cache.get("b"), None);
         assert_eq!(cache.get("a"), Some(1));
         assert_eq!(cache.get("c"), Some(3));
+    }
+
+    #[test]
+    fn removed_and_cleared_entries_can_be_claimed_again() {
+        let mut cache = Cache::new(4, FOREVER);
+        cache.insert("a".into(), 1);
+        cache.insert("b".into(), 2);
+        cache.remove("a");
+        assert!(cache.claim("a"));
+        cache.clear();
+        assert_eq!(cache.get("b"), None);
+        assert!(cache.claim("a"));
     }
 
     #[test]

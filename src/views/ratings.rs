@@ -9,7 +9,7 @@ use iced::widget::{Space, column, row, text};
 use iced::window::Id;
 use iced::{Element, Fill};
 
-const PAGE_SIZE: u32 = 25;
+const PAGE_SIZE: u64 = 25;
 
 pub fn view(state: &Plaza, wid: Id) -> Element<'_, Msg> {
     let current = state.ratings.range;
@@ -34,9 +34,9 @@ pub fn view(state: &Plaza, wid: Id) -> Element<'_, Msg> {
     } else if state.ratings.list.is_empty() {
         empty_panel("No data")
     } else {
-        let first_rank = (state.ratings.pager.page - 1) * PAGE_SIZE + 1;
+        let first_rank = u64::from(state.ratings.pager.page - 1) * PAGE_SIZE + 1;
         song_list(&state.ratings.list, move |i, entry| {
-            entry_row(entry, first_rank + i as u32)
+            entry_row(entry, first_rank + i as u64)
         })
     };
 
@@ -60,7 +60,7 @@ pub fn view(state: &Plaza, wid: Id) -> Element<'_, Msg> {
     .into()
 }
 
-fn entry_row(entry: &RatingEntry, rank: u32) -> Element<'_, Msg> {
+fn entry_row(entry: &RatingEntry, rank: u64) -> Element<'_, Msg> {
     let content = row![
         text(format!("{rank:03}")).size(11).width(28),
         column![

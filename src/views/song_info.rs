@@ -1,7 +1,7 @@
 use super::bevel::bevel_button;
 use super::widgets::{
     BOLD, CellWidth, IC_CLOCK, IC_FAVORITE, close_button, empty_panel, format_date,
-    format_duration, icon, icon_like, loading_panel, shaped, status_bar, sunken_panel,
+    format_duration, icon, icon_like, loading_panel, shaped, single_line, status_bar, sunken_panel,
     thin_sunken_frame,
 };
 use crate::message::{Msg, SongInfoMsg};
@@ -33,13 +33,13 @@ pub fn view(state: &Plaza, wid: Id) -> Element<'_, Msg> {
     let label = |s| text(s).size(10).font(BOLD);
     let details = column![
         label("Artist:"),
-        shaped(&song.data.artist).size(11),
+        single_line(shaped(&song.data.artist).size(11)),
         Space::new().height(2),
         label("Album:"),
-        shaped(&song.data.album).size(11),
+        single_line(shaped(&song.data.album).size(11)),
         Space::new().height(2),
         label("Title:"),
-        shaped(&song.data.title).size(11),
+        single_line(shaped(&song.data.title).size(11)),
         Space::new().height(4),
         row![
             icon(IC_CLOCK).size(10),
@@ -52,9 +52,10 @@ pub fn view(state: &Plaza, wid: Id) -> Element<'_, Msg> {
         .spacing(2)
         .align_y(iced::Alignment::Center),
     ]
-    .spacing(1);
+    .spacing(1)
+    .width(Fill);
 
-    let panel = sunken_panel(row![details, Space::new().width(Fill), art].padding(4));
+    let panel = sunken_panel(row![details, Space::new().width(8), art].padding(4));
 
     let favorite_color = if info.favorite_id.is_some() {
         theme::FAVORITE_GOLD

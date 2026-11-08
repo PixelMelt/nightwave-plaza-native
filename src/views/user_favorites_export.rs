@@ -2,13 +2,20 @@ use super::widgets::{button, link_button, sunken_panel};
 use crate::message::{ExportMsg, Msg};
 use crate::state::Plaza;
 use crate::theme;
-use iced::widget::{Space, column, container, text};
+use iced::widget::text::Wrapping;
+use iced::widget::{Space, column, container, scrollable, text};
 use iced::window::Id;
 use iced::{Element, Fill, Length};
 
 pub fn view(state: &Plaza, wid: Id) -> Element<'_, Msg> {
     let export = &state.export;
-    let message = |s| text(s).size(11).center().width(Fill);
+    let message = |s| {
+        text(s)
+            .size(11)
+            .wrapping(Wrapping::WordOrGlyph)
+            .center()
+            .width(Fill)
+    };
 
     let mut body = column![].width(Fill);
     if let Some(link) = &export.link {
@@ -46,7 +53,11 @@ pub fn view(state: &Plaza, wid: Id) -> Element<'_, Msg> {
         .padding([4, 24]);
 
     column![
-        sunken_panel(container(body).padding(4)),
+        sunken_panel(
+            scrollable(container(body).padding(4))
+                .height(Fill)
+                .style(theme::plain_scrollbar)
+        ),
         Space::new().height(12),
         container(close).center_x(Fill),
     ]

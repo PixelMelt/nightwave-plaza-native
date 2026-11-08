@@ -49,7 +49,9 @@ fn line_width(width: f32) -> f32 {
 
 fn percent_at(bounds: Rectangle, x: f32) -> f32 {
     let travel = (line_width(bounds.width) - HANDLE_WIDTH).max(1.0);
-    ((x - bounds.x) / travel * 100.0).clamp(0.0, 100.0).round()
+    ((x - bounds.x - HANDLE_WIDTH / 2.0) / travel * 100.0)
+        .clamp(0.0, 100.0)
+        .round()
 }
 
 impl<Message> VolumeSlider<'_, Message> {
@@ -221,6 +223,7 @@ impl<'a, Message: 'a> Widget<Message, iced::Theme, iced::Renderer> for VolumeSli
                     state.dragging = false;
                     shell.capture_event();
                 }
+                Event::Window(iced::window::Event::Unfocused) => state.dragging = false,
                 _ => {}
             }
         }

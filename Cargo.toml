@@ -88,7 +88,7 @@ winresource = "0.1"
 [package.metadata.deb]
 section = "sound"
 priority = "optional"
-depends = "$auto"
+depends = "$auto, libx11-6, libx11-xcb1, libxcursor1, libxi6, libxkbcommon-x11-0"
 extended-description = "Native Nightwave Plaza client with a Windows 98 aesthetic. Streams the plaza.one vaporwave radio feed with now-playing info, album art, OS media controls, Discord presence, and Last.fm scrobbling."
 assets = [
     ["target/release/nightwave-plaza", "usr/bin/", "755"],

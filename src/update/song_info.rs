@@ -1,3 +1,4 @@
+use super::account::authed;
 use super::{open_window, prefetch, show_error, show_info};
 use crate::api;
 use crate::message::{Msg, PrefetchMsg, SongInfoMsg};
@@ -10,37 +11,50 @@ pub fn update(state: &mut Plaza, msg: SongInfoMsg) -> Task<Msg> {
     match msg {
         SongInfoMsg::Open(song_id) => open(state, song_id),
         SongInfoMsg::ToggleFavorite => toggle_favorite(state),
-        SongInfoMsg::FavoriteAdded(result) => {
-            info.favorite_pending = false;
+        SongInfoMsg::FavoriteAdded(song_id, result) => {
+            let current = song_id == info.song_id;
+            if current {
+                info.favorite_pending = false;
+            }
             match result {
                 Ok(id) => {
-                    info.favorite_id = Some(id);
-                    state.favorites.ahead.clear();
-                    state.stats_at = None;
+                    if current {
+                        info.favorite_id = Some(id);
+                    }
+                    forget_favorite_state(state, &song_id);
                     Task::none()
                 }
                 Err(e) => show_error(state, e.to_string()),
             }
         }
-        SongInfoMsg::FavoriteRemoved(result) => {
-            info.favorite_pending = false;
+        SongInfoMsg::FavoriteRemoved(song_id, result) => {
+            let current = song_id == info.song_id;
+            if current {
+                info.favorite_pending = false;
+            }
             match result {
                 Ok(()) => {
                     let favorites = &mut state.favorites;
-                    if let Some(id) = info.favorite_id.take()
+                    if current
+                        && let Some(id) = info.favorite_id.take()
                         && favorites.list.iter().any(|entry| entry.id == id)
                         && !favorites.removed.contains(&id)
                     {
                         favorites.removed.push(id);
                     }
-                    favorites.ahead.clear();
-                    state.stats_at = None;
+                    forget_favorite_state(state, &song_id);
                     Task::none()
                 }
                 Err(e) => show_error(state, e.to_string()),
             }
         }
     }
+}
+
+fn forget_favorite_state(state: &mut Plaza, song_id: &str) {
+    state.favorites.ahead.clear();
+    state.stats_at = None;
+    state.cache.songs.remove(song_id);
 }
 
 fn open(state: &mut Plaza, song_id: String) -> Task<Msg> {
@@ -63,11 +77,20 @@ fn open(state: &mut Plaza, song_id: String) -> Task<Msg> {
     Task::batch([window, song])
 }
 
+pub fn reload(state: &mut Plaza) -> Task<Msg> {
+    let song_id = state.song_info.song_id.clone();
+    if song_id.is_empty() || state.window_of(WindowKind::SongInfo).is_none() {
+        return Task::none();
+    }
+    state.cache.songs.remove(&song_id);
+    request(state, song_id)
+}
+
 pub fn request(state: &mut Plaza, song_id: String) -> Task<Msg> {
     if song_id.is_empty() || !state.cache.songs.claim(&song_id) {
         return Task::none();
     }
-    Task::perform(api::fetch_song(song_id.clone()), move |r| {
+    Task::perform(api::fetch_song(song_id.clone(), state.token()), move |r| {
         Msg::Prefetch(PrefetchMsg::Song(song_id, r))
     })
 }
@@ -78,11 +101,11 @@ pub fn loaded(
     result: api::Result<api::SongResponse>,
 ) -> Task<Msg> {
     let info = &mut state.song_info;
-    let waiting = info.song_id == song_id && info.data.is_none();
+    let current = info.song_id == song_id;
     match result {
         Ok(song) => {
             state.cache.songs.insert(song_id, song.clone());
-            if waiting {
+            if current {
                 show(state, song)
             } else {
                 Task::none()
@@ -90,7 +113,7 @@ pub fn loaded(
         }
         Err(e) => {
             state.cache.songs.fail(&song_id);
-            if waiting {
+            if current && info.data.is_none() {
                 info.error = Some(e.to_string());
             } else {
                 eprintln!("Song prefetch failed for {song_id}: {e}");
@@ -102,6 +125,9 @@ pub fn loaded(
 
 fn show(state: &mut Plaza, song: api::SongResponse) -> Task<Msg> {
     let cover = song.data.artwork_url().map(str::to_owned);
+    if let Some(id) = song.current_user.as_ref().and_then(|user| user.favorite_id) {
+        state.song_info.favorite_id = Some(id);
+    }
     state.song_info.data = Some(song);
     let Some(url) = cover else {
         return Task::none();
@@ -132,12 +158,17 @@ fn toggle_favorite(state: &mut Plaza) -> Task<Msg> {
         return Task::none();
     };
     info.favorite_pending = true;
+    let selected = info.song_id.clone();
     match info.favorite_id {
-        Some(favorite_id) => Task::perform(api::delete_favorite(token, favorite_id), |r| {
-            Msg::SongInfo(SongInfoMsg::FavoriteRemoved(r))
-        }),
-        None => Task::perform(api::add_favorite(token, song_id), |r| {
-            Msg::SongInfo(SongInfoMsg::FavoriteAdded(r))
-        }),
+        Some(favorite_id) => authed(
+            token,
+            move |token| api::delete_favorite(token, favorite_id),
+            move |r| Msg::SongInfo(SongInfoMsg::FavoriteRemoved(selected, r)),
+        ),
+        None => authed(
+            token,
+            move |token| api::add_favorite(token, song_id),
+            move |r| Msg::SongInfo(SongInfoMsg::FavoriteAdded(selected, r)),
+        ),
     }
 }

@@ -23,6 +23,7 @@ const ARTWORK_CACHE_LIFETIME: Duration = Duration::from_hours(1);
 const SONG_CACHE_CAPACITY: usize = 128;
 const COVER_CACHE_CAPACITY: usize = 24;
 const THUMB_CACHE_CAPACITY: usize = 48;
+pub const MAX_TIMER_MINUTES: u32 = 10_080;
 
 pub struct Plaza {
     pub main_window: Id,
@@ -38,13 +39,14 @@ pub struct Plaza {
     pub artwork_url: String,
     pub notice: Option<Notice>,
     pub messages: HashMap<MessageIcon, String>,
-    pub status_failed: bool,
+    pub status_poll: StatusPoll,
 
     pub session: Option<Session>,
     pub user_stats: Option<api::UserStats>,
     pub stats_loading: bool,
     pub stats_at: Option<Instant>,
     pub reaction: SongReaction,
+    pub reaction_pending: bool,
 
     pub history: HistoryState,
     pub ratings: RatingsState,
@@ -88,12 +90,16 @@ impl Plaza {
             artwork_url: String::new(),
             notice: Some(Notice::new("Welcome back!")),
             messages: HashMap::new(),
-            status_failed: false,
+            status_poll: StatusPoll {
+                loading: true,
+                failed: false,
+            },
             session: config.session.clone(),
             user_stats: None,
             stats_loading: false,
             stats_at: None,
             reaction: SongReaction::default(),
+            reaction_pending: false,
             history: HistoryState::default(),
             ratings: RatingsState::default(),
             song_info: SongInfoState::default(),
@@ -133,6 +139,10 @@ impl Plaza {
         self.session.as_ref().map(|s| s.token.clone())
     }
 
+    pub fn has_token(&self, token: &str) -> bool {
+        self.session.as_ref().is_some_and(|s| s.token == token)
+    }
+
     pub fn song_position(&self) -> f64 {
         let song = &self.status.song;
         (song.position + self.status_at.elapsed().as_secs_f64()).min(song.length)
@@ -152,8 +162,8 @@ pub enum ArtworkSize {
 impl ArtworkSize {
     pub fn px(self) -> u32 {
         match self {
-            Self::Thumb => 128,
-            Self::Cover => 256,
+            Self::Thumb => 54,
+            Self::Cover => 112,
         }
     }
 }
@@ -267,6 +277,11 @@ impl<K: PartialEq, R> Lookahead<K, R> {
     }
 }
 
+pub struct StatusPoll {
+    pub loading: bool,
+    pub failed: bool,
+}
+
 pub struct Notice {
     pub text: String,
     pub until: Instant,
@@ -305,6 +320,7 @@ pub fn accept_digits(field: &mut String, input: String) {
 
 pub struct Pager {
     pub page: u32,
+    pub shown: Option<u32>,
     pub pages: u32,
     pub total: u32,
     pub input: String,
@@ -316,6 +332,7 @@ impl Default for Pager {
     fn default() -> Self {
         Self {
             page: 1,
+            shown: None,
             pages: 1,
             total: 0,
             input: "1".into(),
@@ -344,8 +361,18 @@ impl Pager {
     pub fn finish_loading(&mut self, meta: &api::PageMeta) {
         self.loading = false;
         self.loaded = true;
+        self.shown = Some(self.page);
         self.pages = meta.last_page;
         self.total = meta.total;
+        self.input = self.page.to_string();
+    }
+
+    pub fn fail_loading(&mut self) {
+        self.loading = false;
+        if let Some(shown) = self.shown {
+            self.page = shown;
+            self.loaded = true;
+        }
         self.input = self.page.to_string();
     }
 
@@ -438,6 +465,13 @@ impl Default for TimerState {
             minutes_input: "20".into(),
             until: None,
         }
+    }
+}
+
+impl TimerState {
+    pub fn minutes(&self) -> Option<u32> {
+        let minutes = self.minutes_input.parse::<u32>().ok()?;
+        (minutes >= 1).then_some(minutes.min(MAX_TIMER_MINUTES))
     }
 }
 
@@ -558,5 +592,44 @@ impl DeleteAccountForm {
         } else {
             Ok(())
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn minutes(input: &str) -> Option<u32> {
+        TimerState {
+            minutes_input: input.into(),
+            until: None,
+        }
+        .minutes()
+    }
+
+    #[test]
+    fn failed_page_load_returns_to_the_shown_page_and_allows_retry() {
+        let mut pager = Pager::default();
+        pager.start_loading(2);
+        pager.finish_loading(&api::PageMeta {
+            last_page: 5,
+            total: 100,
+        });
+        pager.start_loading(3);
+        pager.fail_loading();
+        assert_eq!(pager.page, 2);
+        assert_eq!(pager.input, "2");
+        assert!(!pager.loading);
+        assert!(pager.holds(2));
+        assert_eq!(pager.apply(PageMsg::Go(3)), Some(3));
+    }
+
+    #[test]
+    fn timer_minutes_stay_in_a_safe_range() {
+        assert_eq!(minutes("20"), Some(20));
+        assert_eq!(minutes("0"), None);
+        assert_eq!(minutes(""), None);
+        assert_eq!(minutes("4000000000"), Some(MAX_TIMER_MINUTES));
+        assert_eq!(minutes("18446744073709551615"), None);
     }
 }

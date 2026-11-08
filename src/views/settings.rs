@@ -3,6 +3,7 @@ use crate::message::{LastfmMsg, Msg};
 use crate::state::Plaza;
 use crate::theme::MUTED;
 use crate::window::WindowKind;
+use iced::widget::text::Wrapping;
 use iced::widget::{Space, checkbox, column, row, text};
 use iced::window::Id;
 use iced::{Element, Fill, Length};
@@ -95,7 +96,12 @@ fn lastfm_body(state: &Plaza) -> Element<'_, Msg> {
     }
 
     if let Some(status) = &state.lastfm.status {
-        col = col.push(text(status).size(11).color(MUTED));
+        col = col.push(
+            text(status)
+                .size(11)
+                .color(MUTED)
+                .wrapping(Wrapping::WordOrGlyph),
+        );
     }
     col.into()
 }

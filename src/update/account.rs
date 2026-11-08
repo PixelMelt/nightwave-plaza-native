@@ -1,15 +1,27 @@
-use super::{close_windows, show_error, show_info};
+use super::{close_windows, show_error, show_info, song_info};
 use crate::api;
 use crate::config::{self, Session};
 use crate::message::{
-    AccountMsg, DeleteAccountMsg, LoginMsg, Msg, PasswordMsg, ProfileEditMsg, RegisterMsg,
+    AccountMsg, DeleteAccountMsg, LoginMsg, Msg, PasswordMsg, ProfileEditMsg, ProfileUpdate,
+    RegisterMsg,
 };
 use crate::state::{
-    DeleteAccountForm, FavoritesState, LoginForm, PasswordForm, Plaza, RegisterForm, SongReaction,
+    DeleteAccountForm, ExportState, FavoritesState, LoginForm, PasswordForm, Plaza,
+    ProfileEditForm, RegisterForm, SongReaction,
 };
 use crate::window::WindowKind;
 use iced::Task;
+use std::future::Future;
 use std::time::Instant;
+
+const ACCOUNT_WINDOWS: [WindowKind; 6] = [
+    WindowKind::UserFavorites,
+    WindowKind::UserFavoritesExport,
+    WindowKind::UserPassword,
+    WindowKind::UserProfile,
+    WindowKind::UserProfileDelete,
+    WindowKind::UserProfileEdit,
+];
 
 #[derive(Clone, Copy)]
 enum Persistence {
@@ -25,14 +37,50 @@ fn store_session(state: &mut Plaza, session: Session, persistence: Persistence) 
     state.session = Some(session);
 }
 
-fn sign_out(state: &mut Plaza) {
+fn sign_out(state: &mut Plaza) -> Task<Msg> {
     state.session = None;
     state.config.session = None;
     config::save(&state.config);
     state.user_stats = None;
+    state.stats_loading = false;
     state.stats_at = None;
-    state.favorites = FavoritesState::default();
+    state.cache.songs.clear();
     state.reaction = SongReaction::default();
+    state.reaction_pending = false;
+    state.favorites = FavoritesState::default();
+    state.export = ExportState::default();
+    state.profile_edit = ProfileEditForm::default();
+    state.password = PasswordForm::default();
+    state.delete_account = DeleteAccountForm::default();
+    state.song_info.favorite_id = None;
+    state.song_info.favorite_pending = false;
+    close_windows(state, &ACCOUNT_WINDOWS)
+}
+
+fn expire_session(state: &mut Plaza) -> Task<Msg> {
+    let close = sign_out(state);
+    Task::batch([
+        close,
+        show_error(state, "Your session has expired. Please log in again."),
+    ])
+}
+
+pub fn authed<T, F>(
+    token: String,
+    request: impl FnOnce(String) -> F,
+    done: impl FnOnce(api::Result<T>) -> Msg + Send + 'static,
+) -> Task<Msg>
+where
+    T: Send + 'static,
+    F: Future<Output = api::Result<T>> + Send + 'static,
+{
+    let response = request(token.clone());
+    Task::future(async move {
+        match response.await {
+            Err(e) if e.is_unauthorized() => Msg::Account(AccountMsg::Expired(token)),
+            result => done(result),
+        }
+    })
 }
 
 pub fn refresh_stats(state: &mut Plaza) -> Task<Msg> {
@@ -43,28 +91,35 @@ pub fn refresh_stats(state: &mut Plaza) -> Task<Msg> {
         return Task::none();
     }
     state.stats_loading = true;
-    Task::perform(api::fetch_stats(token), |r| {
-        Msg::Account(AccountMsg::Stats(r))
+    authed(token.clone(), api::fetch_stats, move |r| {
+        Msg::Account(AccountMsg::Stats(token, r))
     })
 }
 
 pub fn update(state: &mut Plaza, msg: AccountMsg) -> Task<Msg> {
     match msg {
-        AccountMsg::Checked(Ok(user)) => {
+        AccountMsg::Checked(token, _)
+        | AccountMsg::Expired(token)
+        | AccountMsg::Stats(token, _)
+            if !state.has_token(&token) =>
+        {
+            Task::none()
+        }
+        AccountMsg::Checked(_, Ok(user)) => {
             if let Some(mut session) = state.session.clone() {
                 session.user = user;
                 store_session(state, session, Persistence::Remember);
             }
             Task::none()
         }
-        AccountMsg::Checked(Err(e)) => {
+        AccountMsg::Checked(_, Err(e)) => {
             if e.is_unauthorized() {
-                sign_out(state);
-                show_error(state, "Your session has expired. Please log in again.")
+                expire_session(state)
             } else {
                 show_error(state, format!("Could not verify your session: {e}"))
             }
         }
+        AccountMsg::Expired(_) => expire_session(state),
         AccountMsg::Logout => match state.token() {
             Some(token) => Task::perform(api::logout(token), |r| {
                 Msg::Account(AccountMsg::LoggedOut(r))
@@ -72,14 +127,13 @@ pub fn update(state: &mut Plaza, msg: AccountMsg) -> Task<Msg> {
             None => update(state, AccountMsg::LoggedOut(Ok(()))),
         },
         AccountMsg::LoggedOut(result) => {
-            sign_out(state);
-            let close = close_windows(state, &[WindowKind::UserProfile]);
+            let close = sign_out(state);
             match result {
                 Ok(()) => close,
                 Err(e) => Task::batch([close, show_error(state, e.to_string())]),
             }
         }
-        AccountMsg::Stats(result) => {
+        AccountMsg::Stats(_, result) => {
             state.stats_loading = false;
             match result {
                 Ok(stats) => {
@@ -100,6 +154,9 @@ pub fn login(state: &mut Plaza, msg: LoginMsg) -> Task<Msg> {
         LoginMsg::Password(s) => form.password = s,
         LoginMsg::Remember(remember) => form.remember = remember,
         LoginMsg::Submit => {
+            if form.loading {
+                return Task::none();
+            }
             if let Err(problem) = form.validate() {
                 return show_error(state, problem);
             }
@@ -119,7 +176,11 @@ pub fn login(state: &mut Plaza, msg: LoginMsg) -> Task<Msg> {
                 user: response.data,
             };
             store_session(state, session, persistence);
-            return close_windows(state, &[WindowKind::UserLogin]);
+            state.cache.songs.clear();
+            return Task::batch([
+                close_windows(state, &[WindowKind::UserLogin]),
+                song_info::reload(state),
+            ]);
         }
         LoginMsg::Done(Err(e)) => {
             form.loading = false;
@@ -137,6 +198,9 @@ pub fn register(state: &mut Plaza, msg: RegisterMsg) -> Task<Msg> {
         RegisterMsg::Password(s) => form.password = s,
         RegisterMsg::PasswordRepeat(s) => form.password_repeat = s,
         RegisterMsg::Submit => {
+            if form.loading {
+                return Task::none();
+            }
             if let Err(problem) = form.validate() {
                 return show_error(state, problem);
             }
@@ -171,6 +235,9 @@ pub fn profile_edit(state: &mut Plaza, msg: ProfileEditMsg) -> Task<Msg> {
         ProfileEditMsg::Email(s) => form.email = s,
         ProfileEditMsg::CurrentPassword(s) => form.current_password = s,
         ProfileEditMsg::Submit => {
+            if form.loading {
+                return Task::none();
+            }
             if let Err(problem) = form.validate() {
                 return show_error(state, problem);
             }
@@ -179,21 +246,31 @@ pub fn profile_edit(state: &mut Plaza, msg: ProfileEditMsg) -> Task<Msg> {
             };
             let form = &mut state.profile_edit;
             form.loading = true;
+            let submitted = ProfileUpdate {
+                token: token.clone(),
+                username: form.username.clone(),
+                email: form.email.clone(),
+            };
             let request = api::update_profile(
                 token,
                 form.current_password.clone(),
                 form.username.clone(),
                 form.email.clone(),
             );
-            return Task::perform(request, |r| Msg::ProfileEdit(ProfileEditMsg::Done(r)));
+            return Task::perform(request, move |r| {
+                Msg::ProfileEdit(ProfileEditMsg::Done(submitted, r))
+            });
         }
-        ProfileEditMsg::Done(Ok(())) => {
+        ProfileEditMsg::Done(submitted, Ok(())) => {
+            let submitted_here = form.loading;
             form.loading = false;
-            form.current_password.clear();
-            let (username, email) = (form.username.clone(), form.email.clone());
-            if let Some(mut session) = state.session.clone() {
-                session.user.username = username;
-                session.user.email = email;
+            if submitted_here {
+                form.current_password.clear();
+            }
+            let session = state.session.clone();
+            if let Some(mut session) = session.filter(|s| s.token == submitted.token) {
+                session.user.username = submitted.username;
+                session.user.email = submitted.email;
                 let persistence = if state.config.session.is_some() {
                     Persistence::Remember
                 } else {
@@ -201,10 +278,14 @@ pub fn profile_edit(state: &mut Plaza, msg: ProfileEditMsg) -> Task<Msg> {
                 };
                 store_session(state, session, persistence);
             }
-            let close = close_windows(state, &[WindowKind::UserProfileEdit]);
+            let close = if submitted_here {
+                close_windows(state, &[WindowKind::UserProfileEdit])
+            } else {
+                Task::none()
+            };
             return Task::batch([close, show_info(state, "Profile has been updated.")]);
         }
-        ProfileEditMsg::Done(Err(e)) => {
+        ProfileEditMsg::Done(_, Err(e)) => {
             form.loading = false;
             return show_error(state, e.to_string());
         }
@@ -219,6 +300,9 @@ pub fn password(state: &mut Plaza, msg: PasswordMsg) -> Task<Msg> {
         PasswordMsg::New(s) => form.password = s,
         PasswordMsg::Repeat(s) => form.password_repeat = s,
         PasswordMsg::Submit => {
+            if form.loading {
+                return Task::none();
+            }
             if let Err(problem) = form.validate() {
                 return show_error(state, problem);
             }
@@ -232,9 +316,7 @@ pub fn password(state: &mut Plaza, msg: PasswordMsg) -> Task<Msg> {
             return Task::perform(request, |r| Msg::Password(PasswordMsg::Done(r)));
         }
         PasswordMsg::Done(Ok(())) => {
-            state.password = PasswordForm::default();
-            sign_out(state);
-            let close = close_windows(state, &[WindowKind::UserPassword, WindowKind::UserProfile]);
+            let close = sign_out(state);
             return Task::batch([
                 close,
                 show_info(state, "Password updated. Please log in again."),
@@ -254,6 +336,9 @@ pub fn delete(state: &mut Plaza, msg: DeleteAccountMsg) -> Task<Msg> {
         DeleteAccountMsg::Password(s) => form.current_password = s,
         DeleteAccountMsg::Confirm(confirmed) => form.confirmed = confirmed,
         DeleteAccountMsg::Submit => {
+            if form.loading {
+                return Task::none();
+            }
             if let Err(problem) = form.validate() {
                 return show_error(state, problem);
             }
@@ -266,16 +351,7 @@ pub fn delete(state: &mut Plaza, msg: DeleteAccountMsg) -> Task<Msg> {
             return Task::perform(request, |r| Msg::DeleteAccount(DeleteAccountMsg::Done(r)));
         }
         DeleteAccountMsg::Done(Ok(())) => {
-            state.delete_account = DeleteAccountForm::default();
-            sign_out(state);
-            let close = close_windows(
-                state,
-                &[
-                    WindowKind::UserProfileDelete,
-                    WindowKind::UserProfileEdit,
-                    WindowKind::UserProfile,
-                ],
-            );
+            let close = sign_out(state);
             return Task::batch([close, show_info(state, "Your account has been deleted.")]);
         }
         DeleteAccountMsg::Done(Err(e)) => {

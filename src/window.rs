@@ -11,6 +11,7 @@ const MESSAGE_BOX_CHROME: f32 = 90.0;
 const MESSAGE_BOX_ICON: f32 = 32.0;
 const MESSAGE_BOX_LINE_HEIGHT: f32 = 14.0;
 const MESSAGE_BOX_LINE_CHARS: usize = 44;
+const MESSAGE_BOX_MAX_HEIGHT: f32 = 320.0;
 
 static APP_ICON: LazyLock<Icon> = LazyLock::new(|| {
     let img = image::load_from_memory(include_bytes!("assets/icons/favicon-32x32.png"))
@@ -110,16 +111,13 @@ impl WindowKind {
 }
 
 pub fn message_box_size(message: &str) -> Size {
-    let lines = message
-        .chars()
-        .count()
-        .div_ceil(MESSAGE_BOX_LINE_CHARS)
-        .max(1);
+    let lines: usize = message
+        .split('\n')
+        .map(|line| line.chars().count().div_ceil(MESSAGE_BOX_LINE_CHARS).max(1))
+        .sum();
     let text_height = lines as f32 * MESSAGE_BOX_LINE_HEIGHT;
-    Size::new(
-        MESSAGE_BOX_WIDTH,
-        MESSAGE_BOX_CHROME + text_height.max(MESSAGE_BOX_ICON),
-    )
+    let height = MESSAGE_BOX_CHROME + text_height.max(MESSAGE_BOX_ICON);
+    Size::new(MESSAGE_BOX_WIDTH, height.min(MESSAGE_BOX_MAX_HEIGHT))
 }
 
 pub fn settings(size: Size, resizable: bool) -> Settings {
@@ -138,5 +136,23 @@ pub fn settings(size: Size, resizable: bool) -> Settings {
         icon: Some(APP_ICON.clone()),
         platform_specific,
         ..Default::default()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn message_box_counts_explicit_lines() {
+        let one_line = message_box_size("error").height;
+        let five_lines = message_box_size("a\nb\nc\nd\ne").height;
+        assert!(five_lines > one_line);
+    }
+
+    #[test]
+    fn message_box_height_is_bounded() {
+        let size = message_box_size(&"x".repeat(10_000));
+        assert!(size.height <= MESSAGE_BOX_MAX_HEIGHT);
     }
 }

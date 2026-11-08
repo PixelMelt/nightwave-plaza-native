@@ -4,7 +4,7 @@ use crate::message::{Msg, PageMsg, Prefetch, PrefetchMsg, SongInfoMsg, SongPrevi
 use crate::state::Pager;
 use crate::theme;
 use chrono::{Local, TimeZone};
-use iced::widget::text::{IntoFragment, LineHeight, Shaping};
+use iced::widget::text::{IntoFragment, LineHeight, Shaping, Wrapping};
 use iced::widget::{
     Column, Container, Row, Space, Text, TextInput, column, container, image, mouse_area, row,
     scrollable, stack, text, text_input,
@@ -52,6 +52,13 @@ static LOADING: Png = Png::new(include_bytes!("../assets/img/loading.png"));
 
 pub fn shaped<'a>(content: impl IntoFragment<'a>) -> Text<'a> {
     text(content).shaping(Shaping::Advanced)
+}
+
+pub fn single_line(content: Text<'_>) -> Element<'_, Msg> {
+    container(content.wrapping(Wrapping::None))
+        .width(Fill)
+        .clip(true)
+        .into()
 }
 
 pub fn icon(glyph: &str) -> Text<'_> {
@@ -273,7 +280,8 @@ pub fn status_bar(cells: Vec<(Element<'_, Msg>, CellWidth)>) -> Element<'_, Msg>
             container(content)
                 .style(theme::panel)
                 .padding([3, 4])
-                .width(Fill),
+                .width(Fill)
+                .clip(true),
         );
         match width {
             CellWidth::Shrink => cell.into(),

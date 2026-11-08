@@ -10,6 +10,7 @@ use std::time::{Duration, Instant};
 
 const DEFAULT_DEVICE_POLL: Duration = Duration::from_secs(5);
 const DEVICE_BUFFER: Duration = Duration::from_millis(200);
+const MIN_OUTPUT_LIFETIME: Duration = Duration::from_secs(1);
 
 const PREFERRED_CHANNELS: u16 = 2;
 const PREFERRED_RATE: u32 = 44_100;
@@ -29,6 +30,7 @@ struct OpenOutput {
     _stream: cpal::Stream,
     format: Format,
     device: Option<DeviceId>,
+    opened_at: Instant,
     checked_at: Instant,
 }
 
@@ -38,21 +40,51 @@ impl Output {
     }
 
     pub fn ensure_open(&mut self, shared: &Arc<Shared>) -> Result<Format, BoxError> {
-        if let Some(open) = &mut self.open {
-            let lost = shared.device_lost.swap(false, Ordering::Relaxed);
-            if !lost && open.checked_at.elapsed() < DEFAULT_DEVICE_POLL {
+        let lost = shared.device_lost.swap(false, Ordering::Relaxed);
+        let Some(open) = &mut self.open else {
+            return Ok(self.open.insert(open_default(shared)?).format);
+        };
+        if !lost {
+            if open.checked_at.elapsed() < DEFAULT_DEVICE_POLL {
                 return Ok(open.format);
             }
-            if !lost && default_device_id() == open.device {
-                open.checked_at = Instant::now();
+            open.checked_at = Instant::now();
+            let default = default_device_id();
+            if default.is_none() || default == open.device {
                 return Ok(open.format);
             }
-            self.open = None;
-            let reopened = open_default(shared)?;
-            eprintln!("Audio output reopened on {:?}", reopened.device);
-            return Ok(self.open.insert(reopened).format);
+            let Ok(preferred) = open_preferred(shared) else {
+                return Ok(open.format);
+            };
+            return Ok(self.switch_to(preferred, shared));
         }
-        Ok(self.open.insert(open_default(shared)?).format)
+        let failed_fast = open.opened_at.elapsed() < MIN_OUTPUT_LIFETIME;
+        self.open = None;
+        shared.clear();
+        if failed_fast {
+            return Err("audio output failed right after opening".into());
+        }
+        let reopened = open_default(shared)?;
+        Ok(self.switch_to(reopened, shared))
+    }
+
+    fn switch_to(&mut self, output: OpenOutput, shared: &Shared) -> Format {
+        eprintln!("Audio output reopened on {:?}", output.device);
+        let format = self.open.insert(output).format;
+        shared.clear();
+        format
+    }
+}
+
+impl OpenOutput {
+    fn new(stream: cpal::Stream, format: Format, device: Option<DeviceId>) -> Self {
+        Self {
+            _stream: stream,
+            format,
+            device,
+            opened_at: Instant::now(),
+            checked_at: Instant::now(),
+        }
     }
 }
 
@@ -60,25 +92,26 @@ fn default_device_id() -> Option<DeviceId> {
     cpal::default_host().default_output_device()?.id().ok()
 }
 
-fn open_default(shared: &Arc<Shared>) -> Result<OpenOutput, BoxError> {
-    let host = cpal::default_host();
-    let device = host
+fn open_preferred(shared: &Arc<Shared>) -> Result<OpenOutput, BoxError> {
+    let device = cpal::default_host()
         .default_output_device()
         .ok_or("no audio output device")?;
-    let id = device.id().ok();
+    let (stream, format) = open_device(&device, shared)?;
+    Ok(OpenOutput::new(stream, format, device.id().ok()))
+}
 
-    let (stream, format) = open_device(&device, shared).or_else(|err| {
-        host.output_devices()
+fn open_default(shared: &Arc<Shared>) -> Result<OpenOutput, BoxError> {
+    open_preferred(shared).or_else(|err| {
+        cpal::default_host()
+            .output_devices()
             .ok()
-            .and_then(|mut devices| devices.find_map(|d| open_device(&d, shared).ok()))
+            .and_then(|mut devices| {
+                devices.find_map(|device| {
+                    let (stream, format) = open_device(&device, shared).ok()?;
+                    Some(OpenOutput::new(stream, format, device.id().ok()))
+                })
+            })
             .ok_or(err)
-    })?;
-
-    Ok(OpenOutput {
-        _stream: stream,
-        format,
-        device: id,
-        checked_at: Instant::now(),
     })
 }
 
@@ -138,7 +171,9 @@ fn build_stream<T: SizedSample + FromSample<f32>>(
         move |out, _| render.render(out),
         move |e| {
             eprintln!("Audio device error: {e}");
-            on_error.device_lost.store(true, Ordering::Relaxed);
+            if !matches!(e, cpal::StreamError::BufferUnderrun) {
+                on_error.device_lost.store(true, Ordering::Relaxed);
+            }
         },
         None,
     )

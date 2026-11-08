@@ -11,7 +11,7 @@ Built in Rust with [iced](https://iced.rs).
 - Live streaming of the Nightwave Plaza radio feed.
 - Discord presense
 - Now playing, album artwork, artist, title, and track progress.
-- OS media controls, integrates with system media keys and now-playing widgets via [souvlaki](https://crates.io/crates/souvlaki).
+- OS media controls, integrates with system media keys and now-playing widgets via [souvlaki](https://crates.io/crates/souvlaki). Not available on Windows yet.
 - Accounts, log in
 - Sleep timer and adjustable volume.
 - Last.fm scrobbling (configure in Settings).
@@ -25,6 +25,8 @@ Download `nightwave-plaza.exe` from the [latest release](https://github.com/Pixe
 Windows may show a SmartScreen warning because the binary is unsigned. Click More info > Run anyway.
 
 ### Linux
+
+You need a Rust toolchain, `pkg-config`, and the ALSA and D-Bus development headers (`libasound2-dev` and `libdbus-1-dev` on Debian and Ubuntu). Running under X11 also needs `libxkbcommon-x11` (`libxkbcommon-x11-0` on Debian and Ubuntu).
 
 Run the install script, which builds the binary and registers it as a desktop app:
 

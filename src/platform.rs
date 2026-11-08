@@ -13,16 +13,28 @@ pub fn trim_heap() {
 }
 
 pub fn open_url(url: &str) {
+    if !url.starts_with("https://") && !url.starts_with("http://") {
+        eprintln!("Refusing to open non-web URL {url}");
+        return;
+    }
+
     #[cfg(target_os = "macos")]
     let result = std::process::Command::new("open").arg(url).spawn();
     #[cfg(target_os = "windows")]
-    let result = std::process::Command::new("cmd")
-        .args(["/C", "start", "", url])
+    let result = std::process::Command::new("rundll32")
+        .args(["url.dll,FileProtocolHandler", url])
         .spawn();
     #[cfg(not(any(target_os = "macos", target_os = "windows")))]
     let result = std::process::Command::new("xdg-open").arg(url).spawn();
 
-    if let Err(e) = result {
-        eprintln!("Failed to open URL {url}: {e}");
+    match result {
+        Ok(mut child) => {
+            std::thread::spawn(move || {
+                if let Err(e) = child.wait() {
+                    eprintln!("URL opener did not exit cleanly: {e}");
+                }
+            });
+        }
+        Err(e) => eprintln!("Failed to open URL {url}: {e}"),
     }
 }
